@@ -1,0 +1,38 @@
+# Visual Studio / MSBuild
+Builds/**/x64/
+Builds/**/x86/
+Builds/**/Debug/
+Builds/**/Release/
+Builds/**/.vs/
+*.user
+*.suo
+*.db
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+*.ilk
+*.pdb
+*.obj
+*.exe
+*.tlog
+*.idb
+*.ipch
+*.res
+*.recipe
+*.FileListAbsolute.txt
+
+# Keep generated project files (optional — Projucer can regenerate)
+# Uncomment to also ignore VS project exports:
+# Builds/
+
+# JUCE / OS
+.DS_Store
+Thumbs.db
+
+# Archives
+*.zip
+
+# Node / frontend
+node_modules/
+dist/
+*.local

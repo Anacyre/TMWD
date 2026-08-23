@@ -1,0 +1,110 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<JUCERPROJECT id="tFQo3k" name="DawWeb" projectType="guiapp" useAppConfig="0"
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" version="1.0.0">
+  <MAINGROUP id="Zxu8Ez" name="DawWeb">
+    <GROUP id="{8866E08D-788C-6274-C396-B6976635B7FF}" name="Source">
+      <FILE id="qP1g9C" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+      <GROUP id="{1A000000-0000-0000-0000-000000000001}" name="Model">
+        <FILE id="mdl001" name="ProjectModel.h" compile="0" resource="0" file="Source/Model/ProjectModel.h"/>
+        <FILE id="mdl002" name="Project.h" compile="0" resource="0" file="Source/Model/Project.h"/>
+        <FILE id="mdl003" name="Project.cpp" compile="1" resource="0" file="Source/Model/Project.cpp"/>
+      </GROUP>
+      <GROUP id="{1A000000-0000-0000-0000-000000000002}" name="Audio">
+        <FILE id="aud001" name="LockFreeQueue.h" compile="0" resource="0" file="Source/Audio/LockFreeQueue.h"/>
+        <FILE id="aud002" name="PlaybackSequence.h" compile="0" resource="0" file="Source/Audio/PlaybackSequence.h"/>
+        <FILE id="aud003" name="PlaybackSequence.cpp" compile="1" resource="0" file="Source/Audio/PlaybackSequence.cpp"/>
+        <FILE id="aud004" name="Transport.h" compile="0" resource="0" file="Source/Audio/Transport.h"/>
+        <FILE id="aud005" name="Transport.cpp" compile="1" resource="0" file="Source/Audio/Transport.cpp"/>
+        <FILE id="aud006" name="MidiSequencer.h" compile="0" resource="0" file="Source/Audio/MidiSequencer.h"/>
+        <FILE id="aud007" name="MidiSequencer.cpp" compile="1" resource="0" file="Source/Audio/MidiSequencer.cpp"/>
+        <FILE id="aud008" name="MixerEngine.h" compile="0" resource="0" file="Source/Audio/MixerEngine.h"/>
+        <FILE id="aud009" name="MixerEngine.cpp" compile="1" resource="0" file="Source/Audio/MixerEngine.cpp"/>
+        <FILE id="aud010" name="TestSynth.h" compile="0" resource="0" file="Source/Audio/TestSynth.h"/>
+        <FILE id="aud011" name="TestSynth.cpp" compile="1" resource="0" file="Source/Audio/TestSynth.cpp"/>
+        <FILE id="aud012" name="AudioEngine.h" compile="0" resource="0" file="Source/Audio/AudioEngine.h"/>
+        <FILE id="aud013" name="AudioEngine.cpp" compile="1" resource="0" file="Source/Audio/AudioEngine.cpp"/>
+      </GROUP>
+      <GROUP id="{1A000000-0000-0000-0000-000000000003}" name="Plugins">
+        <FILE id="plg001" name="PluginDescriptor.h" compile="0" resource="0" file="Source/Plugins/PluginDescriptor.h"/>
+        <FILE id="plg002" name="PluginInstance.h" compile="0" resource="0" file="Source/Plugins/PluginInstance.h"/>
+        <FILE id="plg003" name="InstrumentRegistry.h" compile="0" resource="0" file="Source/Plugins/InstrumentRegistry.h"/>
+        <FILE id="plg004" name="InstrumentRegistry.cpp" compile="1" resource="0" file="Source/Plugins/InstrumentRegistry.cpp"/>
+        <FILE id="plg005" name="PluginHost.h" compile="0" resource="0" file="Source/Plugins/PluginHost.h"/>
+        <FILE id="plg006" name="PluginHost.cpp" compile="1" resource="0" file="Source/Plugins/PluginHost.cpp"/>
+      </GROUP>
+      <GROUP id="{1A000000-0000-0000-0000-000000000004}" name="Communication">
+        <FILE id="com001" name="EngineAPI.h" compile="0" resource="0" file="Source/Communication/EngineAPI.h"/>
+        <FILE id="com002" name="EngineAPI.cpp" compile="1" resource="0" file="Source/Communication/EngineAPI.cpp"/>
+      </GROUP>
+      <GROUP id="{1A000000-0000-0000-0000-000000000005}" name="UI">
+        <FILE id="h3xMWI" name="MainComponent.h" compile="0" resource="0" file="Source/UI/MainComponent.h"/>
+        <FILE id="JCdO14" name="MainComponent.cpp" compile="1" resource="0" file="Source/UI/MainComponent.cpp"/>
+        <FILE id="col001" name="DawColours.h" compile="0" resource="0" file="Source/UI/DawColours.h"/>
+        <FILE id="ico001" name="Icons.h" compile="0" resource="0" file="Source/UI/Icons.h"/>
+        <FILE id="lnf001" name="DawLookAndFeel.h" compile="0" resource="0" file="Source/UI/DawLookAndFeel.h"/>
+        <FILE id="lnf002" name="DawLookAndFeel.cpp" compile="1" resource="0" file="Source/UI/DawLookAndFeel.cpp"/>
+        <FILE id="wid001" name="Widgets.h" compile="0" resource="0" file="Source/UI/Widgets.h"/>
+        <FILE id="ses001" name="DawSession.h" compile="0" resource="0" file="Source/UI/DawSession.h"/>
+        <FILE id="ses002" name="DawSession.cpp" compile="1" resource="0" file="Source/UI/DawSession.cpp"/>
+        <FILE id="top001" name="TopBar.h" compile="0" resource="0" file="Source/UI/TopBar.h"/>
+        <FILE id="top002" name="TopBar.cpp" compile="1" resource="0" file="Source/UI/TopBar.cpp"/>
+        <FILE id="tra001" name="TransportBar.h" compile="0" resource="0" file="Source/UI/TransportBar.h"/>
+        <FILE id="tra002" name="TransportBar.cpp" compile="1" resource="0" file="Source/UI/TransportBar.cpp"/>
+        <FILE id="trk001" name="TrackListPanel.h" compile="0" resource="0" file="Source/UI/TrackListPanel.h"/>
+        <FILE id="trk002" name="TrackListPanel.cpp" compile="1" resource="0" file="Source/UI/TrackListPanel.cpp"/>
+        <FILE id="arr001" name="ArrangementView.h" compile="0" resource="0" file="Source/UI/ArrangementView.h"/>
+        <FILE id="arr002" name="ArrangementView.cpp" compile="1" resource="0" file="Source/UI/ArrangementView.cpp"/>
+        <FILE id="edt001" name="EditorPanel.h" compile="0" resource="0" file="Source/UI/EditorPanel.h"/>
+        <FILE id="edt002" name="EditorPanel.cpp" compile="1" resource="0" file="Source/UI/EditorPanel.cpp"/>
+        <FILE id="prl001" name="PianoRoll.h" compile="0" resource="0" file="Source/UI/PianoRoll.h"/>
+        <FILE id="prl002" name="PianoRoll.cpp" compile="1" resource="0" file="Source/UI/PianoRoll.cpp"/>
+        <FILE id="aut001" name="AutomationView.h" compile="0" resource="0" file="Source/UI/AutomationView.h"/>
+        <FILE id="aut002" name="AutomationView.cpp" compile="1" resource="0" file="Source/UI/AutomationView.cpp"/>
+        <FILE id="mix001" name="MixerPanel.h" compile="0" resource="0" file="Source/UI/MixerPanel.h"/>
+        <FILE id="mix002" name="MixerPanel.cpp" compile="1" resource="0" file="Source/UI/MixerPanel.cpp"/>
+        <FILE id="ins001" name="InspectorPanel.h" compile="0" resource="0" file="Source/UI/InspectorPanel.h"/>
+        <FILE id="ins002" name="InspectorPanel.cpp" compile="1" resource="0" file="Source/UI/InspectorPanel.cpp"/>
+        <FILE id="sta001" name="StatusBar.h" compile="0" resource="0" file="Source/UI/StatusBar.h"/>
+        <FILE id="sta002" name="StatusBar.cpp" compile="1" resource="0" file="Source/UI/StatusBar.cpp"/>
+      </GROUP>
+    </GROUP>
+  </MAINGROUP>
+  <MODULES>
+    <MODULE id="juce_audio_basics" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_devices" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_formats" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_processors" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_core" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_events" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0"/>
+    <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0"/>
+  </MODULES>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"/>
+  <EXPORTFORMATS>
+    <VS2026 targetFolder="Builds/VisualStudio2026">
+      <CONFIGURATIONS>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="NewProject"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="NewProject"/>
+      </CONFIGURATIONS>
+      <MODULEPATHS>
+        <MODULEPATH id="juce_audio_basics" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_devices" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_formats" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_processors_headless" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_audio_utils" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_core" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_data_structures" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_events" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_graphics" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_basics" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+        <MODULEPATH id="juce_gui_extra" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
+      </MODULEPATHS>
+    </VS2026>
+  </EXPORTFORMATS>
+</JUCERPROJECT>
