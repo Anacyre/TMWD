@@ -73,6 +73,18 @@ int Project::indexOfTrack (TrackId trackId) const
 
 int Project::addTrack (TrackType type, const juce::String& trackName, juce::Colour colour)
 {
+    if (tracks.empty())
+    {
+        TrackData master;
+        master.id = nextTrackId();
+        master.name = "Master";
+        master.type = TrackType::Master;
+        master.colour = juce::Colour (0xff8a8a8a);
+        master.section = "Output";
+        master.instrument = "Stereo Output";
+        tracks.push_back (master);
+    }
+
     if (type == TrackType::Master)
         return -1;   // exactly one master, created with the project
 

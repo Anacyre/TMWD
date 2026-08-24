@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include <JuceHeader.h>
+#include <memory>
 #include "DawSession.h"
 #include "Icons.h"
 #include "Widgets.h"
@@ -15,6 +16,10 @@ public:
 
     std::function<void()> onShowAudioSettings;
     std::function<void()> onQuit;
+    std::function<void()> onCaptureState;
+
+    void commandOpenProject() { openProject(); }
+    void commandSaveProject (bool saveAs = false) { saveProject (saveAs); }
 
     void paint (juce::Graphics&) override;
     void resized() override;
@@ -28,6 +33,8 @@ private:
     void showViewMenu();
     void showTransportMenu();
     void showHelpMenu();
+    void openProject();
+    void saveProject (bool saveAs);
     static void showStub (const juce::String& title, const juce::String& message);
 
     DawSession& session;
@@ -50,6 +57,7 @@ private:
 
     juce::Rectangle<float> avatarBounds;
     juce::Rectangle<int> dividerA, dividerB;
+    std::shared_ptr<juce::FileChooser> fileChooser;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TopBar)
 };

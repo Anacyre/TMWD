@@ -1,0 +1,1157 @@
+{
+  "resourceRoot": "",
+  "plugins": [
+    {
+      "instrumentId": "bbcso_discover",
+      "displayName": "BBC Symphony Orchestra Discover",
+      "vendor": "Spitfire Audio",
+      "pluginPath": "C:\\Program Files\\Common Files\\VST3\\BBC Symphony Orchestra (64 Bit).vst3",
+      "pluginPathFallbacks": [
+        "C:\\Program Files\\Common Files\\VST3\\BBC Symphony Orchestra (64 Bit).vst3\\Contents\\x86_64-win\\BBC Symphony Orchestra (64 Bit).vst3"
+      ],
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\Spitfire BBC\\Spitfire Audio - BBC Symphony Orchestra"
+    },
+    {
+      "instrumentId": "synchron_player",
+      "displayName": "Synchron Player",
+      "vendor": "VSL",
+      "pluginPath": "C:\\Program Files\\Common Files\\VST3\\Vienna Synchron Player.vst3",
+      "pluginPathFallbacks": [],
+      "sampleLibraryPath": ""
+    }
+  ],
+  "libraries": [
+    {
+      "id": "bbcso_discover_lib",
+      "displayName": "BBC Symphony Orchestra Discover",
+      "pluginId": "bbcso_discover",
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\Spitfire BBC\\Spitfire Audio - BBC Symphony Orchestra"
+    },
+    {
+      "id": "soft_imperial",
+      "displayName": "Soft Imperial",
+      "pluginId": "synchron_player",
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\VSL\\VSL Contents\\Soft Imperial - iLok"
+    },
+    {
+      "id": "celestial_strings",
+      "displayName": "Celestial Strings",
+      "pluginId": "synchron_player",
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\VSL\\VSL Contents\\Celestial Strings - iLok"
+    },
+    {
+      "id": "small_percussion",
+      "displayName": "Small Percussion",
+      "pluginId": "synchron_player",
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\VSL\\VSL Contents\\Small Percussion - iLok"
+    },
+    {
+      "id": "angelic_choir",
+      "displayName": "Angelic Choir",
+      "pluginId": "synchron_player",
+      "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\VSL\\VSL Contents\\Angelic Choir - iLok"
+    }
+  ],
+  "presets": [
+    {
+      "id": "bbcso_piano",
+      "displayName": "Piano",
+      "plugin": "bbcso_discover",
+      "instrument": "Piano",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/piano.state",
+      "patchFile": "Patches/v1.7.0/Discover Piano/BBCSO_Discover_Piano_Piano.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_1_long",
+      "displayName": "Violin I Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin I",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_1_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_b___Violins_1___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_1_spiccato",
+      "displayName": "Violin I Spiccato",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin I",
+      "technique": "Spiccato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_1_spiccato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_b___Violins_1___Short_Spiccato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_2_long",
+      "displayName": "Violin II Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin II",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_2_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_d___Violins_2___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_2_spiccato",
+      "displayName": "Violin II Spiccato",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin II",
+      "technique": "Spiccato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_2_spiccato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_d___Violins_2___Short_Spiccato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_viola_long",
+      "displayName": "Viola Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Viola",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/viola_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_f___Violas___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_viola_spiccato",
+      "displayName": "Viola Spiccato",
+      "plugin": "bbcso_discover",
+      "instrument": "Viola",
+      "technique": "Spiccato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/viola_spiccato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_f___Violas___Short_Spiccato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_cello_long",
+      "displayName": "Cello Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Cello",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/cello_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_h___Celli___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_cello_spiccato",
+      "displayName": "Cello Spiccato",
+      "plugin": "bbcso_discover",
+      "instrument": "Cello",
+      "technique": "Spiccato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/cello_spiccato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_h___Celli___Short_Spiccato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bass_long",
+      "displayName": "Bass Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Bass",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bass_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_j___Basses___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bass_spiccato",
+      "displayName": "Bass Spiccato",
+      "plugin": "bbcso_discover",
+      "instrument": "Bass",
+      "technique": "Spiccato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bass_spiccato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_j___Basses___Short_Spiccato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_1_pizzicato",
+      "displayName": "Violin I Pizzicato",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin I",
+      "technique": "Pizzicato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_1_pizzicato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_b___Violins_1___Short_Pizzicato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_1_tremolo",
+      "displayName": "Violin I Tremolo",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin I",
+      "technique": "Tremolo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_1_tremolo.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_b___Violins_1___Tremolo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_2_pizzicato",
+      "displayName": "Violin II Pizzicato",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin II",
+      "technique": "Pizzicato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_2_pizzicato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_d___Violins_2___Short_Pizzicato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_violin_2_tremolo",
+      "displayName": "Violin II Tremolo",
+      "plugin": "bbcso_discover",
+      "instrument": "Violin II",
+      "technique": "Tremolo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/violin_2_tremolo.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_d___Violins_2___Tremolo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_viola_pizzicato",
+      "displayName": "Viola Pizzicato",
+      "plugin": "bbcso_discover",
+      "instrument": "Viola",
+      "technique": "Pizzicato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/viola_pizzicato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_f___Violas___Short_Pizzicato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_viola_tremolo",
+      "displayName": "Viola Tremolo",
+      "plugin": "bbcso_discover",
+      "instrument": "Viola",
+      "technique": "Tremolo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/viola_tremolo.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_f___Violas___Tremolo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_cello_pizzicato",
+      "displayName": "Cello Pizzicato",
+      "plugin": "bbcso_discover",
+      "instrument": "Cello",
+      "technique": "Pizzicato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/cello_pizzicato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_h___Celli___Short_Pizzicato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_cello_tremolo",
+      "displayName": "Cello Tremolo",
+      "plugin": "bbcso_discover",
+      "instrument": "Cello",
+      "technique": "Tremolo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/cello_tremolo.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_h___Celli___Tremolo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bass_pizzicato",
+      "displayName": "Bass Pizzicato",
+      "plugin": "bbcso_discover",
+      "instrument": "Bass",
+      "technique": "Pizzicato",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bass_pizzicato.state",
+      "patchFile": "Patches/v1.5.0/Discover Strings/BBCSODi_j___Basses___Short_Pizzicato.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_piccolo_long",
+      "displayName": "Piccolo Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Piccolo",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/piccolo_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_c___Piccolo___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_piccolo_staccatissimo",
+      "displayName": "Piccolo Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Piccolo",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/piccolo_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_c___Piccolo___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_flute_long",
+      "displayName": "Flute Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Flute",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/flute_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_b___Flutes_a3___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_flute_staccatissimo",
+      "displayName": "Flute Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Flute",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/flute_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_b___Flutes_a3___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_oboe_long",
+      "displayName": "Oboe Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Oboe",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/oboe_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_e___Oboes_a3___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_oboe_staccatissimo",
+      "displayName": "Oboe Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Oboe",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/oboe_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_e___Oboes_a3___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_clarinet_long",
+      "displayName": "Clarinet Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Clarinet",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/clarinet_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_g___Clarinets_a3___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_clarinet_staccatissimo",
+      "displayName": "Clarinet Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Clarinet",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/clarinet_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_g___Clarinets_a3___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bassoon_long",
+      "displayName": "Bassoon Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Bassoon",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bassoon_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_i___Bassoons_a3___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bassoon_staccatissimo",
+      "displayName": "Bassoon Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Bassoon",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bassoon_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Woodwinds/BBCSODi_i___Bassoons_a3___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_horn_long",
+      "displayName": "Horn Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Horn",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/horn_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_b___Horns_a4___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_horn_staccatissimo",
+      "displayName": "Horn Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Horn",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/horn_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_b___Horns_a4___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_trumpet_long",
+      "displayName": "Trumpet Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Trumpet",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/trumpet_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_d___Trumpets_a2___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_trumpet_staccatissimo",
+      "displayName": "Trumpet Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Trumpet",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/trumpet_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_d___Trumpets_a2___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_tenor_trombone_long",
+      "displayName": "Tenor Trombone Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Tenor Trombone",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/tenor_trombone_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_f___Tenor_Trombones_a3___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_tenor_trombone_staccatissimo",
+      "displayName": "Tenor Trombone Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Tenor Trombone",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/tenor_trombone_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_f___Tenor_Trombones_a3___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bass_trombone_long",
+      "displayName": "Bass Trombone Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Bass Trombone",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bass_trombone_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_h___Bass_Trombones_a2___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_bass_trombone_staccatissimo",
+      "displayName": "Bass Trombone Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Bass Trombone",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/bass_trombone_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_h___Bass_Trombones_a2___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_tuba_long",
+      "displayName": "Tuba Long",
+      "plugin": "bbcso_discover",
+      "instrument": "Tuba",
+      "technique": "Long",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/tuba_long.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_i___Tuba___Long.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_tuba_staccatissimo",
+      "displayName": "Tuba Staccatissimo",
+      "plugin": "bbcso_discover",
+      "instrument": "Tuba",
+      "technique": "Staccatissimo",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/tuba_staccatissimo.state",
+      "patchFile": "Patches/v1.5.0/Discover Brass/BBCSODi_i___Tuba___Short_Staccatissimo.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_harp",
+      "displayName": "Harp",
+      "plugin": "bbcso_discover",
+      "instrument": "Harp",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/harp.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_c___Harp___Short_Sustained_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_celeste",
+      "displayName": "Celeste",
+      "plugin": "bbcso_discover",
+      "instrument": "Celeste",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/celeste.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_e___Celeste___Short_Sustained_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_timpani",
+      "displayName": "Timpani",
+      "plugin": "bbcso_discover",
+      "instrument": "Timpani",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/timpani.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_b___Timpani___Short_Hits_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_marimba",
+      "displayName": "Marimba",
+      "plugin": "bbcso_discover",
+      "instrument": "Marimba",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/marimba.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_d___Marimba___Short_Hits_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_xylophone",
+      "displayName": "Xylophone",
+      "plugin": "bbcso_discover",
+      "instrument": "Xylophone",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/xylophone.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_f___Xylophone___Short_Hits_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_glockenspiel",
+      "displayName": "Glockenspiel",
+      "plugin": "bbcso_discover",
+      "instrument": "Glockenspiel",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/glockenspiel.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_g___Glockenspiel___Short_Hits_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_tubular_bells",
+      "displayName": "Tubular Bells",
+      "plugin": "bbcso_discover",
+      "instrument": "Tubular Bells",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/tubular_bells.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_h___Tubular_bells___Short_Hits_Discover.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "bbcso_untuned_percussion",
+      "displayName": "Untuned Percussion",
+      "plugin": "bbcso_discover",
+      "instrument": "Untuned Percussion",
+      "technique": "",
+      "library": "BBC Symphony Orchestra Discover",
+      "stateFile": "bbcso/untuned_percussion.state",
+      "patchFile": "Patches/v1.5.0/Discover Percussion/BBCSODi_a___Untuned_Percussion___Hits.zmulti",
+      "stateVersion": 1
+    },
+    {
+      "id": "synchron_soft_imperial",
+      "displayName": "Soft Imperial",
+      "plugin": "synchron_player",
+      "instrument": "Soft Imperial",
+      "library": "Soft Imperial",
+      "stateFile": "synchron/soft_imperial.state",
+      "stateVersion": 1
+    },
+    {
+      "id": "synchron_celestial_strings",
+      "displayName": "Celestial Strings",
+      "plugin": "synchron_player",
+      "instrument": "Celestial Strings",
+      "library": "Celestial Strings",
+      "stateFile": "synchron/celestial_strings.state",
+      "stateVersion": 1
+    },
+    {
+      "id": "synchron_small_percussion",
+      "displayName": "Small Percussion",
+      "plugin": "synchron_player",
+      "instrument": "Small Percussion",
+      "library": "Small Percussion",
+      "stateFile": "synchron/small_percussion.state",
+      "stateVersion": 1
+    },
+    {
+      "id": "synchron_angelic_choir",
+      "displayName": "Angelic Choir",
+      "plugin": "synchron_player",
+      "instrument": "Angelic Choir",
+      "library": "Angelic Choir",
+      "stateFile": "synchron/angelic_choir.state",
+      "stateVersion": 1
+    }
+  ],
+  "techniques": [
+    {
+      "id": "bbcso_long",
+      "displayName": "Long",
+      "pluginId": "bbcso_discover",
+      "action": { "type": "PresetChange", "mapped": false }
+    },
+    {
+      "id": "bbcso_spiccato",
+      "displayName": "Spiccato",
+      "pluginId": "bbcso_discover",
+      "action": { "type": "PresetChange", "mapped": false }
+    },
+    {
+      "id": "bbcso_pizzicato",
+      "displayName": "Pizzicato",
+      "pluginId": "bbcso_discover",
+      "action": { "type": "PresetChange", "mapped": true }
+    },
+    {
+      "id": "bbcso_tremolo",
+      "displayName": "Tremolo",
+      "pluginId": "bbcso_discover",
+      "action": { "type": "PresetChange", "mapped": true }
+    },
+    {
+      "id": "bbcso_staccatissimo",
+      "displayName": "Staccatissimo",
+      "pluginId": "bbcso_discover",
+      "action": { "type": "PresetChange", "mapped": false }
+    }
+  ],
+  "controllers": [
+    {
+      "id": "dynamics",
+      "displayName": "Dynamics",
+      "group": "Performance",
+      "target": "midiCC",
+      "midiCC": 1,
+      "min": 0,
+      "max": 127,
+      "default": 100,
+      "bipolar": false,
+      "mapped": true
+    },
+    {
+      "id": "expression",
+      "displayName": "Expression",
+      "group": "Performance",
+      "target": "midiCC",
+      "midiCC": 11,
+      "min": 0,
+      "max": 127,
+      "default": 100,
+      "bipolar": false,
+      "mapped": true
+    },
+    {
+      "id": "velocity",
+      "displayName": "Velocity",
+      "group": "Performance",
+      "target": "noteVelocity",
+      "min": 1,
+      "max": 127,
+      "default": 100,
+      "bipolar": false,
+      "mapped": true
+    },
+    {
+      "id": "pedal",
+      "displayName": "Pedal",
+      "group": "Performance",
+      "target": "midiCC",
+      "midiCC": 64,
+      "min": 0,
+      "max": 127,
+      "default": 0,
+      "bipolar": false,
+      "mapped": true
+    },
+    {
+      "id": "vibrato",
+      "displayName": "Vibrato",
+      "group": "Sound",
+      "target": "unspecified",
+      "mapped": false
+    },
+    {
+      "id": "attack",
+      "displayName": "Attack",
+      "group": "Performance",
+      "target": "unspecified",
+      "mapped": false
+    },
+    {
+      "id": "release",
+      "displayName": "Release",
+      "group": "Performance",
+      "target": "unspecified",
+      "mapped": false
+    }
+  ],
+  "instruments": [
+    {
+      "id": "test_synth",
+      "displayName": "Test Synth",
+      "category": "Internal",
+      "sourcePlugin": "test_synth",
+      "sourceLibrary": "",
+      "preset": "",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["velocity"],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "piano_bbcso",
+      "displayName": "Piano",
+      "category": "Piano",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Piano",
+      "presetId": "bbcso_piano",
+      "presetMapped": true,
+      "aliases": ["bbcso piano", "concert piano", "discover piano", "piano"],
+      "description": "BBCSO Discover concert piano",
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity", "pedal"]
+    },
+    {
+      "id": "soft_imperial",
+      "displayName": "Soft Imperial",
+      "category": "Piano",
+      "sourcePlugin": "synchron_player",
+      "sourceLibrary": "soft_imperial",
+      "preset": "Soft Imperial",
+      "presetId": "synchron_soft_imperial",
+      "presetMapped": true,
+      "aliases": ["imperial", "vsl piano", "soft piano", "piano"],
+      "description": "Vienna Synchron Soft Imperial",
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity", "pedal"]
+    },
+    {
+      "id": "bbcso_violin_1",
+      "displayName": "Violin I",
+      "category": "Strings",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Violin 1",
+      "presetId": "bbcso_violin_1_long",
+      "presetMapped": true,
+      "aliases": ["violin", "violins", "vn1", "first violins", "string"],
+      "description": "BBCSO Discover first violins",
+      "techniquePresets": {
+        "bbcso_long": "bbcso_violin_1_long",
+        "bbcso_spiccato": "bbcso_violin_1_spiccato",
+        "bbcso_pizzicato": "bbcso_violin_1_pizzicato",
+        "bbcso_tremolo": "bbcso_violin_1_tremolo"
+      },
+      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_violin_2",
+      "displayName": "Violin II",
+      "category": "Strings",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Violin 2",
+      "presetId": "bbcso_violin_2_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_violin_2_long",
+        "bbcso_spiccato": "bbcso_violin_2_spiccato",
+        "bbcso_pizzicato": "bbcso_violin_2_pizzicato",
+        "bbcso_tremolo": "bbcso_violin_2_tremolo"
+      },
+      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_viola",
+      "displayName": "Viola",
+      "category": "Strings",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Violas",
+      "presetId": "bbcso_viola_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_viola_long",
+        "bbcso_spiccato": "bbcso_viola_spiccato",
+        "bbcso_pizzicato": "bbcso_viola_pizzicato",
+        "bbcso_tremolo": "bbcso_viola_tremolo"
+      },
+      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_cello",
+      "displayName": "Cello",
+      "category": "Strings",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Celli",
+      "presetId": "bbcso_cello_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_cello_long",
+        "bbcso_spiccato": "bbcso_cello_spiccato",
+        "bbcso_pizzicato": "bbcso_cello_pizzicato",
+        "bbcso_tremolo": "bbcso_cello_tremolo"
+      },
+      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_bass",
+      "displayName": "Bass",
+      "category": "Strings",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Basses",
+      "presetId": "bbcso_bass_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_bass_long",
+        "bbcso_spiccato": "bbcso_bass_spiccato",
+        "bbcso_pizzicato": "bbcso_bass_pizzicato"
+      },
+      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "celestial_strings",
+      "displayName": "Celestial Strings",
+      "category": "Strings",
+      "sourcePlugin": "synchron_player",
+      "sourceLibrary": "celestial_strings",
+      "preset": "Celestial Strings",
+      "presetId": "synchron_celestial_strings",
+      "presetMapped": true,
+      "aliases": ["celestial", "vsl strings", "string"],
+      "description": "Vienna Synchron Celestial Strings",
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity", "vibrato", "attack", "release"]
+    },
+    {
+      "id": "bbcso_piccolo",
+      "displayName": "Piccolo",
+      "category": "Woodwinds",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Piccolo",
+      "presetId": "bbcso_piccolo_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_piccolo_long",
+        "bbcso_staccatissimo": "bbcso_piccolo_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_flute",
+      "displayName": "Flute",
+      "category": "Woodwinds",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Flutes A3",
+      "presetId": "bbcso_flute_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_flute_long",
+        "bbcso_staccatissimo": "bbcso_flute_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_oboe",
+      "displayName": "Oboe",
+      "category": "Woodwinds",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Oboes A3",
+      "presetId": "bbcso_oboe_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_oboe_long",
+        "bbcso_staccatissimo": "bbcso_oboe_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_clarinet",
+      "displayName": "Clarinet",
+      "category": "Woodwinds",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Clarinets A3",
+      "presetId": "bbcso_clarinet_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_clarinet_long",
+        "bbcso_staccatissimo": "bbcso_clarinet_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_bassoon",
+      "displayName": "Bassoon",
+      "category": "Woodwinds",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Bassoons A3",
+      "presetId": "bbcso_bassoon_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_bassoon_long",
+        "bbcso_staccatissimo": "bbcso_bassoon_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_horn",
+      "displayName": "Horn",
+      "category": "Brass",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Horns A4",
+      "presetId": "bbcso_horn_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_horn_long",
+        "bbcso_staccatissimo": "bbcso_horn_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_trumpet",
+      "displayName": "Trumpet",
+      "category": "Brass",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Trumpets A2",
+      "presetId": "bbcso_trumpet_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_trumpet_long",
+        "bbcso_staccatissimo": "bbcso_trumpet_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_tenor_trombone",
+      "displayName": "Tenor Trombone",
+      "category": "Brass",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Tenor Trombones A3",
+      "presetId": "bbcso_tenor_trombone_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_tenor_trombone_long",
+        "bbcso_staccatissimo": "bbcso_tenor_trombone_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_bass_trombone",
+      "displayName": "Bass Trombone",
+      "category": "Brass",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Bass Trombones A2",
+      "presetId": "bbcso_bass_trombone_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_bass_trombone_long",
+        "bbcso_staccatissimo": "bbcso_bass_trombone_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_tuba",
+      "displayName": "Tuba",
+      "category": "Brass",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Tuba",
+      "presetId": "bbcso_tuba_long",
+      "presetMapped": true,
+      "techniquePresets": {
+        "bbcso_long": "bbcso_tuba_long",
+        "bbcso_staccatissimo": "bbcso_tuba_staccatissimo"
+      },
+      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_harp",
+      "displayName": "Harp",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Harp",
+      "presetId": "bbcso_harp",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_celeste",
+      "displayName": "Celeste",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Celeste",
+      "presetId": "bbcso_celeste",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_timpani",
+      "displayName": "Timpani",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Timpani",
+      "presetId": "bbcso_timpani",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_marimba",
+      "displayName": "Marimba",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Marimba",
+      "presetId": "bbcso_marimba",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_xylophone",
+      "displayName": "Xylophone",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Xylophone",
+      "presetId": "bbcso_xylophone",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_glockenspiel",
+      "displayName": "Glockenspiel",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Glockenspiel",
+      "presetId": "bbcso_glockenspiel",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_tubular_bells",
+      "displayName": "Tubular Bells",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Tubular Bells",
+      "presetId": "bbcso_tubular_bells",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "bbcso_untuned_percussion",
+      "displayName": "Untuned Percussion",
+      "category": "Percussion",
+      "sourcePlugin": "bbcso_discover",
+      "sourceLibrary": "bbcso_discover_lib",
+      "preset": "Untuned Percussion",
+      "presetId": "bbcso_untuned_percussion",
+      "presetMapped": true,
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "small_percussion",
+      "displayName": "Small Percussion",
+      "category": "Percussion",
+      "sourcePlugin": "synchron_player",
+      "sourceLibrary": "small_percussion",
+      "preset": "Small Percussion",
+      "presetId": "synchron_small_percussion",
+      "presetMapped": true,
+      "aliases": ["percussion", "vsl percussion", "toys"],
+      "description": "Vienna Synchron Small Percussion",
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity"]
+    },
+    {
+      "id": "angelic_choir",
+      "displayName": "Angelic Choir",
+      "category": "Choir",
+      "sourcePlugin": "synchron_player",
+      "sourceLibrary": "angelic_choir",
+      "preset": "Angelic Choir",
+      "presetId": "synchron_angelic_choir",
+      "presetMapped": true,
+      "aliases": ["choir", "chorus", "voices", "vsl choir"],
+      "description": "Vienna Synchron Angelic Choir",
+      "techniques": [],
+      "controllers": ["dynamics", "expression", "velocity", "vibrato"]
+    }
+  ]
+}

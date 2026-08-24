@@ -2,11 +2,13 @@
 
 #include "InstrumentRegistry.h"
 #include "PluginInstance.h"
+#include <atomic>
+#include <functional>
+#include <map>
+#include <memory>
 
-/*  Creates instrument instances from stable instrument ids.  This is the single place
-    that will ever know how to load a VST3, which keeps the "only two approved
-    instruments" rule enforceable: the UI cannot ask for anything that is not in the
-    registry, and there is no browse-for-a-plugin entry point anywhere.
+/*  Creates instrument instances from stable plugin ids.  External hosting is limited
+    to bbcso_discover and synchron_player.  There is no plugin scanner.
 */
 class PluginHost
 {
@@ -16,27 +18,51 @@ public:
 
     InstrumentRegistry& getRegistry() noexcept { return registry; }
 
-    /** Creates a prepared instance, or nullptr with a reason in `errorMessage`.
-        Called on the message thread only - it may allocate and touch the file system.
-    */
+    using CreateCallback = std::function<void (std::unique_ptr<PluginInstance>, const juce::String&)>;
+
     std::unique_ptr<PluginInstance> createInstance (const juce::String& instrumentId,
                                                    double sampleRate,
                                                    int maximumBlockSize,
                                                    juce::String& errorMessage);
 
-    /** Falls back to the built-in synth so a track is never left silent. */
+    /** VST3 creation must not run on a blocked message thread.  The callback arrives
+        on the message thread after the plugin has been built in the background.
+    */
+    void createInstanceAsync (const juce::String& instrumentId,
+                              double sampleRate,
+                              int maximumBlockSize,
+                              CreateCallback callback);
+
     std::unique_ptr<PluginInstance> createInstanceOrFallback (const juce::String& instrumentId,
                                                              double sampleRate,
                                                              int maximumBlockSize,
                                                              juce::String& errorMessage);
+
+    /** File paths only.  Does not LoadLibrary the VST3s. */
+    juce::String describeApprovedPlugins();
+
+    /** Opens the VST3 modules to read name/version.  Can stall for minutes under a debugger. */
+    juce::String inspectApprovedPlugins();
 
 private:
     std::unique_ptr<PluginInstance> createExternalInstance (const PluginDescriptor& descriptor,
                                                            double sampleRate,
                                                            int maximumBlockSize,
                                                            juce::String& errorMessage);
+    bool resolveDescription (const PluginDescriptor& descriptor,
+                             juce::PluginDescription& description,
+                             juce::String& errorMessage);
+
+    bool resolveDescriptionFromPaths (const juce::StringArray& paths,
+                                      const juce::String& displayName,
+                                      juce::PluginDescription& description,
+                                      juce::String& errorMessage);
 
     InstrumentRegistry& registry;
+    juce::AudioPluginFormatManager formatManager;
+    juce::CriticalSection cacheLock;
+    std::map<juce::String, juce::PluginDescription> descriptionCache;
+    std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>> (true) };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (PluginHost)
 };

@@ -4,6 +4,12 @@
 #include "../Model/Project.h"
 #include "../Plugins/InstrumentRegistry.h"
 #include "../Plugins/PluginHost.h"
+#include "../Plugins/PluginStateStore.h"
+#include <array>
+#include <atomic>
+#include <functional>
+#include <map>
+#include <memory>
 
 /*  The application core: the project, the plugin host and the audio engine, plus the one
     API that drives them.  Nothing here includes a JUCE component header, so this object
@@ -31,10 +37,17 @@ public:
         projectChanged   = 1 << 6
     };
 
-    /** Called when something other than the local UI changed the project, e.g. a remote
-        command. The desktop shell hooks this up to its own repaint notification.
-    */
-    std::function<void (int)> onChange;
+    struct Listener
+    {
+        virtual ~Listener() = default;
+        virtual void onEngineChanged (int changeFlags) = 0;
+    };
+
+    void addListener (Listener* l)       { engineListeners.add (l); }
+    void removeListener (Listener* l)    { engineListeners.remove (l); }
+
+    /** Broadcasts a model change to every listener (native views and the web gateway). */
+    void notify (int changeFlags);
 
     //==============================================================================
     /** Opens the audio device.  Returns an empty string on success, otherwise a message
@@ -84,6 +97,41 @@ public:
     void allNotesOff();
 
     //==============================================================================
+    // Instrument system.  Each MIDI track keeps its own hosted VST3 so the
+    // arrangement can play every assigned timbre at once.  Loading never happens
+    // on the audio thread.  The UI talks in InstrumentDefinition ids, not file paths.
+    struct InstrumentLoadOptions
+    {
+        bool async = true;
+        bool applyDefinitionFields = true;
+        bool requireCapturedState = true;
+    };
+
+    void loadTrackInstrument (int trackIndex, const juce::String& definitionId, bool async = true);
+    void loadTrackInstrument (int trackIndex, const juce::String& definitionId, const InstrumentLoadOptions& options);
+    void unloadTrackInstrument (int trackIndex, const juce::String& reason = {});
+    void clearAllHostedInstruments();
+    bool setTrackTechnique (int trackIndex, const juce::String& techniqueId);
+    bool setTrackController (int trackIndex, const juce::String& controllerId, float normalised);
+    bool setTrackLegato (int trackIndex, bool enabled);
+    bool capturePresetState (const juce::String& presetId);
+    bool preparePluginForCapture (int trackIndex, const juce::String& pluginId,
+                                  std::function<void (bool)> onComplete = {});
+    juce::String dumpDefaultPluginStates();
+    void playValidationPhrase (int trackIndex, int velocity = 80, bool blocking = false);
+    juce::String describeDefinitionAvailability (const InstrumentDefinition& definition, int trackIndex) const;
+    void verifyFreshRestore (int trackIndex, const juce::String& presetId,
+                             std::function<void (bool)> onComplete);
+    bool saveProjectToFile (const juce::File& file);
+    juce::String loadProjectFromFile (const juce::File& file);
+    PluginStateStore& getStateStore() noexcept { return stateStore; }
+    juce::var describeCatalogue() const;
+    juce::var describeInstrumentCapabilities (const juce::String& definitionId) const;
+    juce::var describeInstrumentState (int trackIndex) const;
+    juce::var describeInstrumentControls (int trackIndex) const;
+    float getTrackController (int trackIndex, const juce::String& controllerId) const;
+
+    //==============================================================================
     // Remote command surface.  The desktop UI does not use these, but they are the
     // contract the future browser front end will speak.
     juce::var handleMessage (const juce::var& message);
@@ -92,19 +140,70 @@ public:
     /** Full project state as JSON, for a client that has just connected. */
     juce::var describeProject() const;
 
+    /** Playhead, meters and engine status, cheap enough to push several times a second. */
+    juce::var describeClock() const;
+
+    /** One MIDI track and a short sketch clip, so a fresh web session has something to play. */
+    void ensureStarterContent();
+
+    double getLoopStartBeats() const noexcept { return loopStartBeats; }
+    double getLoopEndBeats() const noexcept   { return loopEndBeats; }
+
 private:
     juce::var makeError (const juce::String& reason) const;
     juce::var makeOk (juce::DynamicObject* payload = nullptr) const;
-    void notify (int changeFlags);
 
     InstrumentRegistry instruments;
     PluginHost pluginHost { instruments };
+    PluginStateStore stateStore { instruments.getLoadedConfigFile() };
     Project project;
     AudioEngine engine { pluginHost };
+    juce::ListenerList<Listener> engineListeners;
+
+    void applyTrackDefinitionFields (TrackData& track, const InstrumentDefinition& definition);
+    void completeInstrumentLoad (int trackIndex, const juce::String& definitionId, int generation,
+                                 bool requireCapturedState, bool deferReady);
+    void finishInstrumentLoad (int trackIndex, const juce::String& definitionId, int generation,
+                               std::unique_ptr<PluginInstance> created, PluginInstance* existing,
+                               bool requireCapturedState, bool deferReady);
+    void evictHostedIfNeeded (int keepTrackIndex);
+    int beginTrackLoad (int trackIndex);
+    bool isCurrentLoad (int trackIndex, int generation) const noexcept;
+    void cancelTrackLoad (int trackIndex);
+    void cancelAllLoads();
+    int countHostedInstances() const;
+    void ensureAssignedInstrumentsLoaded (bool async);
+    bool applyTechniqueAction (int trackIndex, const TechniqueDefinition& technique);
+    bool applyControllerDefinition (int trackIndex, const ControllerDefinition& controller, float normalised);
+    bool restorePresetToInstance (PluginInstance& instance, TrackData& track, juce::StringArray& notes,
+                                  bool requireCapturedState);
+    void markReadyWhenSettled (int trackIndex, const juce::String& definitionId, int generation,
+                               const juce::StringArray& notes, int delayMs);
+    void refreshPresetAvailability();
+    void finishReady (TrackData& track, const juce::StringArray& notes);
+    void finishProjectLoad();
+    void logSection (const juce::String& section, const juce::String& message) const;
+    void collectUnusedInstrumentsLater();
+    void failInstrumentLoad (int trackIndex, InstrumentLoadState state, const juce::String& message);
+    bool pluginStateMatchesDifferentFactory (const TrackData& track, const juce::MemoryBlock& state) const;
+    bool hasRestorableFactoryState (const TrackData& track) const;
+    void snapshotTrackPluginStates();
+    void logAudioResult (int trackIndex);
+    void ensureTrackInstrumentLoaded (int trackIndex, bool async = true);
+    void cancelScheduledNoteOff (int trackIndex, int pitch);
+    void flushScheduledNoteOffs (int trackIndex, bool sendNow);
+    static juce::uint64 noteOffKey (int trackIndex, int pitch) noexcept;
 
     bool sequenceDirty = true;
     bool mixerDirty = true;
     bool tempoDirty = true;
+    int loadEpoch = 0;
+    std::array<int, AudioEngine::maxTracks> trackLoadGeneration {};
+    std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>> (true) };
+    std::map<juce::uint64, juce::uint32> scheduledNoteOffs;
+    juce::uint32 noteOffGeneration = 0;
+    double loopStartBeats = 0.0;
+    double loopEndBeats = 32.0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EngineAPI)
 };

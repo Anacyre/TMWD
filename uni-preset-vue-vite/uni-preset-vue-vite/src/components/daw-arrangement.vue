@@ -62,16 +62,29 @@
           v-for="(track, t) in session.tracks"
           :key="'t'+track.id"
           class="lane"
-          :style="{ top: (t * TRACK_HEIGHT) + 'px', height: TRACK_HEIGHT + 'px' }"
+          :style="{ top: (t * session.trackHeight) + 'px', height: session.trackHeight + 'px' }"
         />
         <view
           v-for="clip in session.clips"
           :key="clip.id"
           class="clip"
+          :class="{ on: session.clips[session.selectedClip] && session.clips[session.selectedClip].id === clip.id }"
           :style="clipStyle(clip)"
           @mousedown.stop="startDragClip(clip, $event)"
+          @dblclick.stop="openClip(clip)"
+          @contextmenu.prevent="openClipMenu(clip, $event)"
         >
-          <text>{{ clip.name }}</text>
+          <text class="clip-name">{{ clip.name }}</text>
+          <view class="handle left" @mousedown.stop="startResize(clip, 'left', $event)" />
+          <view class="handle right" @mousedown.stop="startResize(clip, 'right', $event)" />
+          <view v-if="clip.midi && clip.notes && clip.notes.length" class="notes">
+            <view
+              v-for="note in notePreview(clip)"
+              :key="note.id"
+              class="mini-note"
+              :style="miniNoteStyle(clip, note)"
+            />
+          </view>
         </view>
         <view v-if="!session.clips.length" class="hint">
           <text class="hint-title">Drag Media Files Here</text>
@@ -82,7 +95,12 @@
           class="ghost"
           :style="ghost"
         />
-        <view class="playhead" :style="{ left: playX + 'px' }" />
+        <view v-if="session.openMenu === 'clip-menu'" class="clip-menu" :style="clipMenuStyle" @click.stop>
+          <view class="drop-item" @click="openSelectedClip">Open Piano Roll</view>
+          <view class="drop-item" @click="dupSelected">Duplicate</view>
+          <view class="drop-item" @click="loopToSelected">Set Loop to Clip</view>
+          <view class="drop-item" @click="deleteSelected">Delete</view>
+        </view>
       </view>
     </scroll-view>
   </view>
@@ -93,13 +111,23 @@ import { computed, ref } from 'vue'
 import DawIcon from './daw-icon.vue'
 import {
   session,
-  TRACK_HEIGHT,
   snapBeat,
   setPositionBeats,
   setPixelsPerBeat,
   toggleSnap,
   addClipFromFile,
-  isSupportedFile
+  addMidiClip,
+  isSupportedFile,
+  moveClip,
+  resizeClip,
+  deleteClip,
+  duplicateClip,
+  setLoopRange,
+  selectClip,
+  selectTrack,
+  setEditorTab,
+  isTrackAudible,
+  closeMenus
 } from '../store/session.js'
 
 defineProps({
@@ -113,6 +141,8 @@ const draggingClip = ref(-1)
 const dragStartBeat = ref(0)
 const dragStartX = ref(0)
 const ghost = ref(null)
+const clipMenuStyle = ref({ left: '0px', top: '0px' })
+const menuClipId = ref(-1)
 
 const contentBeats = computed(() => {
   let maxBeat = 64
@@ -125,7 +155,7 @@ const contentBeats = computed(() => {
 
 const canvasStyle = computed(() => ({
   width: Math.ceil(contentBeats.value * session.pixelsPerBeat) + 'px',
-  height: Math.max(session.tracks.length * TRACK_HEIGHT, 400) + 'px'
+  height: Math.max(session.tracks.length * session.trackHeight, 400) + 'px'
 }))
 
 const bars = computed(() => {
@@ -145,23 +175,122 @@ const loopFillStyle = computed(() => ({
 }))
 
 function clipStyle (clip) {
+  const audible = isTrackAudible(clip.trackIndex)
   return {
     left: clip.startBeat * session.pixelsPerBeat + 'px',
-    top: clip.trackIndex * TRACK_HEIGHT + 6 + 'px',
+    top: clip.trackIndex * session.trackHeight + 6 + 'px',
     width: clip.lengthBeats * session.pixelsPerBeat + 'px',
-    height: TRACK_HEIGHT - 12 + 'px',
-    background: clip.colour
+    height: session.trackHeight - 12 + 'px',
+    background: clip.colour,
+    opacity: audible ? 1 : 0.45
   }
+}
+
+function notePreview (clip) {
+  return (clip.notes || []).slice(0, 64)
+}
+
+function miniNoteStyle (clip, note) {
+  const notes = clip.notes || []
+  const pitches = notes.map((item) => item.pitch)
+  const lo = Math.min.apply(null, pitches)
+  const hi = Math.max.apply(null, pitches)
+  const span = Math.max(1, hi - lo)
+  const bodyH = session.trackHeight - 26
+  return {
+    left: (note.start / Math.max(0.01, clip.lengthBeats) * 100) + '%',
+    width: (note.duration / Math.max(0.01, clip.lengthBeats) * 100) + '%',
+    bottom: ((note.pitch - lo) / span * (bodyH - 3)) + 'px',
+    height: '3px'
+  }
+}
+
+function openClip (clip) {
+  const index = session.clips.findIndex((item) => item.id === clip.id)
+  selectClip(index)
+  setEditorTab('piano')
+}
+
+function openClipMenu (clip, e) {
+  const index = session.clips.findIndex((item) => item.id === clip.id)
+  selectClip(index)
+  menuClipId.value = clip.id
+  const canvas = (e.currentTarget && e.currentTarget.closest && e.currentTarget.closest('.canvas')) || e.currentTarget
+  const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { left: 0, top: 0 }
+  clipMenuStyle.value = { left: (e.clientX - rect.left) + 'px', top: (e.clientY - rect.top) + 'px' }
+  session.openMenu = 'clip-menu'
+}
+
+function menuClip () {
+  return session.clips.find((item) => item.id === menuClipId.value)
+}
+
+function openSelectedClip () {
+  const clip = menuClip()
+  closeMenus()
+  if (clip) openClip(clip)
+}
+
+function dupSelected () {
+  const clip = menuClip()
+  closeMenus()
+  duplicateClip(clip)
+}
+
+function deleteSelected () {
+  const clip = menuClip()
+  closeMenus()
+  deleteClip(clip)
+}
+
+function loopToSelected () {
+  const clip = menuClip()
+  closeMenus()
+  if (clip) setLoopRange(clip.startBeat, clip.startBeat + clip.lengthBeats)
+}
+
+function startResize (clip, edge, e) {
+  const origStart = clip.startBeat
+  const origLength = clip.lengthBeats
+  const startX = e.clientX
+  const move = (ev) => {
+    const delta = (ev.clientX - startX) / session.pixelsPerBeat
+    if (edge === 'left') {
+      const nextStart = snapBeat(origStart + delta)
+      const nextLength = origLength + (origStart - nextStart)
+      if (nextLength >= 0.25) {
+        clip.startBeat = Math.max(0, nextStart)
+        clip.lengthBeats = nextLength
+      }
+    } else {
+      clip.lengthBeats = Math.max(0.25, snapBeat(origLength + delta) || origLength + delta)
+    }
+  }
+  const up = () => {
+    resizeClip(clip, clip.startBeat, clip.lengthBeats)
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', up)
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', up)
 }
 
 function onRulerDown (e) {
   const rect = e.currentTarget.getBoundingClientRect()
-  const x = e.clientX - rect.left + scrollX.value
-  setPositionBeats(snapBeat(x / session.pixelsPerBeat))
-  const move = (ev) => {
-    const nx = ev.clientX - rect.left + scrollX.value
-    setPositionBeats(snapBeat(nx / session.pixelsPerBeat))
+  const beatAt = (clientX) => snapBeat((clientX - rect.left + scrollX.value) / session.pixelsPerBeat)
+  if (e.altKey) {
+    const start = beatAt(e.clientX)
+    const move = (ev) => setLoopRange(start, beatAt(ev.clientX))
+    const up = () => {
+      window.removeEventListener('mousemove', move)
+      window.removeEventListener('mouseup', up)
+    }
+    window.addEventListener('mousemove', move)
+    window.addEventListener('mouseup', up)
+    return
   }
+  setPositionBeats(beatAt(e.clientX))
+  const move = (ev) => setPositionBeats(beatAt(ev.clientX))
   const up = () => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
@@ -175,10 +304,16 @@ function onCanvasDown (e) {
   const canvas = e.currentTarget
   const rect = canvas.getBoundingClientRect()
   const x = e.clientX - rect.left + (canvas.scrollLeft || scrollX.value)
+  const y = e.clientY - rect.top
   setPositionBeats(snapBeat(x / session.pixelsPerBeat))
+  const track = Math.min(session.tracks.length - 1, Math.max(0, Math.floor(y / session.trackHeight)))
+  selectTrack(track)
+  if (e.detail === 2 && track > 0) addMidiClip(track, snapBeat(x / session.pixelsPerBeat))
 }
 
 function startDragClip (clip, e) {
+  const index = session.clips.findIndex((item) => item.id === clip.id)
+  selectClip(index)
   draggingClip.value = clip.id
   dragStartBeat.value = clip.startBeat
   dragStartX.value = e.clientX
@@ -188,11 +323,13 @@ function startDragClip (clip, e) {
     const found = session.clips.find((c) => c.id === clip.id)
     if (!found) return
     found.startBeat = snapBeat(dragStartBeat.value + (ev.clientX - dragStartX.value) / session.pixelsPerBeat)
-    const track = Math.min(session.tracks.length - 1, Math.max(1, startTrack + Math.round((ev.clientY - startY) / TRACK_HEIGHT)))
+    const track = Math.min(session.tracks.length - 1, Math.max(1, startTrack + Math.round((ev.clientY - startY) / session.trackHeight)))
     if (session.tracks[track] && session.tracks[track].type !== 'master') found.trackIndex = track
   }
   const up = () => {
     draggingClip.value = -1
+    const found = session.clips.find((c) => c.id === clip.id)
+    if (found) moveClip(found, found.startBeat, found.trackIndex)
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
   }
@@ -220,12 +357,12 @@ function onDragOver (e) {
   const x = e.clientX - rect.left + scrollX.value
   const y = e.clientY - rect.top + ((e.currentTarget.scrollTop) || 0)
   const beat = snapBeat(x / session.pixelsPerBeat)
-  const track = Math.min(session.tracks.length - 1, Math.max(0, Math.floor(y / TRACK_HEIGHT)))
+  const track = Math.min(session.tracks.length - 1, Math.max(0, Math.floor(y / session.trackHeight)))
   ghost.value = {
     left: beat * session.pixelsPerBeat + 'px',
-    top: track * TRACK_HEIGHT + 6 + 'px',
+    top: track * session.trackHeight + 6 + 'px',
     width: 4 * session.pixelsPerBeat + 'px',
-    height: TRACK_HEIGHT - 12 + 'px'
+    height: session.trackHeight - 12 + 'px'
   }
 }
 
@@ -243,7 +380,7 @@ function onDrop (e) {
   const x = e.clientX - rect.left + scrollX.value
   const y = e.clientY - rect.top + (e.currentTarget.scrollTop || 0)
   const beat = snapBeat(x / session.pixelsPerBeat)
-  let track = Math.min(session.tracks.length - 1, Math.max(0, Math.floor(y / TRACK_HEIGHT)))
+  let track = Math.min(session.tracks.length - 1, Math.max(0, Math.floor(y / session.trackHeight)))
   files.forEach((file) => {
     if (isSupportedFile(file.name)) addClipFromFile(file, track, beat)
   })
@@ -349,15 +486,53 @@ function onDrop (e) {
 .clip {
   position: absolute;
   border-radius: 4px;
-  display: flex;
-  align-items: center;
-  padding: 0 8px;
   color: #fff;
   font-size: 12px;
   cursor: grab;
   box-shadow: inset 0 0 0 1px rgba(255,255,255,0.16);
   overflow: hidden;
   white-space: nowrap;
+}
+.clip.on { box-shadow: inset 0 0 0 1.6px #fff; }
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+  z-index: 3;
+}
+.handle.left { left: 0; }
+.handle.right { right: 0; }
+.clip-menu {
+  position: absolute;
+  min-width: 160px;
+  background: #242424;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 6px 0;
+  z-index: 20;
+}
+.drop-item { padding: 6px 12px; color: #e6e6e6; font-size: 12px; cursor: pointer; }
+.drop-item:hover { background: #3a3a3a; }
+.clip-name {
+  position: absolute;
+  left: 6px;
+  top: 1px;
+  font-size: 10.5px;
+  z-index: 1;
+}
+.notes {
+  position: absolute;
+  left: 2px;
+  right: 2px;
+  top: 14px;
+  bottom: 2px;
+}
+.mini-note {
+  position: absolute;
+  background: rgba(255,255,255,0.7);
+  border-radius: 1px;
 }
 .hint {
   position: absolute;

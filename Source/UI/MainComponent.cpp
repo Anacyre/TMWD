@@ -2,11 +2,21 @@
 
 MainComponent::MainComponent()
 {
+    buildUi();
+}
+
+MainComponent::MainComponent (EngineAPI& engineToShare)
+    : session (engineToShare)
+{
+    buildUi();
+}
+
+void MainComponent::buildUi()
+{
     juce::LookAndFeel::setDefaultLookAndFeel (&lookAndFeel);
 
     setOpaque (true);
     setWantsKeyboardFocus (true);
-    setSize (1560, 920);
 
     session.addListener (this);
 
@@ -15,6 +25,17 @@ MainComponent::MainComponent()
     {
         if (auto* app = juce::JUCEApplication::getInstance())
             app->systemRequestedQuit();
+    };
+    topBar.onCaptureState = [this]
+    {
+        if (captureWindow != nullptr)
+        {
+            captureWindow->toFront (true);
+            return;
+        }
+
+        captureWindow = std::make_unique<StateCaptureWindow> (session);
+        captureWindow->onClose = [this] { captureWindow.reset(); };
     };
     addAndMakeVisible (topBar);
     addAndMakeVisible (transportBar);
@@ -61,10 +82,13 @@ MainComponent::MainComponent()
     };
     addChildComponent (mixerSplitter);
 
+    setSize (1560, 920);
 }
 
 MainComponent::~MainComponent()
 {
+    captureWindow.reset();
+
     if (keyListenerHost != nullptr)
         keyListenerHost->removeKeyListener (this);
 
@@ -217,7 +241,8 @@ bool MainComponent::handleShortcut (const juce::KeyPress& key)
         {
             case 'Z': case 'z': session.undo(); return true;
             case 'Y': case 'y': session.redo(); return true;
-            case 'S': case 's': session.markSaved(); return true;
+            case 'S': case 's': topBar.commandSaveProject (key.getModifiers().isShiftDown()); return true;
+            case 'O': case 'o': topBar.commandOpenProject(); return true;
             case 'D': case 'd': session.duplicateClip (session.getSelectedClip()); return true;
             default: return false;
         }

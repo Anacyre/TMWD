@@ -185,8 +185,8 @@ public:
         rows[6]->setValue (juce::String (clipCount));
         rows[7]->setValue (juce::String (noteCount));
 
-        instrumentButton.setButtonText (track->instrumentSlot.isEmpty() ? "Empty slot"
-                                                                       : track->instrumentSlot.name);
+        instrumentButton.setButtonText (track->instrument.isNotEmpty() ? track->instrument
+                                                                       : juce::String ("Empty slot"));
 
         for (int i = 0; i < (int) insertButtons.size(); ++i)
         {
@@ -210,36 +210,10 @@ private:
         if (track == nullptr || track->isMaster())
             return;
 
-        juce::PopupMenu m;
-        const auto available = session.getAvailableInstruments();
-
-        for (int i = 0; i < available.size(); ++i)
-            m.addItem (i + 1, available[i], true, track->instrument == available[i]);
-
-        m.addSeparator();
-        m.addItem (99, "Remove Instrument", ! track->instrumentSlot.isEmpty());
-
-        m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&instrumentButton), [this] (int r)
-        {
-            auto* t = getTrack();
-
-            if (t == nullptr)
-                return;
-
-            if (r == 99)
-            {
-                session.clearInstrument (*t);
-            }
-            else
-            {
-                const auto available = session.getAvailableInstruments();
-
-                if (r >= 1 && r <= available.size())
-                    session.assignInstrument (*t, available[r - 1]);
-            }
-
-            session.notify (DawSession::tracksChanged | DawSession::mixerChanged);
-        });
+        if (track->instrumentDefinitionId.isNotEmpty())
+            session.showOrchestraSampler (session.getSelectedTrack());
+        else
+            session.showInstrumentSelector (&instrumentButton, session.getSelectedTrack());
     }
 
     void showInsertMenu (int slotIndex)
@@ -371,9 +345,14 @@ void EditorPanel::resized()
     closeButton.setBounds (header.removeFromRight (28).withSizeKeepingCentre (22, 22));
     contextLabel.setBounds (header.reduced (10, 0));
 
-    pianoRoll.setBounds (r);
-    automation.setBounds (r);
-    trackInfo->setBounds (r);
+    if (pianoRoll.isVisible())
+        pianoRoll.setBounds (r);
+
+    if (automation.isVisible())
+        automation.setBounds (r);
+
+    if (trackInfo != nullptr && trackInfo->isVisible())
+        trackInfo->setBounds (r);
 }
 
 void EditorPanel::updateVisibleView()
@@ -384,6 +363,7 @@ void EditorPanel::updateVisibleView()
     pianoRoll.setVisible (tab == DawSession::EditorTab::pianoRoll);
     automation.setVisible (tab == DawSession::EditorTab::automation);
     trackInfo->setVisible (tab == DawSession::EditorTab::trackInfo);
+    resized();
 
     const auto* track = session.getTrack (session.getSelectedTrack());
     const auto* clip = session.getClip (session.getSelectedClip());

@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "DawSession.h"
 #include "Icons.h"
+#include "InstrumentPanel.h"
 #include "Widgets.h"
 
 /** Right-hand panel describing the current track, clip and project. */
@@ -46,6 +47,7 @@ private:
 
     juce::Label trackNameLabel;
     juce::TextButton instrumentButton;
+    InstrumentPanel instrumentPanel { session };
 
     std::vector<std::unique_ptr<InfoRow>> ownedRows;
     Section trackSection { "Track" }, clipSection { "Clip" }, projectSection { "Project" };

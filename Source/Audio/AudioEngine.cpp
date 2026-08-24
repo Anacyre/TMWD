@@ -29,6 +29,7 @@ AudioEngine::~AudioEngine()
 bool AudioEngine::initialise()
 {
     // Two outputs, no inputs: this phase has nothing to record.
+    juce::Logger::writeToLog ("Audio device: opening default output...");
     lastError = deviceManager.initialiseWithDefaultDevices (0, masterChannels);
 
     if (lastError.isNotEmpty())
@@ -39,12 +40,31 @@ bool AudioEngine::initialise()
     }
 
     deviceManager.addAudioCallback (this);
+    audioCallbackAttached = true;
     return true;
+}
+
+void AudioEngine::detachAudioCallback()
+{
+    if (! audioCallbackAttached)
+        return;
+
+    deviceManager.removeAudioCallback (this);
+    audioCallbackAttached = false;
+}
+
+void AudioEngine::attachAudioCallback()
+{
+    if (audioCallbackAttached || deviceManager.getCurrentAudioDevice() == nullptr)
+        return;
+
+    deviceManager.addAudioCallback (this);
+    audioCallbackAttached = true;
 }
 
 void AudioEngine::shutdown()
 {
-    deviceManager.removeAudioCallback (this);
+    detachAudioCallback();
     deviceManager.closeAudioDevice();
     deviceRunning.store (false);
     collectRetiredSequences();
@@ -128,9 +148,34 @@ void AudioEngine::rebuildSequence (const Project& project)
                 continue;   // notes past the end of the clip are not heard
 
             const auto channel = note.channel > 0 ? note.channel : track->midiChannel;
+            auto end = juce::jmin (clipEnd, clipStart + note.getEndTick());
+
+            if (SoftwareLegato::isActive (*track))
+            {
+                end += SoftwareLegato::extraTicks();
+
+                for (const auto& otherClip : project.getClips())
+                {
+                    if (otherClip.trackIndex != clip.trackIndex || ! otherClip.midi)
+                        continue;
+
+                    const auto otherClipStart = otherClip.getStartTick();
+
+                    for (const auto& other : otherClip.notes)
+                    {
+                        if (other.pitch != note.pitch)
+                            continue;
+
+                        const auto otherStart = otherClipStart + other.getStartTick();
+
+                        if (otherStart > start && otherStart < end)
+                            end = otherStart;
+                    }
+                }
+            }
+
             sequence->addNote (clip.trackIndex, channel, note.pitch,
-                               note.getVelocityByte(), start,
-                               juce::jmin (clipEnd, clipStart + note.getEndTick()));
+                               note.getVelocityByte(), start, end);
         }
     }
 
@@ -198,10 +243,14 @@ void AudioEngine::ensureInstrument (int trackIndex, const juce::String& instrume
     if (existing != nullptr && existing->getInstrumentId() == wanted)
         return;
 
-    // The requested instrument may not be installed; the host falls back to the built-in
-    // synth so the track is still audible while the VST3 phase is outstanding.
+    // Hosted VST3s are loaded only through EngineAPI, so a mixer sync never instantiates
+    // every catalogue entry.  Built-in synths stay cheap to create here.
+    if (const auto* descriptor = pluginHost.getRegistry().find (wanted))
+        if (! descriptor->isBuiltIn())
+            return;
+
     juce::String error;
-    auto instance = pluginHost.createInstanceOrFallback (wanted, getSampleRate(), getBlockSize(), error);
+    auto instance = pluginHost.createInstance (wanted, getSampleRate(), getBlockSize(), error);
 
     if (instance == nullptr)
         return;
@@ -217,6 +266,11 @@ void AudioEngine::setTrackInstrument (int trackIndex, std::unique_ptr<PluginInst
     if (! juce::isPositiveAndBelow (trackIndex, maxTracks) || instance == nullptr)
         return;
 
+    const bool heavy = instance->isExternalPlugin() && audioCallbackAttached;
+
+    if (heavy)
+        detachAudioCallback();
+
     instance->prepare (getSampleRate(), getBlockSize());
 
     auto* raw = instance.get();
@@ -225,6 +279,52 @@ void AudioEngine::setTrackInstrument (int trackIndex, std::unique_ptr<PluginInst
     // audio thread can read the pointer without ever running a destructor in a callback.
     ownedInstruments.push_back (std::move (instance));
     nodes[(size_t) trackIndex].instrument.store (raw);
+    nodes[(size_t) trackIndex].active.store (true);
+
+    if (heavy)
+        attachAudioCallback();
+}
+
+void AudioEngine::clearTrackInstrument (int trackIndex)
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return;
+
+    nodes[(size_t) trackIndex].instrument.store (nullptr);
+    nodes[(size_t) trackIndex].active.store (false);
+}
+
+void AudioEngine::collectUnusedInstruments()
+{
+    ownedInstruments.erase (std::remove_if (ownedInstruments.begin(), ownedInstruments.end(),
+                                            [this] (const std::unique_ptr<PluginInstance>& instance)
+                                            {
+                                                if (instance == nullptr)
+                                                    return true;
+
+                                                for (const auto& node : nodes)
+                                                    if (node.instrument.load() == instance.get())
+                                                        return false;
+
+                                                return true;
+                                            }),
+                            ownedInstruments.end());
+}
+
+PluginInstance* AudioEngine::getTrackInstrument (int trackIndex) noexcept
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return nullptr;
+
+    return nodes[(size_t) trackIndex].instrument.load();
+}
+
+const PluginInstance* AudioEngine::getTrackInstrument (int trackIndex) const noexcept
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return nullptr;
+
+    return nodes[(size_t) trackIndex].instrument.load();
 }
 
 juce::String AudioEngine::getTrackInstrumentName (int trackIndex) const
@@ -290,6 +390,38 @@ void AudioEngine::sendController (int trackIndex, int controllerNumber, int valu
     queueMidi ({ trackIndex, (juce::uint8) (0xb0 | channel),
                  (juce::uint8) juce::jlimit (0, 127, controllerNumber),
                  (juce::uint8) juce::jlimit (0, 127, value) });
+}
+
+void AudioEngine::sendProgramChange (int trackIndex, int program)
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return;
+
+    const auto channel = (juce::uint8) (nodes[(size_t) trackIndex].midiChannel.load() - 1);
+    queueMidi ({ trackIndex, (juce::uint8) (0xc0 | channel),
+                 (juce::uint8) juce::jlimit (0, 127, program), 0 });
+}
+
+void AudioEngine::sendPitchBend (int trackIndex, int value14)
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return;
+
+    const auto channel = (juce::uint8) (nodes[(size_t) trackIndex].midiChannel.load() - 1);
+    const auto value = juce::jlimit (0, 16383, value14);
+    queueMidi ({ trackIndex, (juce::uint8) (0xe0 | channel),
+                 (juce::uint8) (value & 0x7f),
+                 (juce::uint8) ((value >> 7) & 0x7f) });
+}
+
+void AudioEngine::sendChannelPressure (int trackIndex, int pressure)
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return;
+
+    const auto channel = (juce::uint8) (nodes[(size_t) trackIndex].midiChannel.load() - 1);
+    queueMidi ({ trackIndex, (juce::uint8) (0xd0 | channel),
+                 (juce::uint8) juce::jlimit (0, 127, pressure), 0 });
 }
 
 void AudioEngine::allNotesOff()
@@ -398,7 +530,13 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const*,
 
     while (midiInputQueue.pop (event))
         if (juce::isPositiveAndBelow (event.trackIndex, numTracks))
-            trackMidi[(size_t) event.trackIndex].addEvent (juce::MidiMessage (event.status, event.data1, event.data2), 0);
+        {
+            const auto status = (juce::uint8) (event.status & 0xf0);
+            const auto message = (status == 0xc0 || status == 0xd0)
+                                     ? juce::MidiMessage (event.status, event.data1)
+                                     : juce::MidiMessage (event.status, event.data1, event.data2);
+            trackMidi[(size_t) event.trackIndex].addEvent (message, 0);
+        }
 
     Transport::Segment segments[Transport::maxSegmentsPerBlock];
     const auto numSegments = transport.prepareBlock (numSamples, segments);

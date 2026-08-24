@@ -15,19 +15,23 @@ class PluginInstance
 public:
     virtual ~PluginInstance() = default;
 
-    /** Stable key from the instrument registry, e.g. "test_synth". */
     virtual juce::String getInstrumentId() const = 0;
     virtual juce::String getDisplayName() const = 0;
 
-    /** True once this is backed by a real hosted plugin rather than a built-in. */
     virtual bool isExternalPlugin() const { return false; }
 
-    /** Called on the message thread before the instance is handed to the engine. */
     virtual void prepare (double sampleRate, int maximumBlockSize) = 0;
-
-    /** Renders `buffer` in place from `midi`.  Audio thread only. */
     virtual void process (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) = 0;
-
-    /** Silences any sounding voices.  Audio thread only. */
     virtual void reset() = 0;
+
+    /** Opaque plugin chunk.  Some VST state cannot be reconstructed from our UI. */
+    virtual juce::MemoryBlock saveState() const { return {}; }
+    virtual bool restoreState (const juce::MemoryBlock&) { return false; }
+
+    virtual juce::StringArray getProgramNames() const { return {}; }
+    virtual bool applyProgram (const juce::String&) { return false; }
+    virtual bool setParameterByName (const juce::String&, float) { return false; }
+    virtual juce::String getIntrospectionSummary() const { return {}; }
+    virtual juce::String getPluginVersion() const { return {}; }
+    virtual float consumeOutputPeak() { return 0.0f; }
 };

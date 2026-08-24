@@ -40,6 +40,11 @@ public:
     bool initialise();
     void shutdown();
 
+    /** Temporarily remove the audio callback so a VST3 can prepare or create its
+        editor without deadlocking against processBlock. */
+    void detachAudioCallback();
+    void attachAudioCallback();
+
     bool isRunning() const noexcept          { return deviceRunning.load(); }
     juce::String getLastError() const        { return lastError; }
     juce::String getStatusDescription() const;
@@ -59,9 +64,11 @@ public:
     double getPositionBeats() const          { return transport.getPositionBeats(); }
     void setBpm (double bpm)                 { transport.setBpm (bpm); }
     void setLooping (bool shouldLoop);
+    bool isLooping() const                   { return transport.isLooping(); }
     void setLoopRangeBeats (double startBeats, double endBeats);
     void setTimeSignature (int numerator, int denominator);
     void setMetronomeEnabled (bool enabled)  { metronomeEnabled.store (enabled); }
+    bool isMetronomeEnabled() const          { return metronomeEnabled.load(); }
 
     /** True once playback has run past the end of the material. */
     bool consumeReachedEnd()                 { return transport.consumeReachedEnd(); }
@@ -79,6 +86,9 @@ public:
     void sendNoteOn (int trackIndex, int pitch, float velocity);
     void sendNoteOff (int trackIndex, int pitch);
     void sendController (int trackIndex, int controllerNumber, int value);
+    void sendProgramChange (int trackIndex, int program);
+    void sendPitchBend (int trackIndex, int value14);
+    void sendChannelPressure (int trackIndex, int pressure);
     void allNotesOff();
 
     //==============================================================================
@@ -92,6 +102,11 @@ public:
         handed over lock-free, so this is already the path a hosted VST3 will take.
     */
     void setTrackInstrument (int trackIndex, std::unique_ptr<PluginInstance> instance);
+    void clearTrackInstrument (int trackIndex);
+    /** Message-thread only.  Drops instances no track still points at. */
+    void collectUnusedInstruments();
+    PluginInstance* getTrackInstrument (int trackIndex) noexcept;
+    const PluginInstance* getTrackInstrument (int trackIndex) const noexcept;
     juce::String getTrackInstrumentName (int trackIndex) const;
 
 private:
@@ -171,6 +186,7 @@ private:
 
     Click click;
     bool wasPlayingLastBlock = false;
+    bool audioCallbackAttached = false;
     juce::String lastError;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (AudioEngine)

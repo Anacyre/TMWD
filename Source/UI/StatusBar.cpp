@@ -74,6 +74,12 @@ void StatusBar::refresh()
     if (const auto* clip = session.getClip (session.getSelectedClip()))
         selection << "   -   " << clip->name << "  (" << (int) clip->notes.size() << " notes)";
 
+    if (const auto* track = session.getTrack (session.getSelectedTrack()))
+        if (track->instrumentLoadMessage.isNotEmpty()
+            && track->instrumentLoadState != InstrumentLoadState::Loaded
+            && track->instrumentLoadState != InstrumentLoadState::Active)
+            selection << "   -   " << track->instrumentLoadMessage;
+
     selectionLabel.setText (selection, juce::dontSendNotification);
 
     juce::String engine;

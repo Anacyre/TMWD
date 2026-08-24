@@ -1,0 +1,314 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Project DefaultTargets="Build"
+         ToolsVersion="17.0"
+         xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>17.0</VCProjectVersion>
+    <ProjectGuid>{E4CC511D-A2EF-2FA1-0AA2-B4A9324BBE5B}</ProjectGuid>
+    <Keyword>Win32Proj</Keyword>
+    <RootNamespace>DawWeb</RootNamespace>
+    <ProjectName>NewProject_App</ProjectName>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <WindowsPackageType>None</WindowsPackageType>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'"
+                 Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <WholeProgramOptimization>false</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'"
+                 Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseOfMfc>false</UseOfMfc>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <PlatformToolset>v143</PlatformToolset>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
+  <ImportGroup Label="ExtensionSettings"/>
+  <ImportGroup Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props"
+            Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')"
+            Label="LocalAppDataPlatform"/>
+  </ImportGroup>
+  <PropertyGroup>
+    <_ProjectFileVersion>10.0.30319.1</_ProjectFileVersion>
+    <TargetExt>.exe</TargetExt>
+    <JuceRoot>D:\Visual studio\juce-9.0.1-windows\JUCE</JuceRoot>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(SolutionDir)$(Platform)\$(Configuration)\App\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(Platform)\$(Configuration)\App\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NewProject</TargetName>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</GenerateManifest>
+    <PreBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PreBuildEventUseInBuild>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</PostBuildEventUseInBuild>
+    <OutDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(SolutionDir)$(Platform)\$(Configuration)\App\</OutDir>
+    <IntDir Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(Platform)\$(Configuration)\App\</IntDir>
+    <TargetName Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NewProject</TargetName>
+    <GenerateManifest Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</GenerateManifest>
+    <PreBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PreBuildEventUseInBuild>
+    <PostBuildEventUseInBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</PostBuildEventUseInBuild>
+    <LocalDebuggerCommand Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)NewProject.exe</LocalDebuggerCommand>
+    <LocalDebuggerWorkingDirectory Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">$(OutDir)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerDebuggerType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">NativeOnly</LocalDebuggerDebuggerType>
+    <DebuggerFlavor Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">WindowsLocalDebugger</DebuggerFlavor>
+    <LocalDebuggerCommand Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)NewProject.exe</LocalDebuggerCommand>
+    <LocalDebuggerWorkingDirectory Condition="'$(Configuration)|$(Platform)'=='Release|x64'">$(OutDir)</LocalDebuggerWorkingDirectory>
+    <LocalDebuggerDebuggerType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">NativeOnly</LocalDebuggerDebuggerType>
+    <DebuggerFlavor Condition="'$(Configuration)|$(Platform)'=='Release|x64'">WindowsLocalDebugger</DebuggerFlavor>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Midl>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TargetEnvironment>Win32</TargetEnvironment>
+      <HeaderFileName/>
+    </Midl>
+    <ClCompile>
+      <Optimization>Disabled</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AssemblerListingLocation>$(IntDir)\</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)\</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)\NewProject.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level4</WarningLevel>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <UseMultiToolTask>false</UseMultiToolTask>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/bigobj /utf-8 /MP2 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Link>
+      <OutputFile>$(OutDir)\NewProject.exe</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreSpecificDefaultLibraries>libcmt.lib; msvcrt.lib;;%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(IntDir)\NewProject.pdb</ProgramDatabaseFile>
+      <SubSystem>Windows</SubSystem>
+      <LargeAddressAware>true</LargeAddressAware>
+    </Link>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>$(IntDir)\NewProject.bsc</OutputFile>
+    </Bscmake>
+    <Lib/>
+    <PreBuildEvent>
+      <Command>taskkill /F /IM NewProject.exe /T 2&gt;nul
+exit /B 0</Command>
+      <Message>Stop previous DawWeb instance so the linker can overwrite NewProject.exe</Message>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>if not exist "$(OutDir)Resources" mkdir "$(OutDir)Resources"
+xcopy /Y /I "..\..\Source\Resources\instruments.json" "$(OutDir)Resources\" &gt;nul
+if not exist "$(OutDir)Resources\instruments" mkdir "$(OutDir)Resources\instruments"
+xcopy /E /Y /I "..\..\Source\Resources\instruments" "$(OutDir)Resources\instruments\" &gt;nul
+if not exist "$(OutDir)Resources\icons" mkdir "$(OutDir)Resources\icons"
+xcopy /Y /I "..\..\Source\Resources\icons\*.png" "$(OutDir)Resources\icons\" &gt;nul
+exit /B 0</Command>
+      <Message>Sync instrument catalogue and factory states to output Resources</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Midl>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <MkTypLibCompatible>true</MkTypLibCompatible>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <TargetEnvironment>Win32</TargetEnvironment>
+      <HeaderFileName/>
+    </Midl>
+    <ClCompile>
+      <Optimization>Full</Optimization>
+      <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
+      <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <RuntimeTypeInfo>true</RuntimeTypeInfo>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <AssemblerListingLocation>$(IntDir)\</AssemblerListingLocation>
+      <ObjectFileName>$(IntDir)\</ObjectFileName>
+      <ProgramDataBaseFileName>$(IntDir)\NewProject.pdb</ProgramDataBaseFileName>
+      <WarningLevel>Level4</WarningLevel>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <MultiProcessorCompilation>false</MultiProcessorCompilation>
+      <UseMultiToolTask>false</UseMultiToolTask>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <AdditionalOptions>/bigobj /utf-8 /MP2 %(AdditionalOptions)</AdditionalOptions>
+    </ClCompile>
+    <ResourceCompile>
+      <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ResourceCompile>
+    <Link>
+      <OutputFile>$(OutDir)\NewProject.exe</OutputFile>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <IgnoreSpecificDefaultLibraries>%(IgnoreSpecificDefaultLibraries)</IgnoreSpecificDefaultLibraries>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ProgramDatabaseFile>$(IntDir)\NewProject.pdb</ProgramDatabaseFile>
+      <SubSystem>Windows</SubSystem>
+      <OptimizeReferences>true</OptimizeReferences>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <LargeAddressAware>true</LargeAddressAware>
+      <LinkTimeCodeGeneration>UseLinkTimeCodeGeneration</LinkTimeCodeGeneration>
+    </Link>
+    <Bscmake>
+      <SuppressStartupBanner>true</SuppressStartupBanner>
+      <OutputFile>$(IntDir)\NewProject.bsc</OutputFile>
+    </Bscmake>
+    <Lib/>
+    <PreBuildEvent>
+      <Command>taskkill /F /IM NewProject.exe /T 2&gt;nul
+exit /B 0</Command>
+      <Message>Stop previous DawWeb instance so the linker can overwrite NewProject.exe</Message>
+    </PreBuildEvent>
+    <PostBuildEvent>
+      <Command>if not exist "$(OutDir)Resources" mkdir "$(OutDir)Resources"
+xcopy /Y /I "..\..\Source\Resources\instruments.json" "$(OutDir)Resources\" &gt;nul
+if not exist "$(OutDir)Resources\instruments" mkdir "$(OutDir)Resources\instruments"
+xcopy /E /Y /I "..\..\Source\Resources\instruments" "$(OutDir)Resources\instruments\" &gt;nul
+if not exist "$(OutDir)Resources\icons" mkdir "$(OutDir)Resources\icons"
+xcopy /Y /I "..\..\Source\Resources\icons\*.png" "$(OutDir)Resources\icons\" &gt;nul
+exit /B 0</Command>
+      <Message>Sync instrument catalogue and factory states to output Resources</Message>
+    </PostBuildEvent>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\Source\Main.cpp"/>
+    <ClCompile Include="..\..\Source\Model\Project.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\PlaybackSequence.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\Transport.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\MidiSequencer.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\MixerEngine.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\TestSynth.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\AudioEngine.cpp"/>
+    <ClCompile Include="..\..\Source\Plugins\InstrumentRegistry.cpp"/>
+    <ClCompile Include="..\..\Source\Plugins\PluginHost.cpp"/>
+    <ClCompile Include="..\..\Source\Plugins\HostedPluginInstance.cpp"/>
+    <ClCompile Include="..\..\Source\Plugins\PluginStateStore.cpp"/>
+    <ClCompile Include="..\..\Source\Plugins\OrchestraSamplerModel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\InstrumentArtwork.cpp"/>
+    <ClCompile Include="..\..\Source\Model\ProjectFile.cpp"/>
+    <ClCompile Include="..\..\Source\Communication\EngineAPI.cpp"/>
+    <ClCompile Include="..\..\Source\Communication\WebGateway.cpp"/>
+    <ClCompile Include="..\..\Source\UI\MainComponent.cpp"/>
+    <ClCompile Include="..\..\Source\UI\DawLookAndFeel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\DawSession.cpp"/>
+    <ClCompile Include="..\..\Source\UI\TopBar.cpp"/>
+    <ClCompile Include="..\..\Source\UI\TransportBar.cpp"/>
+    <ClCompile Include="..\..\Source\UI\TrackListPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\ArrangementView.cpp"/>
+    <ClCompile Include="..\..\Source\UI\PianoRoll.cpp"/>
+    <ClCompile Include="..\..\Source\UI\AutomationView.cpp"/>
+    <ClCompile Include="..\..\Source\UI\EditorPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\MixerPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\InspectorPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\InstrumentPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\OrchestraSamplerPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\InstrumentSelector.cpp"/>
+    <ClCompile Include="..\..\Source\UI\StateCaptureWindow.cpp"/>
+    <ClCompile Include="..\..\Source\UI\StatusBar.cpp"/>
+    <ClCompile Include="..\..\Source\UI\EngineHostComponent.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_basics.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_devices.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_formats.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_formats_flac_1.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_formats_flac_2.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_processors.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_processors_headless.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_processors_headless_ara.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_processors_headless_lv2_libs.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_utils.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_core.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_core_CompilationTime.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_core_zlib.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_data_structures.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_events.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_Harfbuzz.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_libjpg_1.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_libjpg_2.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_libjpg_3.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_libpng.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_lunasvg.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_graphics_Sheenbidi.c"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_2.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_3.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_4.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_5.cpp"/>
+    <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_extra.cpp"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\..\Source\Model\ProjectModel.h"/>
+    <ClInclude Include="..\..\Source\Model\Project.h"/>
+    <ClInclude Include="..\..\Source\Audio\LockFreeQueue.h"/>
+    <ClInclude Include="..\..\Source\Audio\PlaybackSequence.h"/>
+    <ClInclude Include="..\..\Source\Audio\Transport.h"/>
+    <ClInclude Include="..\..\Source\Audio\MidiSequencer.h"/>
+    <ClInclude Include="..\..\Source\Audio\MixerEngine.h"/>
+    <ClInclude Include="..\..\Source\Audio\TestSynth.h"/>
+    <ClInclude Include="..\..\Source\Audio\AudioEngine.h"/>
+    <ClInclude Include="..\..\Source\Plugins\PluginDescriptor.h"/>
+    <ClInclude Include="..\..\Source\Plugins\PluginInstance.h"/>
+    <ClInclude Include="..\..\Source\Plugins\InstrumentRegistry.h"/>
+    <ClInclude Include="..\..\Source\Plugins\PluginHost.h"/>
+    <ClInclude Include="..\..\Source\Plugins\InstrumentModel.h"/>
+    <ClInclude Include="..\..\Source\Plugins\OrchestraSamplerModel.h"/>
+    <ClInclude Include="..\..\Source\UI\InstrumentArtwork.h"/>
+    <ClInclude Include="..\..\Source\Plugins\HostedPluginInstance.h"/>
+    <ClInclude Include="..\..\Source\Plugins\PluginStateStore.h"/>
+    <ClInclude Include="..\..\Source\Model\ProjectFile.h"/>
+    <ClInclude Include="..\..\Source\Resources\instruments.json"/>
+    <ClInclude Include="..\..\Source\Communication\EngineAPI.h"/>
+    <ClInclude Include="..\..\Source\Communication\WebGateway.h"/>
+    <ClInclude Include="..\..\Source\UI\MainComponent.h"/>
+    <ClInclude Include="..\..\Source\UI\DawColours.h"/>
+    <ClInclude Include="..\..\Source\UI\Icons.h"/>
+    <ClInclude Include="..\..\Source\UI\DawLookAndFeel.h"/>
+    <ClInclude Include="..\..\Source\UI\Widgets.h"/>
+    <ClInclude Include="..\..\Source\UI\DawSession.h"/>
+    <ClInclude Include="..\..\Source\UI\TopBar.h"/>
+    <ClInclude Include="..\..\Source\UI\TransportBar.h"/>
+    <ClInclude Include="..\..\Source\UI\TrackListPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\ArrangementView.h"/>
+    <ClInclude Include="..\..\Source\UI\PianoRoll.h"/>
+    <ClInclude Include="..\..\Source\UI\AutomationView.h"/>
+    <ClInclude Include="..\..\Source\UI\EditorPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\MixerPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\InspectorPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\InstrumentPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\OrchestraSamplerPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\InstrumentSelector.h"/>
+    <ClInclude Include="..\..\Source\UI\StateCaptureWindow.h"/>
+    <ClInclude Include="..\..\Source\UI\StatusBar.h"/>
+    <ClInclude Include="..\..\Source\UI\EngineHostComponent.h"/>
+    <ClInclude Include="..\..\JuceLibraryCode\JuceHeader.h"/>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include=".\resources.rc"/>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets"/>
+</Project>

@@ -9,6 +9,8 @@
         <FILE id="mdl001" name="ProjectModel.h" compile="0" resource="0" file="Source/Model/ProjectModel.h"/>
         <FILE id="mdl002" name="Project.h" compile="0" resource="0" file="Source/Model/Project.h"/>
         <FILE id="mdl003" name="Project.cpp" compile="1" resource="0" file="Source/Model/Project.cpp"/>
+        <FILE id="mdl004" name="ProjectFile.h" compile="0" resource="0" file="Source/Model/ProjectFile.h"/>
+        <FILE id="mdl005" name="ProjectFile.cpp" compile="1" resource="0" file="Source/Model/ProjectFile.cpp"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000002}" name="Audio">
         <FILE id="aud001" name="LockFreeQueue.h" compile="0" resource="0" file="Source/Audio/LockFreeQueue.h"/>
@@ -32,14 +34,26 @@
         <FILE id="plg004" name="InstrumentRegistry.cpp" compile="1" resource="0" file="Source/Plugins/InstrumentRegistry.cpp"/>
         <FILE id="plg005" name="PluginHost.h" compile="0" resource="0" file="Source/Plugins/PluginHost.h"/>
         <FILE id="plg006" name="PluginHost.cpp" compile="1" resource="0" file="Source/Plugins/PluginHost.cpp"/>
+        <FILE id="plg007" name="InstrumentModel.h" compile="0" resource="0" file="Source/Plugins/InstrumentModel.h"/>
+        <FILE id="plg013" name="OrchestraSamplerModel.h" compile="0" resource="0" file="Source/Plugins/OrchestraSamplerModel.h"/>
+        <FILE id="plg014" name="OrchestraSamplerModel.cpp" compile="1" resource="0" file="Source/Plugins/OrchestraSamplerModel.cpp"/>
+        <FILE id="plg008" name="HostedPluginInstance.h" compile="0" resource="0" file="Source/Plugins/HostedPluginInstance.h"/>
+        <FILE id="plg009" name="HostedPluginInstance.cpp" compile="1" resource="0" file="Source/Plugins/HostedPluginInstance.cpp"/>
+        <FILE id="plg011" name="PluginStateStore.h" compile="0" resource="0" file="Source/Plugins/PluginStateStore.h"/>
+        <FILE id="plg012" name="PluginStateStore.cpp" compile="1" resource="0" file="Source/Plugins/PluginStateStore.cpp"/>
+        <FILE id="plg010" name="instruments.json" compile="0" resource="0" file="Source/Resources/instruments.json"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000004}" name="Communication">
         <FILE id="com001" name="EngineAPI.h" compile="0" resource="0" file="Source/Communication/EngineAPI.h"/>
         <FILE id="com002" name="EngineAPI.cpp" compile="1" resource="0" file="Source/Communication/EngineAPI.cpp"/>
+        <FILE id="com003" name="WebGateway.h" compile="0" resource="0" file="Source/Communication/WebGateway.h"/>
+        <FILE id="com004" name="WebGateway.cpp" compile="1" resource="0" file="Source/Communication/WebGateway.cpp"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000005}" name="UI">
         <FILE id="h3xMWI" name="MainComponent.h" compile="0" resource="0" file="Source/UI/MainComponent.h"/>
         <FILE id="JCdO14" name="MainComponent.cpp" compile="1" resource="0" file="Source/UI/MainComponent.cpp"/>
+        <FILE id="host01" name="EngineHostComponent.h" compile="0" resource="0" file="Source/UI/EngineHostComponent.h"/>
+        <FILE id="host02" name="EngineHostComponent.cpp" compile="1" resource="0" file="Source/UI/EngineHostComponent.cpp"/>
         <FILE id="col001" name="DawColours.h" compile="0" resource="0" file="Source/UI/DawColours.h"/>
         <FILE id="ico001" name="Icons.h" compile="0" resource="0" file="Source/UI/Icons.h"/>
         <FILE id="lnf001" name="DawLookAndFeel.h" compile="0" resource="0" file="Source/UI/DawLookAndFeel.h"/>
@@ -65,6 +79,16 @@
         <FILE id="mix002" name="MixerPanel.cpp" compile="1" resource="0" file="Source/UI/MixerPanel.cpp"/>
         <FILE id="ins001" name="InspectorPanel.h" compile="0" resource="0" file="Source/UI/InspectorPanel.h"/>
         <FILE id="ins002" name="InspectorPanel.cpp" compile="1" resource="0" file="Source/UI/InspectorPanel.cpp"/>
+        <FILE id="ins003" name="InstrumentPanel.h" compile="0" resource="0" file="Source/UI/InstrumentPanel.h"/>
+        <FILE id="ins004" name="InstrumentPanel.cpp" compile="1" resource="0" file="Source/UI/InstrumentPanel.cpp"/>
+        <FILE id="art001" name="InstrumentArtwork.h" compile="0" resource="0" file="Source/UI/InstrumentArtwork.h"/>
+        <FILE id="art002" name="InstrumentArtwork.cpp" compile="1" resource="0" file="Source/UI/InstrumentArtwork.cpp"/>
+        <FILE id="smp001" name="OrchestraSamplerPanel.h" compile="0" resource="0" file="Source/UI/OrchestraSamplerPanel.h"/>
+        <FILE id="smp002" name="OrchestraSamplerPanel.cpp" compile="1" resource="0" file="Source/UI/OrchestraSamplerPanel.cpp"/>
+        <FILE id="sel001" name="InstrumentSelector.h" compile="0" resource="0" file="Source/UI/InstrumentSelector.h"/>
+        <FILE id="sel002" name="InstrumentSelector.cpp" compile="1" resource="0" file="Source/UI/InstrumentSelector.cpp"/>
+        <FILE id="cap001" name="StateCaptureWindow.h" compile="0" resource="0" file="Source/UI/StateCaptureWindow.h"/>
+        <FILE id="cap002" name="StateCaptureWindow.cpp" compile="1" resource="0" file="Source/UI/StateCaptureWindow.cpp"/>
         <FILE id="sta001" name="StatusBar.h" compile="0" resource="0" file="Source/UI/StatusBar.h"/>
         <FILE id="sta002" name="StatusBar.cpp" compile="1" resource="0" file="Source/UI/StatusBar.cpp"/>
       </GROUP>
@@ -84,9 +108,11 @@
     <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0"/>
     <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0"/>
   </MODULES>
-  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"/>
+  <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"
+               JUCE_PLUGINHOST_VST3="1"/>
   <EXPORTFORMATS>
-    <VS2026 targetFolder="Builds/VisualStudio2026">
+    <VS2022 targetFolder="Builds/VisualStudio2026"
+            preBuildCommand="taskkill /F /IM NewProject.exe /T 2&gt;nul&#10;exit /B 0">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" targetName="NewProject"/>
         <CONFIGURATION isDebug="0" name="Release" targetName="NewProject"/>
@@ -105,6 +131,6 @@
         <MODULEPATH id="juce_gui_basics" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../../juce-9.0.1-windows/JUCE/modules"/>
       </MODULEPATHS>
-    </VS2026>
+    </VS2022>
   </EXPORTFORMATS>
 </JUCERPROJECT>

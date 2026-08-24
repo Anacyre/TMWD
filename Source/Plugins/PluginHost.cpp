@@ -1,12 +1,19 @@
 #include "PluginHost.h"
+#include "HostedPluginInstance.h"
 #include "../Audio/TestSynth.h"
 
 PluginHost::PluginHost (InstrumentRegistry& registryToUse)
     : registry (registryToUse)
 {
+   #if JUCE_PLUGINHOST_VST3
+    formatManager.addFormat (std::make_unique<juce::VST3PluginFormat>());
+   #endif
 }
 
-PluginHost::~PluginHost() = default;
+PluginHost::~PluginHost()
+{
+    alive->store (false);
+}
 
 std::unique_ptr<PluginInstance> PluginHost::createInstance (const juce::String& instrumentId,
                                                            double sampleRate,
@@ -33,6 +40,119 @@ std::unique_ptr<PluginInstance> PluginHost::createInstance (const juce::String& 
     return createExternalInstance (*descriptor, sampleRate, maximumBlockSize, errorMessage);
 }
 
+void PluginHost::createInstanceAsync (const juce::String& instrumentId,
+                                      double sampleRate,
+                                      int maximumBlockSize,
+                                      CreateCallback callback)
+{
+    if (callback == nullptr)
+        return;
+
+    const auto* descriptor = registry.find (instrumentId);
+
+    if (descriptor == nullptr)
+    {
+        callback ({}, "Unknown instrument id: " + instrumentId);
+        return;
+    }
+
+    if (descriptor->isBuiltIn())
+    {
+        auto instance = std::make_unique<TestSynthInstance>();
+        instance->prepare (sampleRate, maximumBlockSize);
+        callback (std::move (instance), {});
+        return;
+    }
+
+    if (! descriptor->isApprovedExternal())
+    {
+        callback ({}, descriptor->displayName + " is not an approved VST3 instrument.");
+        return;
+    }
+
+    if (! descriptor->isAvailable())
+    {
+        callback ({}, descriptor->availabilityError.isNotEmpty()
+                          ? descriptor->availabilityError
+                          : descriptor->displayName + " is unavailable.");
+        return;
+    }
+
+   #if ! JUCE_PLUGINHOST_VST3
+    callback ({}, "VST3 hosting is disabled in this build.");
+   #else
+    const auto rate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    const auto block = juce::jmax (16, maximumBlockSize);
+    const auto id = descriptor->instrumentId;
+    const auto name = descriptor->displayName;
+    const auto paths = descriptor->allPluginPaths();
+    const auto keepAlive = alive;
+
+    juce::Logger::writeToLog ("[Plugin] describing " + name + " off the UI thread");
+
+    juce::Thread::launch ([this, keepAlive, callback, id, name, paths, rate, block]
+    {
+        juce::PluginDescription description;
+        juce::String error;
+        bool cached = false;
+
+        {
+            const juce::ScopedLock sl (cacheLock);
+            const auto it = descriptionCache.find (id);
+
+            if (it != descriptionCache.end())
+            {
+                description = it->second;
+                cached = true;
+            }
+        }
+
+        if (! cached && ! resolveDescriptionFromPaths (paths, name, description, error))
+        {
+            juce::MessageManager::callAsync ([keepAlive, callback, error]
+            {
+                if (keepAlive->load())
+                    callback ({}, error);
+            });
+            return;
+        }
+
+        if (! cached)
+        {
+            const juce::ScopedLock sl (cacheLock);
+            descriptionCache[id] = description;
+        }
+
+        juce::MessageManager::callAsync ([this, keepAlive, callback, description, id, name, rate, block]
+        {
+            if (! keepAlive->load())
+                return;
+
+            juce::Logger::writeToLog ("[Plugin] creating " + name + " asynchronously");
+            formatManager.createPluginInstanceAsync (description, rate, block,
+                [keepAlive, callback, id, name, rate, block] (std::unique_ptr<juce::AudioPluginInstance> plugin,
+                                                              const juce::String& errorMessage)
+                {
+                    if (! keepAlive->load())
+                        return;
+
+                    if (plugin == nullptr)
+                    {
+                        juce::Logger::writeToLog ("[Plugin] " + name + " failed: " + errorMessage);
+                        callback ({}, errorMessage.isNotEmpty() ? errorMessage
+                                                                : name + " failed to load.");
+                        return;
+                    }
+
+                    juce::Logger::writeToLog ("[Plugin] " + name + " factory instance created");
+                    auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin), id, name);
+                    callback (std::move (instance), {});
+                });
+        });
+    });
+   #endif
+}
+
 std::unique_ptr<PluginInstance> PluginHost::createInstanceOrFallback (const juce::String& instrumentId,
                                                                      double sampleRate,
                                                                      int maximumBlockSize,
@@ -46,22 +166,196 @@ std::unique_ptr<PluginInstance> PluginHost::createInstanceOrFallback (const juce
     return fallback;
 }
 
+juce::String PluginHost::describeApprovedPlugins()
+{
+    juce::String text;
+
+    for (const auto* id : { InstrumentRegistry::bbcsoDiscoverId, InstrumentRegistry::synchronPlayerId })
+    {
+        const auto* descriptor = registry.find (id);
+
+        if (descriptor == nullptr)
+        {
+            text << id << ": missing from registry\n";
+            continue;
+        }
+
+        const auto path = descriptor->firstExistingPluginPath();
+
+        if (path.isNotEmpty())
+            text << descriptor->displayName << ": " << path << "\n";
+        else
+            text << descriptor->displayName << ": "
+                 << (descriptor->availabilityError.isNotEmpty() ? descriptor->availabilityError
+                                                                : juce::String ("file not found."))
+                 << "\n";
+    }
+
+    return text;
+}
+
+juce::String PluginHost::inspectApprovedPlugins()
+{
+    juce::String text;
+
+   #if ! JUCE_PLUGINHOST_VST3
+    return "VST3 hosting is disabled.";
+   #else
+    auto* format = formatManager.getFormat (0);
+
+    if (format == nullptr)
+        return "VST3 format is not registered.";
+
+    for (const auto* id : { InstrumentRegistry::bbcsoDiscoverId, InstrumentRegistry::synchronPlayerId })
+    {
+        const auto* descriptor = registry.find (id);
+
+        if (descriptor == nullptr)
+        {
+            text << id << ": missing from registry\n";
+            continue;
+        }
+
+        juce::OwnedArray<juce::PluginDescription> types;
+
+        for (const auto& path : descriptor->allPluginPaths())
+        {
+            if (! juce::File (path).exists())
+                continue;
+
+            types.clear();
+            format->findAllTypesForFile (types, path);
+
+            if (! types.isEmpty())
+            {
+                text << descriptor->displayName << ": described as \"" << types[0]->name
+                     << "\"  " << types[0]->version << "  from " << path << "\n";
+                break;
+            }
+        }
+
+        if (types.isEmpty())
+            text << descriptor->displayName << ": " << (descriptor->availabilityError.isNotEmpty()
+                                                            ? descriptor->availabilityError
+                                                            : juce::String ("could not be described."))
+                 << "\n";
+    }
+
+    return text;
+   #endif
+}
+
+bool PluginHost::resolveDescriptionFromPaths (const juce::StringArray& paths,
+                                              const juce::String& displayName,
+                                              juce::PluginDescription& description,
+                                              juce::String& errorMessage)
+{
+   #if ! JUCE_PLUGINHOST_VST3
+    errorMessage = "VST3 hosting is disabled in this build.";
+    return false;
+   #else
+    juce::VST3PluginFormat format;
+    juce::OwnedArray<juce::PluginDescription> types;
+
+    for (const auto& path : paths)
+    {
+        if (! juce::File (path).exists())
+            continue;
+
+        juce::Logger::writeToLog ("[Plugin] reading VST3 types from " + path);
+        types.clear();
+        format.findAllTypesForFile (types, path);
+
+        if (! types.isEmpty())
+            break;
+    }
+
+    if (types.isEmpty() || types[0] == nullptr)
+    {
+        errorMessage = displayName + " could not be described as a VST3.";
+        return false;
+    }
+
+    description = *types[0];
+    return true;
+   #endif
+}
+
+bool PluginHost::resolveDescription (const PluginDescriptor& descriptor,
+                                     juce::PluginDescription& description,
+                                     juce::String& errorMessage)
+{
+   #if ! JUCE_PLUGINHOST_VST3
+    errorMessage = "VST3 hosting is disabled in this build.";
+    return false;
+   #else
+    {
+        const juce::ScopedLock sl (cacheLock);
+        const auto cached = descriptionCache.find (descriptor.instrumentId);
+
+        if (cached != descriptionCache.end())
+        {
+            description = cached->second;
+            return true;
+        }
+    }
+
+    if (! resolveDescriptionFromPaths (descriptor.allPluginPaths(),
+                                       descriptor.displayName,
+                                       description,
+                                       errorMessage))
+        return false;
+
+    const juce::ScopedLock sl (cacheLock);
+    descriptionCache[descriptor.instrumentId] = description;
+    return true;
+   #endif
+}
+
 std::unique_ptr<PluginInstance> PluginHost::createExternalInstance (const PluginDescriptor& descriptor,
-                                                                   double,
-                                                                   int,
+                                                                   double sampleRate,
+                                                                   int maximumBlockSize,
                                                                    juce::String& errorMessage)
 {
-    if (! descriptor.isAvailable())
+    if (! descriptor.isApprovedExternal())
     {
-        errorMessage = descriptor.displayName + " is not installed yet. Set its path in "
-                       + InstrumentRegistry::getSettingsFile().getFileName() + ".";
+        errorMessage = descriptor.displayName + " is not an approved VST3 instrument.";
         return {};
     }
 
-    // VST3 wrapping lands in the next phase: enable JUCE_PLUGINHOST_VST3, describe the
-    // file with AudioPluginFormatManager, createPluginInstance() on the message thread,
-    // adapt the resulting AudioPluginInstance to PluginInstance, then hand it to the
-    // engine through AudioEngine::setTrackInstrument (already lock-free).
-    errorMessage = descriptor.displayName + " hosting is not implemented in this phase.";
+    if (! descriptor.isAvailable())
+    {
+        errorMessage = descriptor.availabilityError.isNotEmpty()
+                           ? descriptor.availabilityError
+                           : descriptor.displayName + " is unavailable.";
+        return {};
+    }
+
+   #if ! JUCE_PLUGINHOST_VST3
+    errorMessage = "VST3 hosting is disabled in this build.";
     return {};
+   #else
+    juce::PluginDescription description;
+
+    if (! resolveDescription (descriptor, description, errorMessage))
+        return {};
+
+    const auto rate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    const auto block = juce::jmax (16, maximumBlockSize);
+    juce::Logger::writeToLog ("[Plugin] creating " + descriptor.displayName + " synchronously");
+    auto plugin = formatManager.createPluginInstance (description, rate, block, errorMessage);
+
+    if (plugin == nullptr)
+    {
+        if (errorMessage.isEmpty())
+            errorMessage = descriptor.displayName + " failed to load.";
+        return {};
+    }
+
+    auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin),
+                                                            descriptor.instrumentId,
+                                                            descriptor.displayName);
+    instance->prepare (rate, block);
+    return instance;
+   #endif
 }

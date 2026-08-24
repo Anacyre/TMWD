@@ -114,16 +114,8 @@ void TrackStrip::showTrackMenu()
 
     juce::PopupMenu m;
     m.addItem (1, "Rename");
-
-    juce::PopupMenu instruments;
-    const auto available = session.getAvailableInstruments();
-
-    for (int i = 0; i < available.size(); ++i)
-        instruments.addItem (100 + i, available[i], ! t->isMaster(), t->instrument == available[i]);
-
-    instruments.addSeparator();
-    instruments.addItem (99, "No Instrument", ! t->isMaster(), t->instrument.isEmpty());
-    m.addSubMenu ("Instrument", instruments, ! t->isMaster());
+    m.addItem (10, "Browse Instruments...", ! t->isMaster());
+    m.addItem (11, "Open Orchestra Sampler", ! t->isMaster() && t->instrumentDefinitionId.isNotEmpty());
 
     m.addSeparator();
     m.addItem (2, "Add MIDI Clip at Playhead", ! t->isMaster());
@@ -135,20 +127,11 @@ void TrackStrip::showTrackMenu()
 
     m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&menuButton), [this] (int r)
     {
-        if (r >= 100)
-        {
-            if (auto* t2 = track())
-            {
-                session.assignInstrument (*t2, session.getAvailableInstruments()[r - 100]);
-                session.notify (DawSession::tracksChanged | DawSession::mixerChanged);
-            }
-
-            return;
-        }
-
         switch (r)
         {
             case 1: nameLabel.showEditor(); break;
+            case 10: session.showInstrumentSelector (this, index); break;
+            case 11: session.showOrchestraSampler (index); break;
             case 2: session.addClip (index, session.snapBeat (session.getPositionBeats()), 8.0); break;
             case 3: session.moveTrack (index, index - 1); break;
             case 4: session.moveTrack (index, index + 1); break;
@@ -166,9 +149,18 @@ void TrackStrip::showTrackMenu()
     });
 }
 
-void TrackStrip::mouseDown (const juce::MouseEvent&)
+void TrackStrip::mouseDown (const juce::MouseEvent& e)
 {
     session.setSelectedTrack (index);
+
+    if (auto* t = track(); t != nullptr && ! t->isMaster()
+        && instrumentLabel.isVisible() && instrumentLabel.getBounds().contains (e.getPosition()))
+    {
+        if (t->instrumentDefinitionId.isNotEmpty())
+            session.showOrchestraSampler (index);
+        else
+            session.showInstrumentSelector (this, index);
+    }
 }
 
 void TrackStrip::mouseDoubleClick (const juce::MouseEvent&)

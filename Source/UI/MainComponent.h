@@ -12,6 +12,7 @@
 #include "InspectorPanel.h"
 #include "StatusBar.h"
 #include "Widgets.h"
+#include "StateCaptureWindow.h"
 
 /*  Owns the session and arranges the top-level panels.  All panel-to-panel
     communication goes through DawSession rather than through this class.
@@ -25,6 +26,7 @@ class MainComponent  : public juce::Component,
 {
 public:
     MainComponent();
+    explicit MainComponent (EngineAPI& engineToShare);
     ~MainComponent() override;
 
     void paint (juce::Graphics&) override;
@@ -37,6 +39,7 @@ private:
     bool keyPressed (const juce::KeyPress& key, juce::Component*) override;
 
     bool handleShortcut (const juce::KeyPress& key);
+    void buildUi();
     void sessionChanged (int changeFlags) override;
     void showAudioSettings();
     void layoutBody();
@@ -61,6 +64,7 @@ private:
 
     juce::TooltipWindow tooltipWindow { this, 600 };
     juce::Component::SafePointer<juce::Component> keyListenerHost;
+    std::unique_ptr<StateCaptureWindow> captureWindow;
 
     int trackListWidth = 258;
     int inspectorWidth = 250;

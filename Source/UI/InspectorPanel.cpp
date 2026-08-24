@@ -44,9 +44,10 @@ InspectorPanel::InspectorPanel (DawSession& sessionToUse)
     content.addAndMakeVisible (trackNameLabel);
 
     DawWidgets::styleFlatButton (instrumentButton);
-    instrumentButton.setTooltip ("Instrument currently loaded on this track");
+    instrumentButton.setTooltip ("Choose an instrument from the catalogue");
     instrumentButton.onClick = [this] { showInstrumentMenu(); };
     content.addAndMakeVisible (instrumentButton);
+    content.addAndMakeVisible (instrumentPanel);
 
     addRow (trackSection, "Type");
     addRow (trackSection, "Section");
@@ -150,8 +151,10 @@ void InspectorPanel::resized()
 
     const auto contentWidth = juce::jmax (60, viewport.getMaximumVisibleWidth());
     const auto totalRows = (int) ownedRows.size();
+    const auto instrumentExtra = instrumentPanel.getPreferredHeight();
     const auto contentHeight = 12 + 24 + 10                      // name row
-                               + captionHeight + 4 + 24 + 14     // instrument slot
+                               + captionHeight + 4 + 24 + 8      // instrument slot
+                               + instrumentExtra + 14
                                + 3 * (captionHeight + 4 + 14)    // section captions
                                + totalRows * rowHeight + 20;
     content.setSize (contentWidth, juce::jmax (viewport.getHeight(), contentHeight));
@@ -167,6 +170,9 @@ void InspectorPanel::resized()
     instrumentCaption = area.removeFromTop (captionHeight);
     area.removeFromTop (4);
     instrumentButton.setBounds (area.removeFromTop (24));
+    area.removeFromTop (8);
+    const auto instrumentHeight = instrumentPanel.getPreferredHeight();
+    instrumentPanel.setBounds (area.removeFromTop (instrumentHeight));
     area.removeFromTop (14);
 
     layoutSection (trackSection, area);
@@ -182,36 +188,7 @@ void InspectorPanel::showInstrumentMenu()
     if (track == nullptr || track->isMaster())
         return;
 
-    juce::PopupMenu m;
-    const auto available = session.getAvailableInstruments();
-
-    for (int i = 0; i < available.size(); ++i)
-        m.addItem (i + 1, available[i], true, track->instrument == available[i]);
-
-    m.addSeparator();
-    m.addItem (99, "Remove Instrument", ! track->instrumentSlot.isEmpty());
-
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&instrumentButton), [this] (int r)
-    {
-        auto* t = session.getTrack (session.getSelectedTrack());
-
-        if (t == nullptr)
-            return;
-
-        if (r == 99)
-        {
-            session.clearInstrument (*t);
-        }
-        else
-        {
-            const auto available = session.getAvailableInstruments();
-
-            if (r >= 1 && r <= available.size())
-                session.assignInstrument (*t, available[r - 1]);
-        }
-
-        session.notify (DawSession::tracksChanged | DawSession::mixerChanged);
-    });
+    session.showInstrumentSelector (&instrumentButton, session.getSelectedTrack());
 }
 
 void InspectorPanel::refresh()
@@ -226,6 +203,7 @@ void InspectorPanel::refresh()
 
         instrumentButton.setButtonText (track->instrument.isNotEmpty() ? track->instrument
                                                                       : juce::String ("Empty slot"));
+        resized();
 
         juce::StringArray state;
 

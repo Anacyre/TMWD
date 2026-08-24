@@ -46,18 +46,11 @@ TopBar::TopBar (DawSession& sessionToUse)
     addAndMakeVisible (newButton);
 
     openButton.setTooltip ("Open project");
-    openButton.onClick = []
-    {
-        showStub ("Open Project", "Loading projects from disk arrives with the audio engine.");
-    };
+    openButton.onClick = [this] { openProject(); };
     addAndMakeVisible (openButton);
 
     saveButton.setTooltip ("Save project");
-    saveButton.onClick = [this]
-    {
-        session.markSaved();
-        showStub ("Save Project", "Project state is held in memory for now; file I/O comes with the engine.");
-    };
+    saveButton.onClick = [this] { saveProject (false); };
     addAndMakeVisible (saveButton);
 
     undoButton.setTooltip ("Undo");
@@ -231,9 +224,9 @@ void TopBar::showFileMenu()
         switch (r)
         {
             case 1: session.newProject(); session.addTrack (TrackType::Midi, "Instrument 1"); break;
-            case 2: showStub ("Open Project", "Loading projects from disk arrives with the audio engine."); break;
-            case 3: session.markSaved(); break;
-            case 4: showStub ("Save As", "Project files are not written yet."); break;
+            case 2: openProject(); break;
+            case 3: saveProject (false); break;
+            case 4: saveProject (true); break;
             case 5: showStub ("Export Audio", "Offline rendering needs the audio engine."); break;
             case 6: showStub ("Export MIDI", "MIDI export needs the sequencer back end."); break;
             case 7: session.loadDemoProject(); break;
@@ -394,8 +387,10 @@ void TopBar::showHelpMenu()
     juce::PopupMenu m;
     m.addItem (1, "Keyboard Shortcuts");
     m.addItem (2, "About DawWeb");
+    m.addSeparator();
+    m.addItem (3, "Capture / Verify Plugin State...");
 
-    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&helpBtn), [] (int r)
+    m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&helpBtn), [this] (int r)
     {
         if (r == 1)
             showStub ("Keyboard Shortcuts",
@@ -406,6 +401,8 @@ void TopBar::showHelpMenu()
                       "E          Editor panel\n"
                       "M          Mixer\n"
                       "I          Inspector\n"
+                      "Ctrl+O     Open project\n"
+                      "Ctrl+S     Save project\n"
                       "Ctrl+Z     Undo\n"
                       "Ctrl+Y     Redo\n"
                       "Ctrl+Wheel Zoom timeline\n"
@@ -413,7 +410,62 @@ void TopBar::showHelpMenu()
         else if (r == 2)
             showStub ("About DawWeb",
                       "DawWeb  " + juce::String (ProjectInfo::versionString)
-                          + "\nOrchestral DAW. Playback uses the built-in Test Synth.\n"
-                            "BBCSO Discover and Synchron Player hosting comes next.");
+                          + "\nOrchestral DAW with BBCSO Discover and Synchron Player hosting.\n"
+                            "Instrument selection uses captured VST state, not the native plugin GUI.");
+        else if (r == 3 && onCaptureState)
+            onCaptureState();
+    });
+}
+
+void TopBar::openProject()
+{
+    fileChooser = std::make_shared<juce::FileChooser> ("Open Project",
+                                                       session.getCurrentProjectFile() == juce::File()
+                                                           ? juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                                           : session.getCurrentProjectFile().getParentDirectory(),
+                                                       "*.dawweb;*.json");
+
+    const auto browserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    fileChooser->launchAsync (browserFlags, [this] (const juce::FileChooser& chooser)
+    {
+        const auto file = chooser.getResult();
+
+        if (file == juce::File())
+            return;
+
+        const auto error = session.loadProjectFrom (file);
+
+        if (error.isNotEmpty())
+            showStub ("Open Project", error);
+    });
+}
+
+void TopBar::saveProject (bool saveAs)
+{
+    if (! saveAs && session.saveProject())
+        return;
+
+    fileChooser = std::make_shared<juce::FileChooser> ("Save Project",
+                                                       session.getCurrentProjectFile() == juce::File()
+                                                           ? juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                                                 .getChildFile (session.getProjectName() + ".dawweb")
+                                                           : session.getCurrentProjectFile(),
+                                                       "*.dawweb;*.json");
+
+    const auto browserFlags = juce::FileBrowserComponent::saveMode
+                       | juce::FileBrowserComponent::canSelectFiles
+                       | juce::FileBrowserComponent::warnAboutOverwriting;
+    fileChooser->launchAsync (browserFlags, [this] (const juce::FileChooser& chooser)
+    {
+        auto file = chooser.getResult();
+
+        if (file == juce::File())
+            return;
+
+        if (file.getFileExtension().isEmpty())
+            file = file.withFileExtension (".dawweb");
+
+        if (! session.saveProjectAs (file))
+            showStub ("Save Project", "Could not write " + file.getFileName());
     });
 }

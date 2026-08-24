@@ -1,11 +1,10 @@
 #pragma once
 
+#include "InstrumentModel.h"
 #include "PluginDescriptor.h"
 
-/*  The closed catalogue of instruments the application supports.  Nothing in the UI
-    knows a file path: it only ever passes an instrumentId around, and the paths for the
-    external instruments are stored in a small settings file so they can be pointed at a
-    different machine without recompiling.
+/*  Closed catalogue of plugins and musical instruments.  Paths come from
+    instruments.json (or DAWWEB_RESOURCE_ROOT).  Nothing in the UI stores a path.
 */
 class InstrumentRegistry
 {
@@ -16,29 +15,66 @@ public:
     static constexpr const char* bbcsoDiscoverId  = "bbcso_discover";
     static constexpr const char* synchronPlayerId = "synchron_player";
 
-    const std::vector<PluginDescriptor>& getAll() const noexcept { return descriptors; }
+    /** One live hosted VST3 per mixer channel so every track can sound at once. */
+    static constexpr int maxHostedInstances = 64;
+
+    const std::vector<PluginDescriptor>& getPlugins() const noexcept { return descriptors; }
+    const std::vector<InstrumentDefinition>& getCatalogue() const noexcept { return catalogue; }
+    const std::vector<TechniqueDefinition>& getTechniques() const noexcept { return techniques; }
+    const std::vector<ControllerDefinition>& getControllers() const noexcept { return controllers; }
+    const std::vector<SampleLibrary>& getLibraries() const noexcept { return libraries; }
+    const std::vector<PresetDefinition>& getPresets() const noexcept { return presets; }
 
     const PluginDescriptor* find (const juce::String& instrumentId) const;
+    const InstrumentDefinition* findDefinition (const juce::String& id) const;
+    const InstrumentDefinition* findDefinitionByDisplayName (const juce::String& displayName) const;
+    const TechniqueDefinition* findTechnique (const juce::String& id) const;
+    const ControllerDefinition* findController (const juce::String& id) const;
+    const SampleLibrary* findLibrary (const juce::String& id) const;
+    const PresetDefinition* findPreset (const juce::String& id) const;
+    PresetDefinition* findPresetMutable (const juce::String& id);
+    const InstrumentDefinition* findDefinitionForPreset (const juce::String& presetId) const;
 
-    /** Display names in catalogue order, for menus. */
+    juce::String resolvePresetId (const InstrumentDefinition& definition,
+                                  const juce::String& techniqueId = {}) const;
+    bool matchesSearch (const InstrumentDefinition& definition, const juce::String& query) const;
+
     juce::StringArray getDisplayNames() const;
     juce::StringArray getInstrumentIds() const;
+    juce::StringArray getBrowserCategories() const;
+    std::vector<const InstrumentDefinition*> getDefinitionsInCategory (const juce::String& category) const;
 
     juce::String getDisplayName (const juce::String& instrumentId) const;
-
-    /** Maps a display name back to its id, so existing UI strings keep working. */
     juce::String findIdForDisplayName (const juce::String& displayName) const;
 
-    /** Points an external instrument at its plugin file and persists the change. */
     bool setPluginPath (const juce::String& instrumentId, const juce::String& path);
+
+    juce::String getResourceRoot() const { return resourceRoot; }
+    juce::File getLoadedConfigFile() const { return loadedConfigFile; }
+    juce::String getStartupStatus() const { return startupStatus; }
+    juce::StringArray getResourceWarnings() const { return resourceWarnings; }
 
     void load();
     void save() const;
 
     static juce::File getSettingsFile();
+    static juce::File findConfigFile();
 
 private:
     PluginDescriptor* findMutable (const juce::String& instrumentId);
+    void seedBuiltInPlugins();
+    void parseConfig (const juce::var& root);
+    void validateResources();
+    juce::String resolvePath (const juce::String& path) const;
 
     std::vector<PluginDescriptor> descriptors;
+    std::vector<InstrumentDefinition> catalogue;
+    std::vector<TechniqueDefinition> techniques;
+    std::vector<ControllerDefinition> controllers;
+    std::vector<SampleLibrary> libraries;
+    std::vector<PresetDefinition> presets;
+    juce::String resourceRoot;
+    juce::File loadedConfigFile;
+    juce::String startupStatus;
+    juce::StringArray resourceWarnings;
 };

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <memory>
 #include "DawColours.h"
 #include "../Communication/EngineAPI.h"
 
@@ -16,10 +17,12 @@
     notify() is the single funnel for edits: whatever a view changes in the model, it says
     so here, and this class works out what the engine needs to be told.
 */
-class DawSession  : private juce::Timer
+class DawSession  : private juce::Timer,
+                    private EngineAPI::Listener
 {
 public:
     DawSession();
+    explicit DawSession (EngineAPI& engineToShare);
     ~DawSession() override;
 
     //==============================================================================
@@ -127,6 +130,18 @@ public:
 
     void newProject();
     void loadDemoProject();
+    bool saveProject();
+    bool saveProjectAs (const juce::File& file);
+    juce::String loadProjectFrom (const juce::File& file);
+    juce::File getCurrentProjectFile() const { return currentProjectFile; }
+
+    void showInstrumentSelector (juce::Component* anchor, int trackIndex = -1);
+    void dismissInstrumentBrowser();
+    void bindInstrumentBrowser (juce::DocumentWindow* window) noexcept { instrumentBrowser = window; }
+    juce::DocumentWindow* getInstrumentBrowserWindow() const noexcept { return instrumentBrowser; }
+
+    void showOrchestraSampler (int trackIndex = -1);
+    void closeOrchestraSampler();
 
     //==============================================================================
     // Content
@@ -207,14 +222,23 @@ public:
     juce::StringArray getAvailableInstruments() const;
     static juce::StringArray getAvailableEffects();
 
-    /** Points a track at an instrument by display name, keeping the id the engine needs
-        in step with the label the inspector shows.
-    */
+    static constexpr int instrumentMenuIdBase = 1000;
+    static constexpr int instrumentMenuRemoveId = 99;
+
+    void fillInstrumentBrowserMenu (juce::PopupMenu& menu, const juce::String& currentDefinitionId) const;
+    juce::String definitionIdFromMenuResult (int result) const;
+
     void assignInstrument (TrackData& track, const juce::String& displayName);
+    void assignInstrumentDefinition (TrackData& track, const juce::String& definitionId);
     void clearInstrument (TrackData& track);
+    bool setTrackTechnique (TrackData& track, const juce::String& techniqueId);
+    bool setTrackController (TrackData& track, const juce::String& controllerId, float normalised);
+    bool setTrackLegato (TrackData& track, bool enabled);
 
 private:
     void timerCallback() override;
+    void onEngineChanged (int changeFlags) override;
+    void setupSession (bool initialiseEngine);
     bool updateMeters();
     juce::Colour nextTrackColour();
     ProjectSnapshot takeSnapshot() const;
@@ -225,11 +249,14 @@ private:
     Project& project() noexcept             { return api.getProject(); }
     const Project& project() const noexcept { return api.getProject(); }
 
-    EngineAPI api;
+    std::unique_ptr<EngineAPI> ownedApi;
+    EngineAPI& api;
+    bool applyingRemote = false;
 
     juce::ListenerList<Listener> listeners;
 
     juce::String userName;
+    juce::File currentProjectFile;
     bool dirty = false;
 
     bool playing = false;
@@ -256,6 +283,8 @@ private:
 
     std::vector<ProjectSnapshot> undoStack, redoStack;
     juce::StringArray undoNames, redoNames;
+    juce::DocumentWindow* instrumentBrowser = nullptr;
+    std::unique_ptr<class OrchestraSamplerWindow> orchestraSamplerWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DawSession)
 };

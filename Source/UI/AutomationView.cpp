@@ -24,6 +24,9 @@ public:
         auto& session = owner.session;
         g.fillAll (DawColours::arrangement);
 
+        if (getWidth() <= 1 || getHeight() <= 1)
+            return;
+
         auto* lane = owner.getLane();
         const auto* track = session.getTrack (session.getSelectedTrack());
 
@@ -247,7 +250,6 @@ private:
 AutomationView::AutomationView (DawSession& sessionToUse)
     : session (sessionToUse)
 {
-    session.addListener (this);
     canvas = std::make_unique<AutomationLaneCanvas> (*this);
 
     trackLabel.setFont (juce::Font (juce::FontOptions (12.0f).withStyleFlags (juce::Font::bold)));
@@ -301,17 +303,24 @@ AutomationView::AutomationView (DawSession& sessionToUse)
     };
     addAndMakeVisible (clearButton);
 
-    viewport.setViewedComponent (canvas.get(), false);
+    viewport.onMoved = [this]
+    {
+        if (isShowing())
+            repaint (rulerBounds);
+    };
     viewport.setScrollBarsShown (false, true);
-    viewport.onMoved = [this] { repaint (rulerBounds); };
+    viewport.setViewedComponent (canvas.get(), false);
     addAndMakeVisible (viewport);
 
     refreshToolbar();
+    session.addListener (this);
 }
 
 AutomationView::~AutomationView()
 {
     session.removeListener (this);
+    viewport.setViewedComponent (nullptr, false);
+    canvas.reset();
 }
 
 AutomationLane* AutomationView::getLane()
@@ -324,6 +333,9 @@ AutomationLane* AutomationView::getLane()
 
 void AutomationView::paint (juce::Graphics& g)
 {
+    if (getWidth() <= 0 || getHeight() <= 0)
+        return;
+
     g.fillAll (DawColours::panel);
 
     auto toolbar = getLocalBounds().removeFromTop (26);
@@ -408,6 +420,9 @@ void AutomationView::drawRuler (juce::Graphics& g)
 
 void AutomationView::resized()
 {
+    if (getWidth() <= 0 || getHeight() <= 0)
+        return;
+
     auto r = getLocalBounds();
 
     auto toolbar = r.removeFromTop (26).reduced (8, 3);
@@ -429,6 +444,15 @@ void AutomationView::resized()
 
 void AutomationView::updateContentSize()
 {
+    if (canvas == nullptr)
+        return;
+
+    const auto viewW = viewport.getMaximumVisibleWidth();
+    const auto viewH = viewport.getMaximumVisibleHeight();
+
+    if (viewW <= 0 || viewH <= 0)
+        return;
+
     double maxBeat = 64.0;
 
     for (const auto& clip : session.getClips())
@@ -438,9 +462,12 @@ void AutomationView::updateContentSize()
         for (const auto& point : lane->points)
             maxBeat = juce::jmax (maxBeat, point.beat + 8.0);
 
-    canvas->setSize (juce::jmax (viewport.getMaximumVisibleWidth(),
-                                 (int) std::ceil (maxBeat * session.getPixelsPerBeat())),
-                     juce::jmax (1, viewport.getMaximumVisibleHeight()));
+    const auto ppb = juce::jlimit (4.0, 400.0, session.getPixelsPerBeat());
+    const auto width = juce::jlimit (1, 32768, juce::jmax (viewW, (int) std::ceil (maxBeat * ppb)));
+    const auto height = juce::jlimit (1, 32768, viewH);
+
+    if (canvas->getWidth() != width || canvas->getHeight() != height)
+        canvas->setSize (width, height);
 }
 
 void AutomationView::refreshToolbar()
@@ -460,14 +487,20 @@ void AutomationView::sessionChanged (int changeFlags)
     {
         refreshToolbar();
         updateContentSize();
-        canvas->repaint();
+
+        if (canvas != nullptr)
+            canvas->repaint();
+
         repaint();
         return;
     }
 
     if ((changeFlags & (DawSession::positionChanged | DawSession::transportChanged)) != 0)
     {
-        canvas->repaint();
-        repaint (rulerBounds);
+        if (canvas != nullptr)
+            canvas->repaint();
+
+        if (isShowing())
+            repaint (rulerBounds);
     }
 }

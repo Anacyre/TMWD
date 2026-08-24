@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <map>
 
 /*  Pure data layer.  Nothing in this file knows about Components, drawing or audio
     devices, so the same structures are shared by the UI, the audio engine, project
@@ -42,6 +43,36 @@ namespace MusicalTime
 }
 
 enum class TrackType { Master, Midi, Audio };
+
+enum class InstrumentLoadState
+{
+    Unloaded,
+    Loading,
+    Initializing,
+    RestoringState,
+    Loaded,
+    Active,
+    Unloading,
+    Unavailable,
+    Error
+};
+
+inline juce::String instrumentLoadStateLabel (InstrumentLoadState state)
+{
+    switch (state)
+    {
+        case InstrumentLoadState::Unloaded:       return "Unloaded";
+        case InstrumentLoadState::Loading:        return "Loading...";
+        case InstrumentLoadState::Initializing:   return "Initializing...";
+        case InstrumentLoadState::RestoringState: return "Restoring...";
+        case InstrumentLoadState::Loaded:         return "Ready";
+        case InstrumentLoadState::Active:         return "Ready";
+        case InstrumentLoadState::Unloading:      return "Unloading...";
+        case InstrumentLoadState::Unavailable:    return "Unavailable";
+        case InstrumentLoadState::Error:          return "Error";
+        default:                                  return "Unknown";
+    }
+}
 
 namespace DawUnits
 {
@@ -199,6 +230,19 @@ struct TrackData
     bool recordArm = false;
 
     PluginSlot instrumentSlot;
+    juce::String instrumentDefinitionId;
+    juce::String presetId;
+    juce::String techniqueId;
+    InstrumentLoadState instrumentLoadState = InstrumentLoadState::Unloaded;
+    juce::String instrumentLoadMessage;
+    float defaultVelocity = 0.8f;
+    juce::int64 instrumentLastUsedMs = 0;
+    std::map<juce::String, float> controllerValues;
+    juce::MemoryBlock pluginState;
+    bool usesFactoryState = true;
+    bool legatoEnabled = false;
+    int stateVersion = 1;
+    juce::String pluginVersion;
     std::vector<PluginSlot> inserts { {}, {} };
     AutomationLane automation;
 
@@ -210,3 +254,26 @@ struct TrackData
     float getVolumeDb() const noexcept { return DawUnits::faderToDb (volume); }
     float getGain() const noexcept     { return DawUnits::faderToGain (volume); }
 };
+
+namespace SoftwareLegato
+{
+    inline bool isSustainedTechnique (const juce::String& techniqueId)
+    {
+        return techniqueId.containsIgnoreCase ("long");
+    }
+
+    inline bool isActive (const TrackData& track)
+    {
+        return track.legatoEnabled && isSustainedTechnique (track.techniqueId);
+    }
+
+    inline juce::int64 extraTicks()
+    {
+        return MusicalTime::ticksPerQuarterNote / 2;
+    }
+
+    inline int extraMilliseconds (double bpm)
+    {
+        return juce::roundToInt (30000.0 / juce::jmax (1.0, bpm));
+    }
+}

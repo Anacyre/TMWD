@@ -1,11 +1,12 @@
 <template>
   <view
     class="fader"
+    :class="orientation"
     @mousedown.stop="onDown"
     @touchstart.stop.prevent="onTouchStart"
   >
     <view class="track">
-      <view class="fill" :style="{ width: percent + '%' }" />
+      <view class="fill" :style="fillStyle" />
     </view>
   </view>
 </template>
@@ -16,7 +17,8 @@ import { computed } from 'vue'
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
   min: { type: Number, default: 0 },
-  max: { type: Number, default: 1 }
+  max: { type: Number, default: 1 },
+  orientation: { type: String, default: 'horizontal' }
 })
 const emit = defineEmits(['update:modelValue'])
 
@@ -25,14 +27,28 @@ const percent = computed(() => {
   return Math.min(100, Math.max(0, ((props.modelValue - props.min) / span) * 100))
 })
 
-function setFromClientX (clientX, el) {
+const fillStyle = computed(() => (
+  props.orientation === 'vertical'
+    ? { height: percent.value + '%' }
+    : { width: percent.value + '%' }
+))
+
+function setFromEvent (clientX, clientY, el) {
   const rect = el.getBoundingClientRect()
-  const t = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  let t
+  if (props.orientation === 'vertical') {
+    t = 1 - Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
+  } else {
+    t = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
+  }
   emit('update:modelValue', props.min + t * (props.max - props.min))
 }
 
-function bindMove (getX, target) {
-  const move = (ev) => setFromClientX(getX(ev), target)
+function bindMove (target) {
+  const move = (ev) => {
+    const pt = ev.touches ? ev.touches[0] : ev
+    setFromEvent(pt.clientX, pt.clientY, target)
+  }
   const up = () => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
@@ -46,14 +62,14 @@ function bindMove (getX, target) {
 }
 
 function onDown (e) {
-  setFromClientX(e.clientX, e.currentTarget)
-  bindMove((ev) => ev.clientX, e.currentTarget)
+  setFromEvent(e.clientX, e.clientY, e.currentTarget)
+  bindMove(e.currentTarget)
 }
 
 function onTouchStart (e) {
   const t = e.changedTouches[0]
-  setFromClientX(t.clientX, e.currentTarget)
-  bindMove((ev) => (ev.touches ? ev.touches[0].clientX : ev.changedTouches[0].clientX), e.currentTarget)
+  setFromEvent(t.clientX, t.clientY, e.currentTarget)
+  bindMove(e.currentTarget)
 }
 </script>
 
@@ -66,16 +82,35 @@ function onTouchStart (e) {
   flex: 1;
   min-width: 40px;
 }
+.fader.vertical {
+  height: 100%;
+  width: 18px;
+  min-width: 18px;
+  flex: none;
+  align-items: stretch;
+  justify-content: center;
+}
 .track {
   width: 100%;
   height: 6px;
   border-radius: 3px;
   background: #2a2a2a;
   overflow: hidden;
+  position: relative;
+}
+.vertical .track {
+  width: 6px;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
 }
 .fill {
   height: 100%;
   background: #7a7a7a;
   border-radius: 3px;
+}
+.vertical .fill {
+  width: 100%;
+  height: auto;
 }
 </style>

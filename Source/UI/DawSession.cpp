@@ -1,4 +1,6 @@
 #include "DawSession.h"
+#include "InstrumentSelector.h"
+#include "OrchestraSamplerPanel.h"
 #include <algorithm>
 #include <cmath>
 
@@ -181,6 +183,19 @@ namespace
 
 //==============================================================================
 DawSession::DawSession()
+    : ownedApi (std::make_unique<EngineAPI>()),
+      api (*ownedApi)
+{
+    setupSession (true);
+}
+
+DawSession::DawSession (EngineAPI& engineToShare)
+    : api (engineToShare)
+{
+    setupSession (false);
+}
+
+void DawSession::setupSession (bool initialiseEngine)
 {
     userName = juce::SystemStats::getFullUserName();
 
@@ -191,15 +206,15 @@ DawSession::DawSession()
         userName = "User";
 
     loadDemoProject();
+    api.addListener (this);
 
-    // Commands arriving from outside the UI - today only the JSON surface used by tests,
-    // later a WebSocket client - still have to refresh the views.
-    api.onChange = [this] (int) { notify (everythingChanged); };
+    if (initialiseEngine)
+    {
+        const auto engineError = api.initialise();
 
-    const auto engineError = api.initialise();
-
-    if (engineError.isNotEmpty())
-        juce::Logger::writeToLog ("Audio engine: " + engineError);
+        if (engineError.isNotEmpty())
+            juce::Logger::writeToLog ("Audio engine: " + engineError);
+    }
 
     pushTransportStateToEngine();
 
@@ -210,13 +225,92 @@ DawSession::DawSession()
 DawSession::~DawSession()
 {
     stopTimer();
-    api.onChange = nullptr;
-    api.shutdown();
+    closeOrchestraSampler();
+    dismissInstrumentBrowser();
+    api.removeListener (this);
+
+    if (ownedApi != nullptr)
+        api.shutdown();
 }
 
 juce::StringArray DawSession::getAvailableInstruments() const
 {
     return api.getInstruments().getDisplayNames();
+}
+
+void DawSession::fillInstrumentBrowserMenu (juce::PopupMenu& menu, const juce::String& currentDefinitionId) const
+{
+    const auto& registry = api.getInstruments();
+    int id = instrumentMenuIdBase;
+
+    if (const auto* testSynth = registry.findDefinition (InstrumentRegistry::testSynthId))
+        menu.addItem (id, testSynth->displayName, true, currentDefinitionId == testSynth->id);
+    else
+        menu.addItem (id, "Test Synth", true, currentDefinitionId == InstrumentRegistry::testSynthId);
+
+    ++id;
+    menu.addSeparator();
+
+    for (const auto& category : registry.getBrowserCategories())
+    {
+        const auto definitions = registry.getDefinitionsInCategory (category);
+
+        if (definitions.empty())
+            continue;
+
+        juce::PopupMenu sub;
+
+        for (const auto* definition : definitions)
+        {
+            if (definition == nullptr || definition->id == InstrumentRegistry::testSynthId)
+                continue;
+
+            sub.addItem (id++, definition->displayName, true, currentDefinitionId == definition->id);
+        }
+
+        if (sub.getNumItems() > 0)
+            menu.addSubMenu (category, sub);
+    }
+
+    menu.addSeparator();
+    menu.addItem (instrumentMenuRemoveId, "Remove Instrument", true, currentDefinitionId.isEmpty());
+}
+
+juce::String DawSession::definitionIdFromMenuResult (int result) const
+{
+    if (result < instrumentMenuIdBase)
+        return {};
+
+    const auto& registry = api.getInstruments();
+    int id = instrumentMenuIdBase;
+
+    if (registry.findDefinition (InstrumentRegistry::testSynthId) != nullptr)
+    {
+        if (result == id)
+            return InstrumentRegistry::testSynthId;
+    }
+    else if (result == id)
+    {
+        return InstrumentRegistry::testSynthId;
+    }
+
+    ++id;
+
+    for (const auto& category : registry.getBrowserCategories())
+    {
+        for (const auto* definition : registry.getDefinitionsInCategory (category))
+        {
+            if (definition == nullptr || definition->id == InstrumentRegistry::testSynthId)
+                continue;
+
+            if (result == id)
+                return definition->id;
+
+            ++id;
+        }
+    }
+
+    return {};
 }
 
 juce::StringArray DawSession::getAvailableEffects()
@@ -231,16 +325,142 @@ void DawSession::assignInstrument (TrackData& track, const juce::String& display
     if (id.isEmpty())
         id = InstrumentRegistry::testSynthId;
 
-    track.instrument = displayName;
-    track.instrumentSlot.instrumentId = id;
-    track.instrumentSlot.name = api.getInstruments().getDisplayName (id);
+    assignInstrumentDefinition (track, id);
+}
+
+void DawSession::assignInstrumentDefinition (TrackData& track, const juce::String& definitionId)
+{
+    const auto index = project().indexOfTrack (track.id);
+
+    if (index < 0)
+        return;
+
+    api.loadTrackInstrument (index, definitionId);
+}
+
+void DawSession::showInstrumentSelector (juce::Component* anchor, int trackIndex)
+{
+    const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
+    const auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return;
+
+    juce::Component::SafePointer<juce::Component> safeAnchor (anchor);
+    juce::MessageManager::callAsync ([this, safeAnchor, index]
+    {
+        InstrumentSelector::launch (*this, safeAnchor.getComponent(), index);
+    });
+}
+
+void DawSession::showOrchestraSampler (int trackIndex)
+{
+    const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
+    auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return;
+
+    setSelectedTrack (index);
+
+    if (orchestraSamplerWindow == nullptr)
+    {
+        orchestraSamplerWindow = std::make_unique<OrchestraSamplerWindow> (*this);
+        orchestraSamplerWindow->onClose = [this] { closeOrchestraSampler(); };
+    }
+
+    orchestraSamplerWindow->setTrackIndex (index);
+    orchestraSamplerWindow->setVisible (true);
+    orchestraSamplerWindow->toFront (true);
+}
+
+void DawSession::closeOrchestraSampler()
+{
+    orchestraSamplerWindow.reset();
+}
+
+void DawSession::dismissInstrumentBrowser()
+{
+    auto* window = instrumentBrowser;
+    instrumentBrowser = nullptr;
+    delete window;
+}
+
+bool DawSession::saveProject()
+{
+    if (currentProjectFile == juce::File())
+        return false;
+
+    return saveProjectAs (currentProjectFile);
+}
+
+bool DawSession::saveProjectAs (const juce::File& file)
+{
+    if (file == juce::File())
+        return false;
+
+    if (! api.saveProjectToFile (file))
+        return false;
+
+    currentProjectFile = file;
+    project().setName (file.getFileNameWithoutExtension());
+    markSaved();
+    return true;
+}
+
+juce::String DawSession::loadProjectFrom (const juce::File& file)
+{
+    playing = false;
+    recording = false;
+    api.stop();
+    api.seekToBeats (0.0);
+    positionBeats = 0.0;
+
+    const auto error = api.loadProjectFromFile (file);
+
+    if (error.isNotEmpty())
+        return error;
+
+    currentProjectFile = file;
+    dirty = false;
+    clampSelection();
+    notify (everythingChanged);
+    return {};
 }
 
 void DawSession::clearInstrument (TrackData& track)
 {
+    const auto index = project().indexOfTrack (track.id);
+
+    if (index >= 0)
+        api.unloadTrackInstrument (index);
+
     track.instrument.clear();
-    track.instrumentSlot.name.clear();
-    track.instrumentSlot.instrumentId.clear();
+    track.instrumentDefinitionId.clear();
+    track.techniqueId.clear();
+    track.instrumentSlot = {};
+    track.instrumentLoadState = InstrumentLoadState::Unloaded;
+    track.instrumentLoadMessage.clear();
+    track.controllerValues.clear();
+    track.legatoEnabled = false;
+}
+
+bool DawSession::setTrackTechnique (TrackData& track, const juce::String& techniqueId)
+{
+    const auto index = project().indexOfTrack (track.id);
+    return index >= 0 && api.setTrackTechnique (index, techniqueId);
+}
+
+bool DawSession::setTrackController (TrackData& track, const juce::String& controllerId, float normalised)
+{
+    const auto index = project().indexOfTrack (track.id);
+    return index >= 0 && api.setTrackController (index, controllerId, normalised);
+}
+
+bool DawSession::setTrackLegato (TrackData& track, bool enabled)
+{
+    const auto index = project().indexOfTrack (track.id);
+    return index >= 0 && api.setTrackLegato (index, enabled);
 }
 
 //==============================================================================
@@ -267,6 +487,60 @@ void DawSession::notify (int changeFlags)
     }
 
     listeners.call ([changeFlags] (Listener& l) { l.sessionChanged (changeFlags); });
+
+    if (! applyingRemote)
+    {
+        const auto remoteFlags = changeFlags & ~(positionChanged | metersChanged
+                                                 | selectionChanged | viewChanged);
+
+        if (remoteFlags != 0)
+        {
+            applyingRemote = true;
+            api.notify (remoteFlags);
+            applyingRemote = false;
+        }
+    }
+}
+
+void DawSession::onEngineChanged (int changeFlags)
+{
+    if (applyingRemote)
+        return;
+
+    applyingRemote = true;
+    playing = api.isPlaying();
+    positionBeats = api.getPositionBeats();
+    looping = api.getEngine().isLooping();
+    metronome = api.getEngine().isMetronomeEnabled();
+    loopStart = api.getLoopStartBeats();
+    loopEnd = api.getLoopEndBeats();
+    clampSelection();
+
+    int flags = engineChanged;
+
+    if ((changeFlags & EngineAPI::transportChanged) != 0)
+        flags |= transportChanged | positionChanged;
+
+    if ((changeFlags & EngineAPI::tempoChanged) != 0)
+        flags |= projectChanged;
+
+    if ((changeFlags & EngineAPI::tracksChanged) != 0)
+        flags |= tracksChanged;
+
+    if ((changeFlags & EngineAPI::clipsChanged) != 0)
+        flags |= clipsChanged;
+
+    if ((changeFlags & EngineAPI::notesChanged) != 0)
+        flags |= notesChanged;
+
+    if ((changeFlags & EngineAPI::mixerChanged) != 0)
+        flags |= mixerChanged;
+
+    if ((changeFlags & EngineAPI::projectChanged) != 0)
+        flags |= projectChanged;
+
+    listeners.call ([flags] (Listener& l) { l.sessionChanged (flags); });
+    applyingRemote = false;
 }
 
 void DawSession::pushTransportStateToEngine()
@@ -553,7 +827,7 @@ int DawSession::addTrack (TrackType type, const juce::String& name)
 
     if (auto* track = getTrack (index))
         if (type == TrackType::Midi)
-            assignInstrument (*track, getAvailableInstruments()[0]);
+            assignInstrumentDefinition (*track, InstrumentRegistry::testSynthId);
 
     selectedTrack = index;
     notify (tracksChanged | selectionChanged);
@@ -598,6 +872,8 @@ int DawSession::duplicateTrack (int index)
     copy.id = 0;                     // insertTrack stamps a fresh identifier
     copy.name = source->name + " copy";
     copy.recordArm = false;
+    copy.instrumentLoadState = InstrumentLoadState::Unloaded;
+    copy.instrumentLoadMessage.clear();
 
     // Collect the source clips before inserting, because inserting renumbers the tracks
     // below it and would otherwise make the comparison ambiguous.
@@ -852,14 +1128,16 @@ void DawSession::newProject()
 {
     beginTransaction ("New Project");
 
-    project().clear();
-    project().setName ("Untitled");
-    colourIndex = 0;
-    positionBeats = 0.0;
     playing = false;
     recording = false;
     api.stop();
     api.seekToBeats (0.0);
+    api.clearAllHostedInstruments();
+    project().clear();
+    project().setName ("Untitled");
+    colourIndex = 0;
+    positionBeats = 0.0;
+    currentProjectFile = {};
 
     selectedTrack = -1;
     selectedClip = -1;
@@ -874,6 +1152,8 @@ void DawSession::loadDemoProject()
     undoNames.clear();
     redoNames.clear();
     colourIndex = 0;
+    currentProjectFile = {};
+    api.clearAllHostedInstruments();
 
     auto& p = project();
     p.clear();
@@ -900,12 +1180,12 @@ void DawSession::loadDemoProject()
         track->section = spec.section;
         track->volume = spec.volume;
         track->pan = spec.pan;
-        track->instrument = spec.library;
-
-        // The parts are written for the orchestral libraries, but this phase plays them
-        // through the built-in synth: the slot shows what is actually loaded.
+        track->instrument = "Test Synth";
+        track->instrumentDefinitionId = InstrumentRegistry::testSynthId;
         track->instrumentSlot.instrumentId = InstrumentRegistry::testSynthId;
         track->instrumentSlot.name = api.getInstruments().getDisplayName (InstrumentRegistry::testSynthId);
+        track->instrumentLoadState = InstrumentLoadState::Loaded;
+        track->instrumentLoadMessage = "Ready";
 
         track->automation.parameterName = "Volume";
         track->automation.points = { { 0.0, spec.volume }, { 16.0, spec.volume },
@@ -1026,14 +1306,6 @@ void DawSession::timerCallback()
         if (! looping && contentEnd > 0.25 && next >= contentEnd)
         {
             next = contentEnd;
-            playing = false;
-            recording = false;
-            api.pause();
-            flags |= transportChanged;
-        }
-
-        if (api.getEngine().consumeReachedEnd() && playing)
-        {
             playing = false;
             recording = false;
             api.pause();
