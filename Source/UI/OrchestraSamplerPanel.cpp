@@ -5,8 +5,11 @@
 
 namespace
 {
-    juce::Colour statusColour (const juce::String& state)
+    juce::Colour statusColour (juce::String state)
     {
+        if (state.isEmpty())
+            return DawColours::textDim;
+
         if (state.containsIgnoreCase ("ready") || state.containsIgnoreCase ("loaded")
             || state.containsIgnoreCase ("active"))
             return DawColours::soloOn;
@@ -145,7 +148,7 @@ public:
     juce::String techniqueId;
     bool available = false;
 
-    TechniqueButton() : juce::Button ({})
+    TechniqueButton() : juce::Button (juce::String())
     {
         setMouseCursor (juce::MouseCursor::PointingHandCursor);
         setWantsKeyboardFocus (false);
@@ -569,7 +572,14 @@ OrchestraSamplerPanel::OrchestraSamplerPanel (DawSession& sessionToUse)
     addChildComponent (debugEditor);
 
     trackIndex = session.getSelectedTrack();
-    rebuild();
+    bindToTrack (trackIndex);
+
+    juce::Component::SafePointer<OrchestraSamplerPanel> safe (this);
+    juce::MessageManager::callAsync ([safe]
+    {
+        if (safe != nullptr)
+            safe->rebuild();
+    });
 }
 
 OrchestraSamplerPanel::~OrchestraSamplerPanel()
@@ -577,26 +587,95 @@ OrchestraSamplerPanel::~OrchestraSamplerPanel()
     session.removeListener (this);
 }
 
+void OrchestraSamplerPanel::bindToTrack (int index)
+{
+    trackIndex = index;
+
+    if (const auto* track = session.getTrack (index))
+        boundTrackId = track->id;
+    else
+        boundTrackId = 0;
+}
+
+TrackData* OrchestraSamplerPanel::getTrack()
+{
+    if (boundTrackId != 0)
+    {
+        if (auto* track = session.findTrack (boundTrackId))
+        {
+            trackIndex = session.indexOfTrack (boundTrackId);
+            return track;
+        }
+
+        return nullptr;
+    }
+
+    return session.getTrack (trackIndex);
+}
+
+const TrackData* OrchestraSamplerPanel::getTrack() const
+{
+    return const_cast<OrchestraSamplerPanel*> (this)->getTrack();
+}
+
 void OrchestraSamplerPanel::setTrackIndex (int newTrackIndex)
 {
-    if (trackIndex == newTrackIndex)
+    if (trackIndex == newTrackIndex && getTrack() != nullptr)
         return;
 
-    trackIndex = newTrackIndex;
+    bindToTrack (newTrackIndex);
     rebuild();
 }
 
-TrackData* OrchestraSamplerPanel::getTrack() { return session.getTrack (trackIndex); }
-const TrackData* OrchestraSamplerPanel::getTrack() const { return session.getTrack (trackIndex); }
-
 void OrchestraSamplerPanel::sessionChanged (int changeFlags)
 {
+    const int relevant = DawSession::selectionChanged | DawSession::tracksChanged
+                       | DawSession::mixerChanged | DawSession::projectChanged;
+
+    if ((changeFlags & relevant) == 0)
+        return;
+
+    pendingChangeFlags |= changeFlags;
+
+    if (rebuilding)
+    {
+        rebuildPending = true;
+        return;
+    }
+
+    if (sessionUpdateScheduled)
+        return;
+
+    sessionUpdateScheduled = true;
+    juce::Component::SafePointer<OrchestraSamplerPanel> safe (this);
+
+    juce::MessageManager::callAsync ([safe]
+    {
+        if (safe != nullptr)
+            safe->applySessionChange();
+    });
+}
+
+void OrchestraSamplerPanel::applySessionChange()
+{
+    sessionUpdateScheduled = false;
+    const auto changeFlags = pendingChangeFlags;
+    pendingChangeFlags = 0;
+
     if ((changeFlags & (DawSession::selectionChanged | DawSession::tracksChanged
                         | DawSession::mixerChanged | DawSession::projectChanged)) == 0)
         return;
 
+    if (rebuilding)
+    {
+        rebuildPending = true;
+        return;
+    }
+
     if ((changeFlags & DawSession::selectionChanged) != 0)
-        trackIndex = session.getSelectedTrack();
+        bindToTrack (session.getSelectedTrack());
+    else if ((changeFlags & DawSession::tracksChanged) != 0 && getTrack() == nullptr)
+        bindToTrack (session.getSelectedTrack());
 
     const auto* track = getTrack();
     const auto definitionId = track != nullptr ? track->instrumentDefinitionId : juce::String();
@@ -629,7 +708,15 @@ void OrchestraSamplerPanel::updateHero()
 
 void OrchestraSamplerPanel::rebuild()
 {
+    if (rebuilding)
+    {
+        rebuildPending = true;
+        return;
+    }
+
     rebuilding = true;
+    rebuildPending = false;
+
     auto& api = session.getEngineAPI();
     snapshot = OrchestraSampler::buildSnapshot (api.getInstruments(), api.getStateStore(),
                                                 getTrack(), trackIndex);
@@ -715,10 +802,19 @@ void OrchestraSamplerPanel::rebuild()
     rebuilding = false;
     resized();
     repaint();
+
+    if (rebuildPending)
+        rebuild();
 }
 
 void OrchestraSamplerPanel::refreshValues()
 {
+    if (rebuilding)
+    {
+        rebuildPending = true;
+        return;
+    }
+
     auto& api = session.getEngineAPI();
     snapshot = OrchestraSampler::buildSnapshot (api.getInstruments(), api.getStateStore(),
                                                 getTrack(), trackIndex);
@@ -794,7 +890,7 @@ void OrchestraSamplerPanel::playTest()
 
 void OrchestraSamplerPanel::changeInstrument()
 {
-    session.showInstrumentSelector (this, trackIndex);
+    session.showOrchestraPatchSelector (this, trackIndex);
 }
 
 void OrchestraSamplerPanel::resetPerformance()
@@ -821,7 +917,7 @@ void OrchestraSamplerPanel::paint (juce::Graphics& g)
 
     caption (techniqueLine, techniqueButtons.isEmpty() ? juce::String() : juce::String ("TECHNIQUE"));
     caption (performanceLine, knobs.isEmpty() && toggles.isEmpty() ? juce::String() : juce::String ("PERFORMANCE"));
-    caption (settingsLine, settingsOpen ? "SETTINGS" : juce::String());
+    caption (settingsLine, settingsOpen ? juce::String ("SETTINGS") : juce::String());
 }
 
 void OrchestraSamplerPanel::resized()

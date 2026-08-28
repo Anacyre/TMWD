@@ -50,6 +50,12 @@
       "displayName": "Angelic Choir",
       "pluginId": "synchron_player",
       "sampleLibraryPath": "D:\\FL Plugin\\Libraries\\VSL\\VSL Contents\\Angelic Choir - iLok"
+    },
+    {
+      "id": "m_orchestra_lib",
+      "displayName": "M Orchestra",
+      "pluginId": "m_orchestra",
+      "sampleLibraryPath": "D:\\\\Daw\\\\We chat\\\\xwechat_files\\\\wxid_iwpym6w3qj7522_8be0\\\\msg\\\\file\\\\2026-08\\\\all-samples\\\\all-samples"
     }
   ],
   "presets": [
@@ -623,31 +629,76 @@
       "id": "bbcso_long",
       "displayName": "Long",
       "pluginId": "bbcso_discover",
-      "action": { "type": "PresetChange", "mapped": false }
+      "action": {
+        "type": "PresetChange",
+        "mapped": false
+      }
     },
     {
       "id": "bbcso_spiccato",
       "displayName": "Spiccato",
       "pluginId": "bbcso_discover",
-      "action": { "type": "PresetChange", "mapped": false }
+      "action": {
+        "type": "PresetChange",
+        "mapped": false
+      }
     },
     {
       "id": "bbcso_pizzicato",
       "displayName": "Pizzicato",
       "pluginId": "bbcso_discover",
-      "action": { "type": "PresetChange", "mapped": true }
+      "action": {
+        "type": "PresetChange",
+        "mapped": true
+      }
     },
     {
       "id": "bbcso_tremolo",
       "displayName": "Tremolo",
       "pluginId": "bbcso_discover",
-      "action": { "type": "PresetChange", "mapped": true }
+      "action": {
+        "type": "PresetChange",
+        "mapped": true
+      }
     },
     {
       "id": "bbcso_staccatissimo",
       "displayName": "Staccatissimo",
       "pluginId": "bbcso_discover",
-      "action": { "type": "PresetChange", "mapped": false }
+      "action": {
+        "type": "PresetChange",
+        "mapped": false
+      }
+    },
+    {
+      "id": "m_orch_long",
+      "displayName": "Long",
+      "pluginId": "m_orchestra",
+      "action": {
+        "type": "ProgramChange",
+        "program": 0,
+        "mapped": true
+      }
+    },
+    {
+      "id": "m_orch_short",
+      "displayName": "Short",
+      "pluginId": "m_orchestra",
+      "action": {
+        "type": "ProgramChange",
+        "program": 1,
+        "mapped": true
+      }
+    },
+    {
+      "id": "m_orch_hit",
+      "displayName": "Hit",
+      "pluginId": "m_orchestra",
+      "action": {
+        "type": "ProgramChange",
+        "program": 2,
+        "mapped": true
+      }
     }
   ],
   "controllers": [
@@ -701,9 +752,13 @@
     {
       "id": "vibrato",
       "displayName": "Vibrato",
-      "group": "Sound",
-      "target": "unspecified",
-      "mapped": false
+      "group": "Performance",
+      "target": "midiCC",
+      "mapped": true,
+      "midiCC": 21,
+      "min": 0,
+      "max": 127,
+      "default": 45
     },
     {
       "id": "attack",
@@ -730,7 +785,9 @@
       "preset": "",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["velocity"],
+      "controllers": [
+        "velocity"
+      ],
       "defaultMidiChannel": 1,
       "defaultVelocity": 0.8,
       "defaultVolume": 0.8,
@@ -745,10 +802,20 @@
       "preset": "Piano",
       "presetId": "bbcso_piano",
       "presetMapped": true,
-      "aliases": ["bbcso piano", "concert piano", "discover piano", "piano"],
+      "aliases": [
+        "bbcso piano",
+        "concert piano",
+        "discover piano",
+        "piano"
+      ],
       "description": "BBCSO Discover concert piano",
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity", "pedal"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "pedal"
+      ]
     },
     {
       "id": "soft_imperial",
@@ -759,10 +826,20 @@
       "preset": "Soft Imperial",
       "presetId": "synchron_soft_imperial",
       "presetMapped": true,
-      "aliases": ["imperial", "vsl piano", "soft piano", "piano"],
+      "aliases": [
+        "imperial",
+        "vsl piano",
+        "soft piano",
+        "piano"
+      ],
       "description": "Vienna Synchron Soft Imperial",
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity", "pedal"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "pedal"
+      ]
     },
     {
       "id": "bbcso_violin_1",
@@ -773,7 +850,13 @@
       "preset": "Violin 1",
       "presetId": "bbcso_violin_1_long",
       "presetMapped": true,
-      "aliases": ["violin", "violins", "vn1", "first violins", "string"],
+      "aliases": [
+        "violin",
+        "violins",
+        "vn1",
+        "first violins",
+        "string"
+      ],
       "description": "BBCSO Discover first violins",
       "techniquePresets": {
         "bbcso_long": "bbcso_violin_1_long",
@@ -781,8 +864,17 @@
         "bbcso_pizzicato": "bbcso_violin_1_pizzicato",
         "bbcso_tremolo": "bbcso_violin_1_tremolo"
       },
-      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_spiccato",
+        "bbcso_pizzicato",
+        "bbcso_tremolo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_violin_2",
@@ -799,8 +891,17 @@
         "bbcso_pizzicato": "bbcso_violin_2_pizzicato",
         "bbcso_tremolo": "bbcso_violin_2_tremolo"
       },
-      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_spiccato",
+        "bbcso_pizzicato",
+        "bbcso_tremolo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_viola",
@@ -817,8 +918,17 @@
         "bbcso_pizzicato": "bbcso_viola_pizzicato",
         "bbcso_tremolo": "bbcso_viola_tremolo"
       },
-      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_spiccato",
+        "bbcso_pizzicato",
+        "bbcso_tremolo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_cello",
@@ -835,8 +945,17 @@
         "bbcso_pizzicato": "bbcso_cello_pizzicato",
         "bbcso_tremolo": "bbcso_cello_tremolo"
       },
-      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato", "bbcso_tremolo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_spiccato",
+        "bbcso_pizzicato",
+        "bbcso_tremolo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_bass",
@@ -852,8 +971,16 @@
         "bbcso_spiccato": "bbcso_bass_spiccato",
         "bbcso_pizzicato": "bbcso_bass_pizzicato"
       },
-      "techniques": ["bbcso_long", "bbcso_spiccato", "bbcso_pizzicato"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_spiccato",
+        "bbcso_pizzicato"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "celestial_strings",
@@ -864,10 +991,21 @@
       "preset": "Celestial Strings",
       "presetId": "synchron_celestial_strings",
       "presetMapped": true,
-      "aliases": ["celestial", "vsl strings", "string"],
+      "aliases": [
+        "celestial",
+        "vsl strings",
+        "string"
+      ],
       "description": "Vienna Synchron Celestial Strings",
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity", "vibrato", "attack", "release"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato",
+        "attack",
+        "release"
+      ]
     },
     {
       "id": "bbcso_piccolo",
@@ -882,8 +1020,15 @@
         "bbcso_long": "bbcso_piccolo_long",
         "bbcso_staccatissimo": "bbcso_piccolo_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_flute",
@@ -898,8 +1043,15 @@
         "bbcso_long": "bbcso_flute_long",
         "bbcso_staccatissimo": "bbcso_flute_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_oboe",
@@ -914,8 +1066,15 @@
         "bbcso_long": "bbcso_oboe_long",
         "bbcso_staccatissimo": "bbcso_oboe_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_clarinet",
@@ -930,8 +1089,15 @@
         "bbcso_long": "bbcso_clarinet_long",
         "bbcso_staccatissimo": "bbcso_clarinet_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_bassoon",
@@ -946,8 +1112,15 @@
         "bbcso_long": "bbcso_bassoon_long",
         "bbcso_staccatissimo": "bbcso_bassoon_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_horn",
@@ -962,8 +1135,15 @@
         "bbcso_long": "bbcso_horn_long",
         "bbcso_staccatissimo": "bbcso_horn_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_trumpet",
@@ -978,8 +1158,15 @@
         "bbcso_long": "bbcso_trumpet_long",
         "bbcso_staccatissimo": "bbcso_trumpet_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_tenor_trombone",
@@ -994,8 +1181,15 @@
         "bbcso_long": "bbcso_tenor_trombone_long",
         "bbcso_staccatissimo": "bbcso_tenor_trombone_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_bass_trombone",
@@ -1010,8 +1204,15 @@
         "bbcso_long": "bbcso_bass_trombone_long",
         "bbcso_staccatissimo": "bbcso_bass_trombone_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_tuba",
@@ -1026,8 +1227,15 @@
         "bbcso_long": "bbcso_tuba_long",
         "bbcso_staccatissimo": "bbcso_tuba_staccatissimo"
       },
-      "techniques": ["bbcso_long", "bbcso_staccatissimo"],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "techniques": [
+        "bbcso_long",
+        "bbcso_staccatissimo"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_harp",
@@ -1039,7 +1247,11 @@
       "presetId": "bbcso_harp",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_celeste",
@@ -1051,7 +1263,11 @@
       "presetId": "bbcso_celeste",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_timpani",
@@ -1063,7 +1279,11 @@
       "presetId": "bbcso_timpani",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_marimba",
@@ -1075,7 +1295,11 @@
       "presetId": "bbcso_marimba",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_xylophone",
@@ -1087,7 +1311,11 @@
       "presetId": "bbcso_xylophone",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_glockenspiel",
@@ -1099,7 +1327,11 @@
       "presetId": "bbcso_glockenspiel",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_tubular_bells",
@@ -1111,7 +1343,11 @@
       "presetId": "bbcso_tubular_bells",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "bbcso_untuned_percussion",
@@ -1123,7 +1359,11 @@
       "presetId": "bbcso_untuned_percussion",
       "presetMapped": true,
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "small_percussion",
@@ -1134,10 +1374,18 @@
       "preset": "Small Percussion",
       "presetId": "synchron_small_percussion",
       "presetMapped": true,
-      "aliases": ["percussion", "vsl percussion", "toys"],
+      "aliases": [
+        "percussion",
+        "vsl percussion",
+        "toys"
+      ],
       "description": "Vienna Synchron Small Percussion",
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ]
     },
     {
       "id": "angelic_choir",
@@ -1148,10 +1396,721 @@
       "preset": "Angelic Choir",
       "presetId": "synchron_angelic_choir",
       "presetMapped": true,
-      "aliases": ["choir", "chorus", "voices", "vsl choir"],
+      "aliases": [
+        "choir",
+        "chorus",
+        "voices",
+        "vsl choir"
+      ],
       "description": "Vienna Synchron Angelic Choir",
       "techniques": [],
-      "controllers": ["dynamics", "expression", "velocity", "vibrato"]
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ]
+    },
+    {
+      "id": "m_orch_violin_1",
+      "displayName": "Violin I",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "violin i",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 16-player violin section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_violin_2",
+      "displayName": "Violin II",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "violin ii",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 12-player violin section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_viola",
+      "displayName": "Viola",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "viola",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 8-player viola section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_cello",
+      "displayName": "Cello",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "cello",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 8-player cello section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_bass",
+      "displayName": "Double Bass",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "double bass",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 6-player bass section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_flute",
+      "displayName": "Flute",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "flute",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Woodwind flute section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_oboe",
+      "displayName": "Oboe",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "oboe",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Woodwind oboe section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_clarinet",
+      "displayName": "Clarinet",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "clarinet",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Woodwind clarinet section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_bassoon",
+      "displayName": "Bassoon",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "bassoon",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Woodwind bassoon section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_horn",
+      "displayName": "Horn",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "horn",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 4-player horn section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_trumpet",
+      "displayName": "Trumpet",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "trumpet",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 6-player trumpet section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_trombone",
+      "displayName": "Trombone",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "trombone",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · 4-player trombone section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_bass_trombone",
+      "displayName": "Bass Trombone",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "bass trombone",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Bass trombone (trombone samples, darker model)",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_tuba",
+      "displayName": "Tuba",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "tuba",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Tuba section",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_solo_violin",
+      "displayName": "Solo Violin",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "solo violin",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Solo violin",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_solo_cello",
+      "displayName": "Solo Cello",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "solo cello",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Solo cello",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_solo_flute",
+      "displayName": "Solo Flute",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "solo flute",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Solo flute",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_solo_clarinet",
+      "displayName": "Solo Clarinet",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "solo clarinet",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Solo clarinet",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity",
+        "vibrato"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_solo_horn",
+      "displayName": "Solo Horn",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Long",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "solo horn",
+        "sketch orchestra"
+      ],
+      "description": "M Orchestra · Solo horn",
+      "techniques": [
+        "m_orch_long",
+        "m_orch_short"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_bass_drum",
+      "displayName": "Bass Drum",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "bass drum"
+      ],
+      "description": "M Orchestra · Orchestral bass drum",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_snare",
+      "displayName": "Snare",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "snare"
+      ],
+      "description": "M Orchestra · Orchestral snare",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_cymbals",
+      "displayName": "Cymbals",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "cymbals"
+      ],
+      "description": "M Orchestra · Clash cymbals",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_suspended_cymbal",
+      "displayName": "Suspended Cymbal",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "suspended cymbal"
+      ],
+      "description": "M Orchestra · Suspended cymbal",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_tom",
+      "displayName": "Tom",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "tom"
+      ],
+      "description": "M Orchestra · Tom-toms",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
+    },
+    {
+      "id": "m_orch_triangle",
+      "displayName": "Triangle",
+      "category": "M Orchestra",
+      "sourcePlugin": "m_orchestra",
+      "sourceLibrary": "m_orchestra_lib",
+      "preset": "Hit",
+      "presetMapped": true,
+      "aliases": [
+        "m orchestra",
+        "triangle"
+      ],
+      "description": "M Orchestra · Triangle",
+      "techniques": [
+        "m_orch_hit"
+      ],
+      "controllers": [
+        "dynamics",
+        "expression",
+        "velocity"
+      ],
+      "defaultMidiChannel": 1,
+      "defaultVelocity": 0.8,
+      "defaultVolume": 0.8,
+      "defaultPan": 0.0
     }
   ]
 }

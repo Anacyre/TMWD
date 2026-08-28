@@ -84,7 +84,7 @@
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_MODAL_LOOPS_PERMITTED=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -100,7 +100,7 @@
     </ClCompile>
     <ResourceCompile>
       <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_MODAL_LOOPS_PERMITTED=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <Link>
       <OutputFile>$(OutDir)\NewProject.exe</OutputFile>
@@ -126,6 +126,8 @@ exit /B 0</Command>
 xcopy /Y /I "..\..\Source\Resources\instruments.json" "$(OutDir)Resources\" &gt;nul
 if not exist "$(OutDir)Resources\instruments" mkdir "$(OutDir)Resources\instruments"
 xcopy /E /Y /I "..\..\Source\Resources\instruments" "$(OutDir)Resources\instruments\" &gt;nul
+if not exist "$(OutDir)Resources\m-orchestra" mkdir "$(OutDir)Resources\m-orchestra"
+xcopy /E /Y /I "..\..\Source\Resources\m-orchestra" "$(OutDir)Resources\m-orchestra\" &gt;nul
 if not exist "$(OutDir)Resources\icons" mkdir "$(OutDir)Resources\icons"
 xcopy /Y /I "..\..\Source\Resources\icons\*.png" "$(OutDir)Resources\icons\" &gt;nul
 exit /B 0</Command>
@@ -144,7 +146,7 @@ exit /B 0</Command>
       <Optimization>Full</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_MODAL_LOOPS_PERMITTED=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -160,7 +162,7 @@ exit /B 0</Command>
     </ClCompile>
     <ResourceCompile>
       <AdditionalIncludeDirectories>..\..\JuceLibraryCode;$(JuceRoot)\modules;$(JuceRoot)\modules\juce_audio_processors_headless\format_types\VST3_SDK;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90001;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_STANDALONE_APPLICATION=1;JUCE_MODAL_LOOPS_PERMITTED=1;JUCE_WEB_BROWSER=0;JUCE_USE_CURL=0;JUCE_PLUGINHOST_VST3=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.0.0;JUCE_APP_VERSION_HEX=0x10000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <Link>
       <OutputFile>$(OutDir)\NewProject.exe</OutputFile>
@@ -189,6 +191,8 @@ exit /B 0</Command>
 xcopy /Y /I "..\..\Source\Resources\instruments.json" "$(OutDir)Resources\" &gt;nul
 if not exist "$(OutDir)Resources\instruments" mkdir "$(OutDir)Resources\instruments"
 xcopy /E /Y /I "..\..\Source\Resources\instruments" "$(OutDir)Resources\instruments\" &gt;nul
+if not exist "$(OutDir)Resources\m-orchestra" mkdir "$(OutDir)Resources\m-orchestra"
+xcopy /E /Y /I "..\..\Source\Resources\m-orchestra" "$(OutDir)Resources\m-orchestra\" &gt;nul
 if not exist "$(OutDir)Resources\icons" mkdir "$(OutDir)Resources\icons"
 xcopy /Y /I "..\..\Source\Resources\icons\*.png" "$(OutDir)Resources\icons\" &gt;nul
 exit /B 0</Command>
@@ -204,6 +208,12 @@ exit /B 0</Command>
     <ClCompile Include="..\..\Source\Audio\MixerEngine.cpp"/>
     <ClCompile Include="..\..\Source\Audio\TestSynth.cpp"/>
     <ClCompile Include="..\..\Source\Audio\AudioEngine.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\RemoteAudioOutput.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\SessionDiagnostics.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\LimiterX.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraModel.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraEngine.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraInstance.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\InstrumentRegistry.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\PluginHost.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\HostedPluginInstance.cpp"/>
@@ -227,6 +237,8 @@ exit /B 0</Command>
     <ClCompile Include="..\..\Source\UI\InspectorPanel.cpp"/>
     <ClCompile Include="..\..\Source\UI\InstrumentPanel.cpp"/>
     <ClCompile Include="..\..\Source\UI\OrchestraSamplerPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\MOrchestraPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\FxInsertEditor.cpp"/>
     <ClCompile Include="..\..\Source\UI\InstrumentSelector.cpp"/>
     <ClCompile Include="..\..\Source\UI\StateCaptureWindow.cpp"/>
     <ClCompile Include="..\..\Source\UI\StatusBar.cpp"/>
@@ -271,6 +283,16 @@ exit /B 0</Command>
     <ClInclude Include="..\..\Source\Audio\MixerEngine.h"/>
     <ClInclude Include="..\..\Source\Audio\TestSynth.h"/>
     <ClInclude Include="..\..\Source\Audio\AudioEngine.h"/>
+    <ClInclude Include="..\..\Source\Audio\RemoteAudioOutput.h"/>
+    <ClInclude Include="..\..\Source\Audio\SessionDiagnostics.h"/>
+    <ClInclude Include="..\..\Source\Audio\LimiterX.h"/>
+    <ClInclude Include="..\..\Source\Audio\MOrchestra\MOrchestraModel.h"/>
+    <ClInclude Include="..\..\Source\Audio\MOrchestra\MOrchestraEngine.h"/>
+    <ClInclude Include="..\..\Source\Audio\MOrchestra\MOrchestraInstance.h"/>
+    <ClInclude Include="..\..\Source\Audio\MOrchestra\MOrchestraUi.h"/>
+    <ClInclude Include="..\..\Source\Model\ProjectSchema.h"/>
+    <ClInclude Include="..\..\Source\Model\MixerModel.h"/>
+    <ClInclude Include="..\..\Source\Model\WebSamplerModel.h"/>
     <ClInclude Include="..\..\Source\Plugins\PluginDescriptor.h"/>
     <ClInclude Include="..\..\Source\Plugins\PluginInstance.h"/>
     <ClInclude Include="..\..\Source\Plugins\InstrumentRegistry.h"/>
@@ -301,6 +323,8 @@ exit /B 0</Command>
     <ClInclude Include="..\..\Source\UI\InspectorPanel.h"/>
     <ClInclude Include="..\..\Source\UI\InstrumentPanel.h"/>
     <ClInclude Include="..\..\Source\UI\OrchestraSamplerPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\MOrchestraPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\FxInsertEditor.h"/>
     <ClInclude Include="..\..\Source\UI\InstrumentSelector.h"/>
     <ClInclude Include="..\..\Source\UI\StateCaptureWindow.h"/>
     <ClInclude Include="..\..\Source\UI\StatusBar.h"/>

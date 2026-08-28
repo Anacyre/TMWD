@@ -260,7 +260,10 @@ bool PluginStateStore::verifyIntegrity (const PresetDefinition& preset, const ju
     StateMetadata metadata;
 
     if (! loadMetadata (preset, metadata))
-        return true;
+    {
+        error = preset.displayName + " is missing factory metadata.";
+        return false;
+    }
 
     if (metadata.id.isNotEmpty() && metadata.id != preset.id)
     {

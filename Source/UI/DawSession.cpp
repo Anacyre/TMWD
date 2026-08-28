@@ -1,6 +1,10 @@
 #include "DawSession.h"
+#include "FxInsertEditor.h"
 #include "InstrumentSelector.h"
+#include "MOrchestraPanel.h"
 #include "OrchestraSamplerPanel.h"
+#include "../Audio/MOrchestra/MOrchestraUi.h"
+#include "../Model/ProjectSchema.h"
 #include <algorithm>
 #include <cmath>
 
@@ -19,79 +23,6 @@ namespace
 
     constexpr int maxUndoSteps = 64;
 
-    //==============================================================================
-    // The demonstration project: eight bars of D minor, twice through, so that pressing
-    // Play produces something recognisably musical rather than a random cluster.
-    constexpr double chordLengthBeats = 8.0;
-    constexpr double demoLengthBeats = 64.0;
-
-    struct DemoChord
-    {
-        const char* name;
-        int tones[3];   // pitch classes, root first
-        int bass;
-    };
-
-    const DemoChord progression[]
-    {
-        { "Dm",  { 2, 5, 9 },   2 },
-        { "Bb",  { 10, 2, 5 }, 10 },
-        { "F",   { 5, 9, 0 },   5 },
-        { "C",   { 0, 4, 7 },   0 },
-        { "Dm",  { 2, 5, 9 },   2 },
-        { "Gm",  { 7, 10, 2 },  7 },
-        { "A",   { 9, 1, 4 },   9 },
-        { "Dm",  { 2, 5, 9 },   2 }
-    };
-
-    constexpr int numChords = (int) std::size (progression);
-
-    enum class DemoRole { pad, moving, bass, brass, percussion };
-
-    struct DemoTrackSpec
-    {
-        const char* name;
-        const char* section;
-        const char* library;      // the instrument the part is written for
-        juce::uint32 colour;
-        int basePitch;
-        float volume;
-        float pan;
-        DemoRole role;
-        int voice;                // which chord tone this part takes
-        double entryBeat;
-        double exitBeat;
-    };
-
-    // Panning roughly follows a concert seating plan.
-    const DemoTrackSpec demoTracks[]
-    {
-        { "Violin I",   "Strings",    "BBC Symphony Orchestra Discover", 0xffd9a04a, 74, 0.80f, -0.55f, DemoRole::pad,        2,  0.0, 64.0 },
-        { "Violin II",  "Strings",    "BBC Symphony Orchestra Discover", 0xffd18f45, 69, 0.78f, -0.30f, DemoRole::pad,        1,  0.0, 64.0 },
-        { "Viola",      "Strings",    "BBC Symphony Orchestra Discover", 0xffc47f3f, 62, 0.76f,  0.18f, DemoRole::pad,        0,  0.0, 64.0 },
-        { "Cello",      "Strings",    "BBC Symphony Orchestra Discover", 0xffb87038, 50, 0.78f,  0.42f, DemoRole::bass,       0,  8.0, 64.0 },
-        { "Bass",       "Strings",    "BBC Symphony Orchestra Discover", 0xffa66232, 38, 0.74f,  0.60f, DemoRole::bass,       0,  8.0, 64.0 },
-        { "Flute",      "Woodwinds",  "BBC Symphony Orchestra Discover", 0xff6dbf8a, 81, 0.68f, -0.22f, DemoRole::moving,     2, 16.0, 64.0 },
-        { "Oboe",       "Woodwinds",  "BBC Symphony Orchestra Discover", 0xff5faf7d, 74, 0.66f, -0.08f, DemoRole::moving,     1, 16.0, 48.0 },
-        { "Clarinet",   "Woodwinds",  "BBC Symphony Orchestra Discover", 0xff53a071, 69, 0.68f,  0.08f, DemoRole::moving,     0, 24.0, 64.0 },
-        { "Bassoon",    "Woodwinds",  "BBC Symphony Orchestra Discover", 0xff479065, 50, 0.66f,  0.22f, DemoRole::pad,        1, 32.0, 64.0 },
-        { "Horn",       "Brass",      "Synchron Player",                 0xff4a90d9, 57, 0.70f, -0.35f, DemoRole::brass,      0, 32.0, 64.0 },
-        { "Trumpet",    "Brass",      "Synchron Player",                 0xff4283c4, 69, 0.66f,  0.14f, DemoRole::brass,      2, 48.0, 64.0 },
-        { "Trombone",   "Brass",      "Synchron Player",                 0xff3a76b0, 52, 0.68f,  0.30f, DemoRole::brass,      1, 48.0, 64.0 },
-        { "Tuba",       "Brass",      "Synchron Player",                 0xff33699c, 38, 0.66f,  0.45f, DemoRole::bass,       0, 48.0, 64.0 },
-        { "Timpani",    "Percussion", "Synchron Player",                 0xffc46bb3, 38, 0.72f,  0.00f, DemoRole::percussion, 0,  0.0, 64.0 },
-        { "Percussion", "Percussion", "Synchron Player",                 0xffab5c9e, 60, 0.62f,  0.10f, DemoRole::percussion, 0, 32.0, 64.0 }
-    };
-
-    /** Nearest occurrence of a pitch class to a reference pitch, so every part stays in
-        its own register without having to spell out octaves by hand.
-    */
-    int nearestPitch (int pitchClass, int reference)
-    {
-        const auto offset = ((pitchClass - reference) % 12 + 18) % 12 - 6;
-        return juce::jlimit (21, 108, reference + offset);
-    }
-
     void appendNote (ClipData& clip, int pitch, double startBeat, double lengthBeats, float velocity)
     {
         if (startBeat < -0.001 || startBeat >= clip.lengthBeats - 0.001)
@@ -103,70 +34,6 @@ namespace
         note.lengthBeats = juce::jmin (lengthBeats, clip.lengthBeats - startBeat);
         note.velocity = juce::jlimit (0.1f, 1.0f, velocity);
         clip.notes.push_back (note);
-    }
-
-    void fillChordNotes (ClipData& clip, const DemoTrackSpec& spec)
-    {
-        for (int chordIndex = 0; chordIndex < numChords * 2; ++chordIndex)
-        {
-            const auto chordStart = (double) chordIndex * chordLengthBeats;
-
-            if (chordStart >= clip.startBeat + clip.lengthBeats || chordStart + chordLengthBeats <= clip.startBeat)
-                continue;
-
-            const auto& chord = progression[(size_t) (chordIndex % numChords)];
-            const auto localStart = chordStart - clip.startBeat;
-            const auto emphasis = chordIndex % 4 == 0 ? 0.06f : 0.0f;
-
-            switch (spec.role)
-            {
-                case DemoRole::pad:
-                {
-                    const auto pitch = nearestPitch (chord.tones[spec.voice % 3], spec.basePitch);
-                    appendNote (clip, pitch, localStart, chordLengthBeats - 0.4, 0.62f + emphasis);
-                    break;
-                }
-
-                case DemoRole::bass:
-                {
-                    const auto pitch = nearestPitch (chord.bass, spec.basePitch);
-                    appendNote (clip, pitch, localStart, chordLengthBeats * 0.5 - 0.2, 0.72f + emphasis);
-                    appendNote (clip, pitch, localStart + chordLengthBeats * 0.5, chordLengthBeats * 0.5 - 0.3, 0.64f);
-                    break;
-                }
-
-                case DemoRole::moving:
-                {
-                    // A slow arpeggio across the chord, one note per bar.
-                    const int order[] { 0, 1, 2, 1 };
-
-                    for (int step = 0; step < 4; ++step)
-                    {
-                        const auto tone = chord.tones[(size_t) ((spec.voice + order[step]) % 3)];
-                        appendNote (clip, nearestPitch (tone, spec.basePitch),
-                                    localStart + (double) step * 2.0, 1.7, 0.58f + emphasis);
-                    }
-
-                    break;
-                }
-
-                case DemoRole::brass:
-                {
-                    const auto pitch = nearestPitch (chord.tones[spec.voice % 3], spec.basePitch);
-                    appendNote (clip, pitch, localStart + 0.5, 3.2, 0.66f + emphasis);
-                    appendNote (clip, pitch, localStart + 4.5, 3.2, 0.60f);
-                    break;
-                }
-
-                case DemoRole::percussion:
-                {
-                    const auto pitch = nearestPitch (chord.bass, spec.basePitch);
-                    appendNote (clip, pitch, localStart, 0.6, 0.78f);
-                    appendNote (clip, pitch, localStart + 4.0, 0.4, 0.58f);
-                    break;
-                }
-            }
-        }
     }
 
     /** Fallback content for clips the user creates by hand: an arpeggio of the tonic. */
@@ -225,7 +92,9 @@ void DawSession::setupSession (bool initialiseEngine)
 DawSession::~DawSession()
 {
     stopTimer();
+    closeFxInsertEditor();
     closeOrchestraSampler();
+    closeMOrchestra();
     dismissInstrumentBrowser();
     api.removeListener (this);
 
@@ -315,7 +184,17 @@ juce::String DawSession::definitionIdFromMenuResult (int result) const
 
 juce::StringArray DawSession::getAvailableEffects()
 {
-    return { "Convolution Reverb", "Channel EQ", "Compressor", "Tape Saturation" };
+    return { "Equalizer X", "Reverb X", "Boost X", "Dynamic X", "Limiter X" };
+}
+
+juce::String DawSession::effectIdForName (const juce::String& effectName)
+{
+    if (effectName == "Equalizer X") return "equalizer-x";
+    if (effectName == "Reverb X")    return "reverb-x";
+    if (effectName == "Boost X")     return "boost-x";
+    if (effectName == "Dynamic X")   return "dynamic-x";
+    if (effectName == "Limiter X")   return "limiter-x";
+    return {};
 }
 
 void DawSession::assignInstrument (TrackData& track, const juce::String& displayName)
@@ -353,6 +232,67 @@ void DawSession::showInstrumentSelector (juce::Component* anchor, int trackIndex
     });
 }
 
+void DawSession::showOrchestraPatchSelector (juce::Component* anchor, int trackIndex)
+{
+    const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
+    const auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return;
+
+    juce::Component::SafePointer<juce::Component> safeAnchor (anchor);
+    juce::MessageManager::callAsync ([this, safeAnchor, index]
+    {
+        InstrumentSelector::launchPatches (*this, safeAnchor.getComponent(), index);
+    });
+}
+
+bool DawSession::isMOrchestraTrack (const TrackData& track) const
+{
+    return track.instrumentSource == ProjectSchema::sourceMOrchestra
+        || MOrchestraUi::isMOrchestraDefinition (track.instrumentDefinitionId);
+}
+
+void DawSession::insertPlugin (int trackIndex, const juce::String& pluginId)
+{
+    auto* track = getTrack (trackIndex);
+
+    if (track == nullptr || track->isMaster() || pluginId.isEmpty())
+        return;
+
+    setSelectedTrack (trackIndex);
+
+    if (pluginId == InstrumentRegistry::orchestraSamplerPluginId)
+    {
+        showOrchestraPatchSelector (nullptr, trackIndex);
+        return;
+    }
+
+    api.insertTrackPlugin (trackIndex, pluginId);
+    notify (tracksChanged | mixerChanged);
+    showPluginUI (trackIndex);
+}
+
+void DawSession::showPluginUI (int trackIndex)
+{
+    const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
+    auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return;
+
+    if (track->instrumentDefinitionId.isEmpty())
+    {
+        showInstrumentSelector (nullptr, index);
+        return;
+    }
+
+    if (isMOrchestraTrack (*track))
+        showMOrchestra (index);
+    else if (track->instrumentDefinitionId != InstrumentRegistry::testSynthId)
+        showOrchestraSampler (index);
+}
+
 void DawSession::showOrchestraSampler (int trackIndex)
 {
     const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
@@ -362,6 +302,20 @@ void DawSession::showOrchestraSampler (int trackIndex)
         return;
 
     setSelectedTrack (index);
+    closeMOrchestra();
+
+    const auto previousTechnique = track->techniqueId;
+    const auto previousPreset = track->presetId;
+    const auto wasLoaded = track->instrumentLoadState == InstrumentLoadState::Loaded
+                        || track->instrumentLoadState == InstrumentLoadState::Active;
+
+    api.sanitizeTrackInstrumentFields (*track);
+
+    if (wasLoaded && track->instrumentDefinitionId.isNotEmpty()
+        && (track->techniqueId != previousTechnique || track->presetId != previousPreset))
+    {
+        api.loadTrackInstrument (index, track->instrumentDefinitionId, true);
+    }
 
     if (orchestraSamplerWindow == nullptr)
     {
@@ -377,6 +331,62 @@ void DawSession::showOrchestraSampler (int trackIndex)
 void DawSession::closeOrchestraSampler()
 {
     orchestraSamplerWindow.reset();
+}
+
+void DawSession::showMOrchestra (int trackIndex)
+{
+    const auto index = trackIndex >= 0 ? trackIndex : selectedTrack;
+    auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return;
+
+    setSelectedTrack (index);
+    closeOrchestraSampler();
+
+    if (mOrchestraWindow == nullptr)
+    {
+        mOrchestraWindow = std::make_unique<MOrchestraWindow> (*this);
+        mOrchestraWindow->onClose = [this] { closeMOrchestra(); };
+    }
+
+    mOrchestraWindow->setTrackIndex (index);
+    mOrchestraWindow->setVisible (true);
+    mOrchestraWindow->toFront (true);
+}
+
+void DawSession::closeMOrchestra()
+{
+    mOrchestraWindow.reset();
+}
+
+void DawSession::showFxInsertEditor (int trackIndex, int slotIndex)
+{
+    auto* track = getTrack (trackIndex);
+
+    if (track == nullptr || slotIndex < 0 || slotIndex >= (int) track->inserts.size())
+        return;
+
+    if (track->inserts[(size_t) slotIndex].isEmpty())
+        return;
+
+    setSelectedTrack (trackIndex);
+
+    if (fxInsertEditorWindow == nullptr)
+    {
+        fxInsertEditorWindow = std::make_unique<FxInsertEditorWindow> (*this);
+        fxInsertEditorWindow->onClose = [this] { closeFxInsertEditor(); };
+    }
+
+    const auto title = track->name + " — " + track->inserts[(size_t) slotIndex].name;
+    fxInsertEditorWindow->bind (trackIndex, slotIndex, title);
+    fxInsertEditorWindow->setVisible (true);
+    fxInsertEditorWindow->toFront (true);
+}
+
+void DawSession::closeFxInsertEditor()
+{
+    fxInsertEditorWindow.reset();
 }
 
 void DawSession::dismissInstrumentBrowser()
@@ -635,7 +645,15 @@ void DawSession::toggleMetronome()
 
 void DawSession::toggleSnap()
 {
-    snap = ! snap;
+    setSnapEnabled (! snap);
+}
+
+void DawSession::setSnapEnabled (bool shouldBeOn)
+{
+    if (snap == shouldBeOn)
+        return;
+
+    snap = shouldBeOn;
     notify (viewChanged);
 }
 
@@ -785,9 +803,19 @@ void DawSession::getBarBeatTick (int& bar, int& beat, int& tick) const
 
 juce::String DawSession::getPositionString() const
 {
+    if (! musicalPosition)
+        return getSecondsString();
+
     int bar = 1, beat = 1, tick = 0;
     getBarBeatTick (bar, beat, tick);
-    return juce::String::formatted ("%03d.%d.%03d", bar, beat, tick);
+    return juce::String (bar) + " : " + juce::String (beat) + " : "
+           + juce::String (tick).paddedLeft ('0', 3);
+}
+
+void DawSession::togglePositionFormat()
+{
+    musicalPosition = ! musicalPosition;
+    notify (positionChanged | viewChanged);
 }
 
 juce::String DawSession::getSecondsString() const
@@ -808,19 +836,113 @@ int DawSession::getNumTracks() const noexcept { return project().getNumTracks();
 
 TrackData* DawSession::getTrack (int index)             { return project().getTrack (index); }
 const TrackData* DawSession::getTrack (int index) const { return project().getTrack (index); }
+TrackData* DawSession::findTrack (TrackId trackId)             { return project().findTrack (trackId); }
+const TrackData* DawSession::findTrack (TrackId trackId) const { return project().findTrack (trackId); }
+int DawSession::indexOfTrack (TrackId trackId) const { return project().indexOfTrack (trackId); }
 ClipData* DawSession::getClip (int index)               { return project().getClip (index); }
 const ClipData* DawSession::getClip (int index) const   { return project().getClip (index); }
 
 bool DawSession::isTrackAudible (int index) const { return project().isTrackAudible (index); }
 
+bool DawSession::isPlaylistTrackVisible (int index) const
+{
+    const auto* track = getTrack (index);
+
+    if (track == nullptr || track->isMaster())
+        return false;
+
+    return ! project().isTrackHiddenByCollapse (index);
+}
+
+int DawSession::getVisibleTrackCount() const
+{
+    int count = 0;
+
+    for (int i = 0; i < getNumTracks(); ++i)
+        if (isPlaylistTrackVisible (i))
+            ++count;
+
+    return count;
+}
+
+int DawSession::getVisibleRowForTrack (int trackIndex) const
+{
+    int row = 0;
+
+    for (int i = 0; i < getNumTracks(); ++i)
+    {
+        if (! isPlaylistTrackVisible (i))
+            continue;
+
+        if (i == trackIndex)
+            return row;
+
+        ++row;
+    }
+
+    return -1;
+}
+
+int DawSession::getTrackIndexForVisibleRow (int row) const
+{
+    int current = 0;
+
+    for (int i = 0; i < getNumTracks(); ++i)
+    {
+        if (! isPlaylistTrackVisible (i))
+            continue;
+
+        if (current == row)
+            return i;
+
+        ++current;
+    }
+
+    return -1;
+}
+
+int DawSession::getTrackDepth (int index) const
+{
+    const auto* track = getTrack (index);
+    auto parentId = track != nullptr ? track->parentId : 0;
+    int depth = 0;
+
+    while (parentId != 0 && depth < 8)
+    {
+        const auto* parent = findTrack (parentId);
+
+        if (parent == nullptr)
+            break;
+
+        ++depth;
+        parentId = parent->parentId;
+    }
+
+    return depth;
+}
+
+void DawSession::setTrackCollapsed (int index, bool collapsed)
+{
+    auto* track = getTrack (index);
+
+    if (track == nullptr || ! track->isGroup() || track->collapsed == collapsed)
+        return;
+
+    track->collapsed = collapsed;
+    notify (tracksChanged | viewChanged);
+}
+
 int DawSession::addTrack (TrackType type, const juce::String& name)
 {
     beginTransaction ("Add Track");
 
-    const auto fallbackName = (type == TrackType::Midi ? "MIDI " : "Audio ")
+    const auto fallbackName = (type == TrackType::Midi ? "Instrument "
+                               : type == TrackType::Group ? "Group "
+                               : "Audio ")
                               + juce::String (getNumTracks());
     const auto index = project().addTrack (type, name.isNotEmpty() ? name : fallbackName,
-                                          nextTrackColour());
+                                          type == TrackType::Group ? juce::Colour (0xff3a3a3a)
+                                                                   : nextTrackColour());
 
     if (index < 0)
         return -1;
@@ -910,7 +1032,7 @@ int DawSession::addClip (int trackIndex, double startBeat, double lengthBeats, c
 {
     auto* track = getTrack (trackIndex);
 
-    if (track == nullptr || track->isMaster())
+    if (track == nullptr || track->isMaster() || track->isGroup())
         return -1;
 
     beginTransaction ("Add Clip");
@@ -1153,73 +1275,17 @@ void DawSession::loadDemoProject()
     redoNames.clear();
     colourIndex = 0;
     currentProjectFile = {};
-    api.clearAllHostedInstruments();
-
-    auto& p = project();
-    p.clear();
-    p.setName ("Untitled Orchestra");
-    p.setBpm (96.0);
-    p.setTimeSignature (4, 4);
-    p.setMasterGainPosition (0.8f);
-
+    playing = false;
+    recording = false;
     positionBeats = 0.0;
-    loopStart = 0.0;
-    loopEnd = demoLengthBeats;
 
-    if (auto* master = p.getTrack (0))
-        master->inserts = { PluginSlot { "Convolution Reverb", {}, false }, PluginSlot {} };
+    api.loadDemoOrchestra();
 
-    for (const auto& spec : demoTracks)
-    {
-        const auto index = p.addTrack (TrackType::Midi, spec.name, juce::Colour (spec.colour));
-        auto* track = p.getTrack (index);
-
-        if (track == nullptr)
-            continue;
-
-        track->section = spec.section;
-        track->volume = spec.volume;
-        track->pan = spec.pan;
-        track->instrument = "Test Synth";
-        track->instrumentDefinitionId = InstrumentRegistry::testSynthId;
-        track->instrumentSlot.instrumentId = InstrumentRegistry::testSynthId;
-        track->instrumentSlot.name = api.getInstruments().getDisplayName (InstrumentRegistry::testSynthId);
-        track->instrumentLoadState = InstrumentLoadState::Loaded;
-        track->instrumentLoadMessage = "Ready";
-
-        track->automation.parameterName = "Volume";
-        track->automation.points = { { 0.0, spec.volume }, { 16.0, spec.volume },
-                                     { 24.0, juce::jlimit (0.0f, 1.0f, spec.volume + 0.12f) },
-                                     { 32.0, spec.volume } };
-
-        // One clip per 32 beat section, clipped to the range where this part plays.
-        for (double sectionStart = 0.0; sectionStart < demoLengthBeats; sectionStart += 32.0)
-        {
-            const auto start = juce::jmax (sectionStart, spec.entryBeat);
-            const auto end = juce::jmin (sectionStart + 32.0, spec.exitBeat);
-
-            if (end - start < 1.0)
-                continue;
-
-            ClipData clip;
-            clip.trackIndex = index;
-            clip.startBeat = start;
-            clip.lengthBeats = end - start;
-            clip.name = juce::String (spec.name) + (sectionStart < 1.0 ? " A" : " B");
-            clip.colour = track->colour;
-            clip.midi = true;
-            fillChordNotes (clip, spec);
-            p.addClip (clip);
-        }
-    }
-
-    selectedTrack = 1;
-    selectedClip = 0;
+    loopStart = api.getLoopStartBeats();
+    loopEnd = api.getLoopEndBeats();
+    selectedTrack = project().getNumTracks() > 1 ? 1 : 0;
+    selectedClip = project().getNumClips() > 0 ? 0 : -1;
     dirty = false;
-
-    api.syncMixer();
-    api.syncTempo();
-    api.invalidateSequence();
     pushTransportStateToEngine();
     notify (everythingChanged);
 }

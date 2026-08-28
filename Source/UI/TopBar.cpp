@@ -11,6 +11,20 @@ TopBar::TopBar (DawSession& sessionToUse)
         addAndMakeVisible (*b);
     }
 
+    fileBtn.setButtonText ("Project");
+    editBtn.setVisible (false);
+    insertBtn.setVisible (false);
+    viewBtn.setVisible (false);
+    transportBtn.setVisible (false);
+    helpBtn.setVisible (false);
+    newButton.setVisible (false);
+    openButton.setVisible (false);
+    saveButton.setVisible (false);
+    bellButton.setVisible (false);
+    speakerIcon.setVisible (false);
+    masterVolume.setVisible (false);
+    userName.setVisible (false);
+    projectInfo.setVisible (false);
     fileBtn.onClick      = [this] { showFileMenu(); };
     editBtn.onClick      = [this] { showEditMenu(); };
     insertBtn.onClick    = [this] { showInsertMenu(); };
@@ -79,6 +93,7 @@ TopBar::TopBar (DawSession& sessionToUse)
     masterVolume.setTooltip ("Master output level");
     masterVolume.onValueChange = [this] { session.setMasterGain ((float) masterVolume.getValue()); };
     addAndMakeVisible (masterVolume);
+    addAndMakeVisible (transport);
 
     refresh();
 }
@@ -98,13 +113,6 @@ void TopBar::paint (juce::Graphics& g)
     g.fillAll (DawColours::header);
     g.setColour (DawColours::divider);
     g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
-
-    for (auto d : { dividerA, dividerB })
-        if (! d.isEmpty())
-            g.fillRect (d);
-
-    if (! avatarBounds.isEmpty())
-        Icons::drawUser (g, avatarBounds, juce::Colour (0xffc8c8c8));
 }
 
 void TopBar::resized()
@@ -112,63 +120,19 @@ void TopBar::resized()
     auto area = getLocalBounds().reduced (10, 8);
     const auto iconSize = juce::jmin (26, area.getHeight());
 
-    fileBtn.setBounds (area.removeFromLeft (44));
-    editBtn.setBounds (area.removeFromLeft (44));
-    insertBtn.setBounds (area.removeFromLeft (52));
-    viewBtn.setBounds (area.removeFromLeft (48));
-    transportBtn.setBounds (area.removeFromLeft (68));
-    helpBtn.setBounds (area.removeFromLeft (48));
-
+    fileBtn.setBounds (area.removeFromLeft (64));
     area.removeFromLeft (8);
-    dividerA = { area.removeFromLeft (1).getX(), 10, 1, getHeight() - 20 };
-    area.removeFromLeft (10);
-
-    avatarBounds = area.removeFromLeft (26).toFloat().withSizeKeepingCentre (26.0f, 26.0f);
+    const auto nameW = juce::jmin (168, juce::jmax (80, area.getWidth() / 5));
+    projectName.setBounds (area.removeFromLeft (nameW));
+    area.removeFromLeft (6);
+    undoButton.setBounds (area.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
+    area.removeFromLeft (2);
+    redoButton.setBounds (area.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
     area.removeFromLeft (8);
 
-    auto nameArea = area.removeFromLeft (juce::jmin (170, juce::jmax (90, area.getWidth() / 3)));
-    projectName.setBounds (nameArea.removeFromTop (nameArea.getHeight() / 2 + 2));
-    userName.setBounds (nameArea);
-
-    area.removeFromLeft (8);
-    dividerB = { area.removeFromLeft (1).getX(), 10, 1, getHeight() - 20 };
-    area.removeFromLeft (10);
-
-    auto placeIcon = [&area, iconSize] (IconButton& b)
-    {
-        b.setBounds (area.removeFromLeft (iconSize).withSizeKeepingCentre (iconSize, iconSize));
-        area.removeFromLeft (2);
-    };
-
-    placeIcon (newButton);
-    placeIcon (openButton);
-    placeIcon (saveButton);
-    area.removeFromLeft (8);
-    placeIcon (undoButton);
-    placeIcon (redoButton);
-
-    const auto leftClusterEnd = area.getX();
-
-    // Right-hand cluster, laid out from the edge inwards.
-    auto right = getLocalBounds().reduced (12, 9);
-    bellButton.setBounds (right.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));
-    right.removeFromRight (4);
-    settingsButton.setBounds (right.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));
-    right.removeFromRight (12);
-
-    auto volumeArea = right.removeFromRight (juce::jmin (150, juce::jmax (60, right.getWidth() / 3)));
-    speakerIcon.setBounds (volumeArea.removeFromLeft (22));
-    volumeArea.removeFromLeft (4);
-    masterVolume.setBounds (volumeArea.withSizeKeepingCentre (volumeArea.getWidth(), 16));
-
-    right.removeFromRight (14);
-
-    // The summary is the first thing to go when the bar runs out of room.
-    const auto infoWidth = juce::jmin (240, right.getRight() - leftClusterEnd - 12);
-    projectInfo.setVisible (infoWidth >= 130);
-
-    if (projectInfo.isVisible())
-        projectInfo.setBounds (right.removeFromRight (infoWidth));
+    settingsButton.setBounds (area.removeFromRight (iconSize).withSizeKeepingCentre (iconSize, iconSize));
+    area.removeFromRight (4);
+    transport.setBounds (area);
 }
 
 void TopBar::sessionChanged (int changeFlags)
@@ -184,18 +148,6 @@ void TopBar::refresh()
 
     if (projectName.getText() != name)
         projectName.setText (name, juce::dontSendNotification);
-
-    userName.setText (session.getUserName() + (session.hasUnsavedChanges() ? "  -  unsaved" : ""),
-                      juce::dontSendNotification);
-
-    projectInfo.setText (juce::String (juce::jmax (0, session.getNumTracks() - 1)) + " tracks   "
-                             + juce::String ((int) session.getClips().size()) + " clips   "
-                             + juce::String (session.getBpm(), 0) + " BPM   "
-                             + juce::String (session.getTimeSigNumerator()) + "/"
-                             + juce::String (session.getTimeSigDenominator()),
-                         juce::dontSendNotification);
-
-    masterVolume.setValue (session.getMasterGain(), juce::dontSendNotification);
 
     undoButton.setEnabledLook (session.canUndo());
     redoButton.setEnabledLook (session.canRedo());
@@ -216,6 +168,14 @@ void TopBar::showFileMenu()
     m.addSeparator();
     m.addItem (7, "Load Demo Project");
     m.addItem (8, "Audio Settings...");
+    if (recentFiles.size() > 0)
+    {
+        juce::PopupMenu recent;
+        for (int i = 0; i < recentFiles.size(); ++i)
+            recent.addItem (100 + i, juce::File (recentFiles[i]).getFileNameWithoutExtension());
+        m.addSeparator();
+        m.addSubMenu ("Recent", recent);
+    }
     m.addSeparator();
     m.addItem (9, "Exit");
 
@@ -232,7 +192,14 @@ void TopBar::showFileMenu()
             case 7: session.loadDemoProject(); break;
             case 8: if (onShowAudioSettings) onShowAudioSettings(); break;
             case 9: if (onQuit) onQuit(); break;
-            default: break;
+            default:
+                if (r >= 100 && r < 100 + recentFiles.size())
+                {
+                    const auto error = session.loadProjectFrom (juce::File (recentFiles[r - 100]));
+                    if (error.isNotEmpty())
+                        showStub ("Open Project", error);
+                }
+                break;
         }
     });
 }
@@ -336,7 +303,7 @@ void TopBar::showViewMenu()
             case 5: session.setEditorVisible (true); session.setEditorTab (DawSession::EditorTab::automation); break;
             case 6: session.setEditorVisible (true); session.setEditorTab (DawSession::EditorTab::trackInfo); break;
             case 7: session.toggleSnap(); break;
-            case 20: session.setTrackHeight (38); break;
+            case 20: session.setTrackHeight (DawSession::minTrackHeight); break;
             case 21: session.setTrackHeight (DawSession::defaultTrackHeight); break;
             case 22: session.setTrackHeight (84); break;
             default: break;
@@ -437,13 +404,18 @@ void TopBar::openProject()
 
         if (error.isNotEmpty())
             showStub ("Open Project", error);
+        else
+            rememberRecent (file);
     });
 }
 
 void TopBar::saveProject (bool saveAs)
 {
     if (! saveAs && session.saveProject())
+    {
+        rememberRecent (session.getCurrentProjectFile());
         return;
+    }
 
     fileChooser = std::make_shared<juce::FileChooser> ("Save Project",
                                                        session.getCurrentProjectFile() == juce::File()
@@ -467,5 +439,20 @@ void TopBar::saveProject (bool saveAs)
 
         if (! session.saveProjectAs (file))
             showStub ("Save Project", "Could not write " + file.getFileName());
+        else
+            rememberRecent (file);
     });
+}
+
+void TopBar::rememberRecent (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return;
+
+    const auto path = file.getFullPathName();
+    recentFiles.removeString (path);
+    recentFiles.insert (0, path);
+
+    while (recentFiles.size() > 8)
+        recentFiles.remove (recentFiles.size() - 1);
 }

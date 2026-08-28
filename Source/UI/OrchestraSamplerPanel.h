@@ -24,9 +24,11 @@ private:
     class MiniKeyboard;
 
     void sessionChanged (int changeFlags) override;
+    void applySessionChange();
     void rebuild();
     void refreshValues();
     void updateHero();
+    void bindToTrack (int index);
     TrackData* getTrack();
     const TrackData* getTrack() const;
     void applyTechnique (const juce::String& techniqueId);
@@ -38,8 +40,12 @@ private:
 
     DawSession& session;
     int trackIndex = -1;
+    TrackId boundTrackId = 0;
     InstrumentSnapshot snapshot;
     bool rebuilding = false;
+    bool rebuildPending = false;
+    bool sessionUpdateScheduled = false;
+    int pendingChangeFlags = 0;
     juce::String lastInstrumentId, lastTechniqueId;
 
     juce::TextButton changeButton { "Change" },

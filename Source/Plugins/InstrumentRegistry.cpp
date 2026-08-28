@@ -2,7 +2,7 @@
 
 namespace
 {
-    const char* browserCategoryOrder[] = { "Piano", "Strings", "Woodwinds", "Brass", "Percussion", "Choir" };
+    const char* browserCategoryOrder[] = { "M Orchestra", "Piano", "Strings", "Woodwinds", "Brass", "Percussion", "Choir" };
 
     juce::String readString (const juce::var& object, const char* name, const juce::String& fallback = {})
     {
@@ -67,6 +67,7 @@ void InstrumentRegistry::seedBuiltInPlugins()
     descriptors =
     {
         { testSynthId,      "Test Synth",                      "DawWeb",         PluginDescriptor::Kind::builtin },
+        { mOrchestraId,     "M Orchestra",                     "DawWeb",         PluginDescriptor::Kind::builtin },
         { bbcsoDiscoverId,  "BBC Symphony Orchestra Discover", "Spitfire Audio", PluginDescriptor::Kind::vst3 },
         { synchronPlayerId, "Synchron Player",                 "VSL",            PluginDescriptor::Kind::vst3 }
     };
@@ -179,6 +180,8 @@ juce::String InstrumentRegistry::resolvePresetId (const InstrumentDefinition& de
 
         if (it != definition.techniquePresets.end() && it->second.isNotEmpty())
             return it->second;
+
+        return {};
     }
 
     return definition.presetId;

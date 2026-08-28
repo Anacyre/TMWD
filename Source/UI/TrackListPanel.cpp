@@ -114,8 +114,11 @@ void TrackStrip::showTrackMenu()
 
     juce::PopupMenu m;
     m.addItem (1, "Rename");
-    m.addItem (10, "Browse Instruments...", ! t->isMaster());
-    m.addItem (11, "Open Orchestra Sampler", ! t->isMaster() && t->instrumentDefinitionId.isNotEmpty());
+    m.addItem (12, t->isGroup() ? (t->collapsed ? "Expand" : "Collapse") : "Group", t->isGroup());
+    m.addItem (10, "Insert Plugin...", ! t->isMaster() && ! t->isGroup());
+    m.addItem (11, "Open Plugin", ! t->isMaster() && t->instrumentDefinitionId.isNotEmpty());
+    m.addItem (13, "Open Piano Roll", ! t->isMaster() && ! t->isGroup());
+    m.addItem (14, "Open Mixer", ! t->isMaster() && ! t->isGroup());
 
     m.addSeparator();
     m.addItem (2, "Add MIDI Clip at Playhead", ! t->isMaster());
@@ -131,7 +134,16 @@ void TrackStrip::showTrackMenu()
         {
             case 1: nameLabel.showEditor(); break;
             case 10: session.showInstrumentSelector (this, index); break;
-            case 11: session.showOrchestraSampler (index); break;
+            case 11: session.showPluginUI (index); break;
+            case 12:
+                if (auto* group = track())
+                    session.setTrackCollapsed (index, ! group->collapsed);
+                break;
+            case 13:
+                session.setEditorVisible (true);
+                session.setEditorTab (DawSession::EditorTab::pianoRoll);
+                break;
+            case 14: session.setMixerVisible (true); break;
             case 2: session.addClip (index, session.snapBeat (session.getPositionBeats()), 8.0); break;
             case 3: session.moveTrack (index, index - 1); break;
             case 4: session.moveTrack (index, index + 1); break;
@@ -151,13 +163,19 @@ void TrackStrip::showTrackMenu()
 
 void TrackStrip::mouseDown (const juce::MouseEvent& e)
 {
+    if (auto* t = track(); t != nullptr && t->isGroup() && twistBounds.contains (e.getPosition()))
+    {
+        session.setTrackCollapsed (index, ! t->collapsed);
+        return;
+    }
+
     session.setSelectedTrack (index);
 
     if (auto* t = track(); t != nullptr && ! t->isMaster()
         && instrumentLabel.isVisible() && instrumentLabel.getBounds().contains (e.getPosition()))
     {
         if (t->instrumentDefinitionId.isNotEmpty())
-            session.showOrchestraSampler (index);
+            session.showPluginUI (index);
         else
             session.showInstrumentSelector (this, index);
     }
@@ -165,8 +183,7 @@ void TrackStrip::mouseDown (const juce::MouseEvent& e)
 
 void TrackStrip::mouseDoubleClick (const juce::MouseEvent&)
 {
-    session.setEditorVisible (true);
-    session.setEditorTab (DawSession::EditorTab::trackInfo);
+    nameLabel.showEditor();
 }
 
 void TrackStrip::resized()
@@ -176,66 +193,37 @@ void TrackStrip::resized()
     meter.setBounds (colourBarWidth, 0, meterWidth, getHeight());
 
     r = r.reduced (7, 5);
-
-    const auto h = getHeight();
-    const bool compact = h < 44;
-    const bool roomy = h >= 72;
+    r.removeFromLeft (session.getTrackDepth (index) * 12);
+    twistBounds = r.removeFromLeft (18).withSizeKeepingCentre (18, 18);
+    r.removeFromLeft (4);
 
     const auto* t = track();
     const bool isMaster = t != nullptr && t->isMaster();
-    solo.setVisible (! isMaster);
-    arm.setVisible (! isMaster);
-    instrumentLabel.setVisible (roomy);
+    const bool isGroup = t != nullptr && t->isGroup();
+    solo.setVisible (! isMaster && ! isGroup);
+    arm.setVisible (false);
+    instrumentLabel.setVisible (false);
+    volume.setVisible (false);
+    pan.setVisible (false);
+    meter.setVisible (false);
+    menuButton.setVisible (! isGroup);
 
-    if (compact)
-    {
-        // A single dense row: name, toggles, pan.
-        menuButton.setBounds (r.removeFromRight (18).withSizeKeepingCentre (18, 18));
-        pan.setBounds (r.removeFromRight (20).withSizeKeepingCentre (20, 20));
-        r.removeFromRight (4);
-
-        if (! isMaster)
-        {
-            arm.setBounds (r.removeFromRight (17).withSizeKeepingCentre (17, 17));
-            r.removeFromRight (2);
-            solo.setBounds (r.removeFromRight (17).withSizeKeepingCentre (17, 17));
-            r.removeFromRight (2);
-        }
-
-        mute.setBounds (r.removeFromRight (17).withSizeKeepingCentre (17, 17));
-        r.removeFromRight (6);
-        volume.setBounds (r.removeFromRight (juce::jmin (60, juce::jmax (0, r.getWidth() - 70)))
-                              .withSizeKeepingCentre (juce::jmin (60, juce::jmax (0, r.getWidth())), 14));
-        r.removeFromLeft (20);
-        nameLabel.setBounds (r);
-        return;
-    }
-
-    auto top = r.removeFromTop (18);
+    auto top = r;
     menuButton.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 18));
     top.removeFromRight (2);
 
     if (! isMaster)
     {
-        arm.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 17));
-        top.removeFromRight (2);
-        solo.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 17));
-        top.removeFromRight (2);
+        if (! isGroup)
+        {
+            solo.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 17));
+            top.removeFromRight (2);
+        }
+        mute.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 17));
+        top.removeFromRight (6);
     }
 
-    mute.setBounds (top.removeFromRight (18).withSizeKeepingCentre (18, 17));
-    top.removeFromRight (6);
-    top.removeFromLeft (20);   // room for the track number painted underneath
     nameLabel.setBounds (top);
-
-    if (roomy)
-        instrumentLabel.setBounds (r.removeFromTop (13));
-
-    r.removeFromTop (2);
-    auto bottom = r.removeFromTop (juce::jmin (20, r.getHeight()));
-    pan.setBounds (bottom.removeFromRight (20).withSizeKeepingCentre (20, 20));
-    bottom.removeFromRight (6);
-    volume.setBounds (bottom.withSizeKeepingCentre (bottom.getWidth(), 14));
 }
 
 void TrackStrip::paint (juce::Graphics& g)
@@ -260,18 +248,16 @@ void TrackStrip::paint (juce::Graphics& g)
         g.fillRect (0, 0, colourBarWidth, getHeight());
     }
 
-    // Track number, left of the name.
-    g.setColour (selected ? DawColours::textMuted : DawColours::textDim);
-    g.setFont (juce::FontOptions (10.0f));
-    const auto numberArea = juce::Rectangle<int> (gutterWidth + 7, 0, 20, getHeight() < 44 ? getHeight() : 28);
-    g.drawText (t->isMaster() ? "M" : DawWidgets::makeTrackNumber (index),
-                numberArea, juce::Justification::centredLeft, false);
+    g.setFont (juce::Font (juce::FontOptions (11.0f).withStyleFlags (juce::Font::bold)));
+    g.setColour (selected ? DawColours::text : DawColours::textMuted);
 
-    if (t->recordArm)
-    {
-        g.setColour (DawColours::armOn.withAlpha (0.9f));
-        g.fillEllipse ((float) getWidth() - 7.0f, 5.0f, 4.0f, 4.0f);
-    }
+    if (t->isGroup())
+        g.drawText (t->collapsed ? juce::CharPointer_UTF8 ("\xe2\x96\xb8")
+                                 : juce::CharPointer_UTF8 ("\xe2\x96\xbe"),
+                    twistBounds, juce::Justification::centred, false);
+    else
+        g.drawText (t->name.substring (0, 1).toUpperCase(),
+                    twistBounds, juce::Justification::centred, false);
 }
 
 void TrackStrip::refresh()
@@ -325,12 +311,21 @@ TrackListPanel::TrackListPanel (DawSession& sessionToUse)
     addButton.onClick = [this]
     {
         juce::PopupMenu m;
-        m.addItem (1, "Instrument Track");
-        m.addItem (2, "Audio Track");
+        m.addItem (1, "Instrument");
+        m.addItem (2, "Audio");
+        m.addItem (3, "Group");
+        m.addItem (4, "Empty Track");
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&addButton), [this] (int r)
         {
             if (r == 1) session.addTrack (TrackType::Midi);
             if (r == 2) session.addTrack (TrackType::Audio);
+            if (r == 3) session.addTrack (TrackType::Group, "Group");
+            if (r == 4)
+            {
+                const auto index = session.addTrack (TrackType::Midi, "Track");
+                if (auto* track = session.getTrack (index))
+                    session.clearInstrument (*track);
+            }
         });
     };
     addAndMakeVisible (addButton);
@@ -344,7 +339,7 @@ TrackListPanel::TrackListPanel (DawSession& sessionToUse)
         m.addItem (3, "Large", true, session.getTrackHeight() >= 72);
         m.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&heightButton), [this] (int r)
         {
-            if (r == 1) session.setTrackHeight (38);
+            if (r == 1) session.setTrackHeight (DawSession::minTrackHeight);
             if (r == 2) session.setTrackHeight (DawSession::defaultTrackHeight);
             if (r == 3) session.setTrackHeight (84);
         });
@@ -397,7 +392,7 @@ void TrackListPanel::updateContentSize()
 {
     const auto width = juce::jmax (1, viewport.getMaximumVisibleWidth());
     content.setSize (width, juce::jmax (viewport.getHeight(),
-                                        session.getNumTracks() * session.getTrackHeight()));
+                                        juce::jmax (1, session.getVisibleTrackCount()) * session.getTrackHeight()));
     content.resized();
 }
 
@@ -421,7 +416,7 @@ void TrackListPanel::sessionChanged (int changeFlags)
 
     if ((changeFlags & (DawSession::tracksChanged | DawSession::viewChanged)) != 0)
     {
-        if ((int) strips.size() != session.getNumTracks())
+        if ((int) strips.size() != session.getVisibleTrackCount())
         {
             rebuildTracks();
         }
@@ -450,6 +445,9 @@ void TrackListPanel::rebuildTracks()
 
     for (int i = 0; i < session.getNumTracks(); ++i)
     {
+        if (! session.isPlaylistTrackVisible (i))
+            continue;
+
         auto strip = std::make_unique<TrackStrip> (session, i);
         content.addAndMakeVisible (*strip);
         strips.push_back (std::move (strip));

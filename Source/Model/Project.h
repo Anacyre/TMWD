@@ -69,6 +69,22 @@ public:
     /** Adds a note to a clip and returns its new identifier, or 0 on failure. */
     NoteId addNote (ClipId clipId, MidiNote note);
     bool removeNote (ClipId clipId, NoteId noteId);
+    int updateNotesBatch (ClipId clipId, const juce::Array<juce::var>& patches);
+    bool removeNotes (ClipId clipId, const std::vector<NoteId>& noteIds);
+
+    //==============================================================================
+    std::vector<ArrangementMarker>& getMarkers() noexcept             { return markers; }
+    const std::vector<ArrangementMarker>& getMarkers() const noexcept { return markers; }
+    ArrangementMarker* findMarker (MarkerId markerId);
+    int addMarker (ArrangementMarker marker);
+    bool removeMarker (MarkerId markerId);
+
+    std::vector<TimeSignatureChange>& getTimeSignatureChanges() noexcept { return timeSignatureChanges; }
+    const std::vector<TimeSignatureChange>& getTimeSignatureChanges() const noexcept { return timeSignatureChanges; }
+    TimeSignatureChange getTimeSignatureAtTick (juce::int64 tick) const;
+
+    /** True when an ancestor group track is collapsed. */
+    bool isTrackHiddenByCollapse (int index) const;
 
     //==============================================================================
     /** Length of the arranged material in beats, used for playback bounds. */
@@ -79,12 +95,17 @@ public:
     //==============================================================================
     // Identifier allocation.  Callers that build objects before inserting them - the
     // demo generator, the piano roll - stamp them with these.
-    TrackId nextTrackId() noexcept { return ++lastTrackId; }
-    ClipId  nextClipId() noexcept  { return ++lastClipId; }
-    NoteId  nextNoteId() noexcept  { return ++lastNoteId; }
+    TrackId  nextTrackId() noexcept  { return ++lastTrackId; }
+    ClipId   nextClipId() noexcept   { return ++lastClipId; }
+    NoteId   nextNoteId() noexcept   { return ++lastNoteId; }
+    MarkerId nextMarkerId() noexcept { return ++lastMarkerId; }
 
     /** Assigns identifiers to anything still unstamped, after a bulk import. */
     void assignMissingIds();
+
+    /** Opaque browser mixer / Web DSP insert graph.  Never contains AudioNodes. */
+    const juce::var& getWebMixer() const noexcept { return webMixer; }
+    void setWebMixer (const juce::var& value) { webMixer = value; }
 
 private:
     juce::String name { "Untitled" };
@@ -95,10 +116,14 @@ private:
 
     std::vector<TrackData> tracks;
     std::vector<ClipData> clips;
+    std::vector<ArrangementMarker> markers;
+    std::vector<TimeSignatureChange> timeSignatureChanges;
 
     TrackId lastTrackId = 0;
     ClipId lastClipId = 0;
     NoteId lastNoteId = 0;
+    MarkerId lastMarkerId = 0;
+    juce::var webMixer;
 };
 
 //==============================================================================

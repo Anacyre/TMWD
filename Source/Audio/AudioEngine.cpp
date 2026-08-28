@@ -129,53 +129,90 @@ void AudioEngine::rebuildSequence (const Project& project)
 
     for (const auto& clip : project.getClips())
     {
-        if (! clip.midi || ! juce::isPositiveAndBelow (clip.trackIndex, numTracks))
+        if (clip.muted || ! clip.midi || ! juce::isPositiveAndBelow (clip.trackIndex, numTracks))
             continue;
 
         const auto* track = project.getTrack (clip.trackIndex);
 
-        if (track == nullptr || track->isMaster())
+        if (track == nullptr || track->isMaster() || track->isGroup())
             continue;
 
         const auto clipStart = clip.getStartTick();
         const auto clipEnd = clipStart + clip.getLengthTicks();
+        const auto sourceTicks = juce::jmax ((juce::int64) 1, MusicalTime::beatsToTicks (clip.getSourceLengthBeats()));
 
         for (const auto& note : clip.notes)
         {
-            const auto start = clipStart + note.getStartTick();
+            if (note.muted)
+                continue;
 
-            if (start >= clipEnd)
-                continue;   // notes past the end of the clip are not heard
-
+            const auto noteStartInSource = note.getStartTick();
             const auto channel = note.channel > 0 ? note.channel : track->midiChannel;
-            auto end = juce::jmin (clipEnd, clipStart + note.getEndTick());
+            const auto repeatTicks = NoteModel::repeatIntervalTicks (note.repeatMode);
 
-            if (SoftwareLegato::isActive (*track))
+            auto emitSlice = [&] (juce::int64 sliceStart, juce::int64 sliceEnd)
             {
-                end += SoftwareLegato::extraTicks();
-
-                for (const auto& otherClip : project.getClips())
+                for (juce::int64 loopStart = clipStart; loopStart < clipEnd; loopStart += sourceTicks)
                 {
-                    if (otherClip.trackIndex != clip.trackIndex || ! otherClip.midi)
+                    const auto start = loopStart + sliceStart;
+
+                    if (start >= clipEnd)
+                        break;
+
+                    auto end = juce::jmin (clipEnd, loopStart + sliceEnd);
+
+                    if (end <= start)
                         continue;
 
-                    const auto otherClipStart = otherClip.getStartTick();
+                    juce::int64 soundingEnd = end;
 
-                    for (const auto& other : otherClip.notes)
+                    if (SoftwareLegato::isActive (*track))
                     {
-                        if (other.pitch != note.pitch)
-                            continue;
+                        soundingEnd += SoftwareLegato::extraTicks();
 
-                        const auto otherStart = otherClipStart + other.getStartTick();
+                        for (const auto& otherClip : project.getClips())
+                        {
+                            if (otherClip.trackIndex != clip.trackIndex || ! otherClip.midi || otherClip.muted)
+                                continue;
 
-                        if (otherStart > start && otherStart < end)
-                            end = otherStart;
+                            const auto otherClipStart = otherClip.getStartTick();
+
+                            for (const auto& other : otherClip.notes)
+                            {
+                                if (other.muted || other.pitch != note.pitch)
+                                    continue;
+
+                                const auto otherStart = otherClipStart + other.getStartTick();
+
+                                if (otherStart > start && otherStart < soundingEnd)
+                                    soundingEnd = otherStart;
+                            }
+                        }
                     }
+
+                    sequence->addNote (clip.trackIndex, channel, note.pitch,
+                                       note.getVelocityByte(), start, soundingEnd);
+                }
+            };
+
+            if (repeatTicks <= 0)
+            {
+                emitSlice (noteStartInSource, note.getEndTick());
+            }
+            else
+            {
+                const auto noteEnd = note.getEndTick();
+
+                for (auto t = noteStartInSource; t < noteEnd; t += repeatTicks)
+                {
+                    const auto sliceEnd = juce::jmin (noteEnd, t + repeatTicks);
+
+                    if (sliceEnd - t < NoteModel::minDurationTicks)
+                        break;
+
+                    emitSlice (t, sliceEnd);
                 }
             }
-
-            sequence->addNote (clip.trackIndex, channel, note.pitch,
-                               note.getVelocityByte(), start, end);
         }
     }
 
@@ -200,6 +237,15 @@ void AudioEngine::syncMixerFromProject (const Project& project)
 
     mixer.setMasterGain (project.getMasterGainPosition());
     mixer.setNumChannels (numTracks);
+
+    if (const auto* master = project.getTrack (0))
+    {
+        const auto slotA = master->inserts.size() > 0 ? MixerEngine::kindFromSlot (master->inserts[0])
+                                                      : MixerEngine::InsertKind::none;
+        const auto slotB = master->inserts.size() > 1 ? MixerEngine::kindFromSlot (master->inserts[1])
+                                                      : MixerEngine::InsertKind::none;
+        mixer.setMasterInserts (slotA, slotB);
+    }
     transport.setBpm (project.getBpm());
     setTimeSignature (project.getTimeSigNumerator(), project.getTimeSigDenominator());
 
@@ -210,8 +256,21 @@ void AudioEngine::syncMixerFromProject (const Project& project)
         if (track == nullptr)
             continue;
 
+        if (track->isGroup())
+        {
+            mixer.setChannelParameters (i, 0.0f, 0.0f, false);
+            nodes[(size_t) i].active.store (false);
+            continue;
+        }
+
         const auto audible = project.isTrackAudible (i);
         mixer.setChannelParameters (i, track->volume, track->pan, audible);
+
+        const auto slotA = track->inserts.size() > 0 ? MixerEngine::kindFromSlot (track->inserts[0])
+                                                     : MixerEngine::InsertKind::none;
+        const auto slotB = track->inserts.size() > 1 ? MixerEngine::kindFromSlot (track->inserts[1])
+                                                     : MixerEngine::InsertKind::none;
+        mixer.setChannelInserts (i, slotA, slotB);
 
         auto& node = nodes[(size_t) i];
         node.midiChannel.store (juce::jlimit (1, 16, track->midiChannel));
@@ -441,7 +500,8 @@ void AudioEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
     prepareNodes (currentSampleRate.load(), currentBlockSize.load());
 
     transport.prepare (currentSampleRate.load());
-    mixer.prepare (currentSampleRate.load(), activeTrackCount.load());
+    mixer.prepare (currentSampleRate.load(), activeTrackCount.load(), currentBlockSize.load());
+    remoteAudio.prepare (currentSampleRate.load(), currentBlockSize.load());
     sequencer.invalidateCursors();
 
     click = {};
@@ -589,6 +649,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const*,
     }
 
     mixer.processMaster (masterBuffer, numSamples);
+    remoteAudio.pushMaster (masterBuffer, numSamples);
 
     for (int channel = 0; channel < numOutputChannels; ++channel)
     {

@@ -2,6 +2,7 @@
 
 #include "../Audio/AudioEngine.h"
 #include "../Model/Project.h"
+#include "../Model/ProjectSchema.h"
 #include "../Plugins/InstrumentRegistry.h"
 #include "../Plugins/PluginHost.h"
 #include "../Plugins/PluginStateStore.h"
@@ -109,15 +110,21 @@ public:
 
     void loadTrackInstrument (int trackIndex, const juce::String& definitionId, bool async = true);
     void loadTrackInstrument (int trackIndex, const juce::String& definitionId, const InstrumentLoadOptions& options);
+    juce::var insertTrackPlugin (int trackIndex, const juce::String& pluginId);
     void unloadTrackInstrument (int trackIndex, const juce::String& reason = {});
     void clearAllHostedInstruments();
+    void flushRetiredInstruments();
     bool setTrackTechnique (int trackIndex, const juce::String& techniqueId);
     bool setTrackController (int trackIndex, const juce::String& controllerId, float normalised);
     bool setTrackLegato (int trackIndex, bool enabled);
+    void sanitizeTrackInstrumentFields (TrackData& track);
     bool capturePresetState (const juce::String& presetId);
+    bool tryAdoptCapturedDump (const juce::String& presetId);
+    bool tryRecaptureFactoryPreset (const juce::String& presetId);
     bool preparePluginForCapture (int trackIndex, const juce::String& pluginId,
                                   std::function<void (bool)> onComplete = {});
     juce::String dumpDefaultPluginStates();
+    void pumpUi (int milliseconds);
     void playValidationPhrase (int trackIndex, int velocity = 80, bool blocking = false);
     juce::String describeDefinitionAvailability (const InstrumentDefinition& definition, int trackIndex) const;
     void verifyFreshRestore (int trackIndex, const juce::String& presetId,
@@ -143,7 +150,28 @@ public:
     /** Playhead, meters and engine status, cheap enough to push several times a second. */
     juce::var describeClock() const;
 
-    /** One MIDI track and a short sketch clip, so a fresh web session has something to play. */
+    /** Session snapshot used on connect and reconnect.  One audio session per engine. */
+    juce::var describeSession() const;
+    juce::var describeMixer() const;
+    juce::var describeAudioStatus() const;
+    juce::var describeDiagnostics() const;
+    juce::var describeNotes() const;
+    juce::var takeNoteDelta();
+
+    juce::String getSessionId() const { return sessionId; }
+    static constexpr int maxAudioSessions = 1;
+
+    void beginEdit (const juce::String& name);
+    void endEdit();
+    void undoEdit();
+    void redoEdit();
+    bool canUndo() const noexcept { return ! undoStack.empty(); }
+    bool canRedo() const noexcept { return ! redoStack.empty(); }
+
+    /** Same Untitled Orchestra demonstration used by the desktop File menu. */
+    void loadDemoOrchestra();
+
+    /** Loads the orchestra demo when the project still only has the master track. */
     void ensureStarterContent();
 
     double getLoopStartBeats() const noexcept { return loopStartBeats; }
@@ -152,6 +180,10 @@ public:
 private:
     juce::var makeError (const juce::String& reason) const;
     juce::var makeOk (juce::DynamicObject* payload = nullptr) const;
+    juce::var withOk (juce::var payload) const;
+    juce::var instrumentStatusReply (int trackIndex) const;
+    bool applyTrackMixerField (TrackData& track, const juce::String& parameter, const juce::var& value);
+    juce::var describeTrackMixer (const TrackData& track) const;
 
     InstrumentRegistry instruments;
     PluginHost pluginHost { instruments };
@@ -204,6 +236,24 @@ private:
     juce::uint32 noteOffGeneration = 0;
     double loopStartBeats = 0.0;
     double loopEndBeats = 32.0;
+    juce::String sessionId;
+
+    struct EditSnapshot
+    {
+        juce::String name;
+        Project project;
+        double loopStart = 0.0;
+        double loopEnd = 32.0;
+        bool looping = false;
+    };
+
+    EditSnapshot captureEdit (const juce::String& name) const;
+    void restoreEdit (const EditSnapshot& snapshot);
+
+    std::vector<EditSnapshot> undoStack, redoStack;
+    bool editOpen = false;
+    juce::var pendingNoteDelta;
+    static constexpr int maxUndoSteps = 64;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (EngineAPI)
 };

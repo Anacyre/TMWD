@@ -38,7 +38,6 @@ void MainComponent::buildUi()
         captureWindow->onClose = [this] { captureWindow.reset(); };
     };
     addAndMakeVisible (topBar);
-    addAndMakeVisible (transportBar);
 
     trackList.onVerticalScroll = [this] (int y) { arrangement.setViewY (y); };
     arrangement.onVerticalScroll = [this] (int y) { trackList.setViewY (y); };
@@ -106,14 +105,13 @@ void MainComponent::resized()
 {
     auto r = getLocalBounds();
     topBar.setBounds (r.removeFromTop (DawSession::topBarHeight));
-    transportBar.setBounds (r.removeFromTop (DawSession::transportHeight));
     layoutBody();
 }
 
 void MainComponent::layoutBody()
 {
     auto body = getLocalBounds();
-    body.removeFromTop (DawSession::topBarHeight + DawSession::transportHeight);
+    body.removeFromTop (DawSession::topBarHeight);
     statusBar.setBounds (body.removeFromBottom (DawSession::statusBarHeight));
 
     const bool showEditor = session.isEditorVisible();
@@ -189,6 +187,13 @@ void MainComponent::sessionChanged (int changeFlags)
 
 void MainComponent::deleteSelection()
 {
+    if (session.isEditorVisible() && session.getEditorTab() == DawSession::EditorTab::pianoRoll
+        && editor.hasNoteSelection())
+    {
+        editor.deleteSelection();
+        return;
+    }
+
     auto& clips = session.getClips();
     bool removedAny = false;
 
@@ -233,25 +238,61 @@ bool MainComponent::keyPressed (const juce::KeyPress& key, juce::Component*)
 
 bool MainComponent::handleShortcut (const juce::KeyPress& key)
 {
+    if (dynamic_cast<juce::TextEditor*> (juce::Component::getCurrentlyFocusedComponent()) != nullptr)
+        return false;
+
     const auto code = key.getKeyCode();
 
-    if (key.getModifiers().isCtrlDown())
+    if (key.getModifiers().isCtrlDown() || key.getModifiers().isCommandDown())
     {
         switch (code)
         {
-            case 'Z': case 'z': session.undo(); return true;
+            case 'Z': case 'z':
+                if (key.getModifiers().isShiftDown())
+                    session.redo();
+                else
+                    session.undo();
+                return true;
             case 'Y': case 'y': session.redo(); return true;
             case 'S': case 's': topBar.commandSaveProject (key.getModifiers().isShiftDown()); return true;
             case 'O': case 'o': topBar.commandOpenProject(); return true;
-            case 'D': case 'd': session.duplicateClip (session.getSelectedClip()); return true;
+            case 'D': case 'd':
+                if (session.isEditorVisible() && editor.hasNoteSelection())
+                    editor.duplicateSelection();
+                else
+                    session.duplicateClip (session.getSelectedClip());
+                return true;
+            case 'C': case 'c':
+                if (session.isEditorVisible() && editor.hasNoteSelection())
+                {
+                    editor.copySelection();
+                    return true;
+                }
+                return false;
+            case 'V': case 'v':
+                if (session.isEditorVisible() && session.getEditorTab() == DawSession::EditorTab::pianoRoll)
+                {
+                    editor.pasteSelection();
+                    return true;
+                }
+                return false;
             default: return false;
         }
     }
 
     if (key == juce::KeyPress::spaceKey)  { session.togglePlay(); return true; }
-    if (key == juce::KeyPress::returnKey) { session.returnToStart(); return true; }
     if (key == juce::KeyPress::homeKey)   { session.returnToStart(); return true; }
     if (key == juce::KeyPress::escapeKey) { session.stop(); return true; }
+    if (key == juce::KeyPress::returnKey)
+    {
+        if (session.getSelectedClip() >= 0)
+        {
+            session.setEditorVisible (true);
+            session.setEditorTab (DawSession::EditorTab::pianoRoll);
+            return true;
+        }
+        return false;
+    }
 
     if (key == juce::KeyPress::deleteKey || key == juce::KeyPress::backspaceKey)
     {
@@ -286,5 +327,6 @@ void MainComponent::showAudioSettings()
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = true;
+    options.componentToCentreAround = this;
     options.launchAsync();
 }

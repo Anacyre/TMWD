@@ -64,6 +64,9 @@ private:
     bool draggingLoop = false;
     bool syncing = false;
     double loopAnchorBeat = 0.0;
+    double loopDragStart = 0.0;
+    double loopDragEnd = 0.0;
+    int loopGesture = 0; // 1 draw, 2 left, 3 right, 4 move
     float lastRulerPlayheadX = -1.0f;
 
     friend class ArrangementCanvas;

@@ -1,6 +1,43 @@
 #include "PluginHost.h"
 #include "HostedPluginInstance.h"
 #include "../Audio/TestSynth.h"
+#include "../Audio/MOrchestra/MOrchestraInstance.h"
+
+namespace
+{
+   #if JUCE_PLUGINHOST_VST3
+    int findVst3TypesSEH (juce::AudioPluginFormat* format,
+                          juce::OwnedArray<juce::PluginDescription>* types,
+                          const juce::String* path)
+    {
+       #if JUCE_WINDOWS
+        __try
+        {
+            format->findAllTypesForFile (*types, *path);
+            return 1;
+        }
+        __except (1)
+        {
+            return 0;
+        }
+       #else
+        format->findAllTypesForFile (*types, *path);
+        return 1;
+       #endif
+    }
+
+    void findVst3TypesSafe (juce::AudioPluginFormat& format,
+                            juce::OwnedArray<juce::PluginDescription>& types,
+                            const juce::String& path)
+    {
+        if (findVst3TypesSEH (&format, &types, &path) == 0)
+        {
+            types.clear();
+            juce::Logger::writeToLog ("[Plugin] VST3 type scan crashed for " + path + " (caught)");
+        }
+    }
+   #endif
+}
 
 PluginHost::PluginHost (InstrumentRegistry& registryToUse)
     : registry (registryToUse)
@@ -32,6 +69,21 @@ std::unique_ptr<PluginInstance> PluginHost::createInstance (const juce::String& 
 
     if (descriptor->isBuiltIn())
     {
+        if (instrumentId == InstrumentRegistry::mOrchestraId)
+        {
+            MOrchestra::Engine::get().initialise();
+
+            if (! MOrchestra::Engine::get().isAvailable())
+            {
+                errorMessage = "M Orchestra sample library was not found.";
+                return {};
+            }
+
+            auto instance = std::make_unique<MOrchestra::Instance> (juce::String());
+            instance->prepare (sampleRate, maximumBlockSize);
+            return instance;
+        }
+
         auto instance = std::make_unique<TestSynthInstance>();
         instance->prepare (sampleRate, maximumBlockSize);
         return instance;
@@ -58,6 +110,22 @@ void PluginHost::createInstanceAsync (const juce::String& instrumentId,
 
     if (descriptor->isBuiltIn())
     {
+        if (instrumentId == InstrumentRegistry::mOrchestraId)
+        {
+            MOrchestra::Engine::get().initialise();
+
+            if (! MOrchestra::Engine::get().isAvailable())
+            {
+                callback ({}, "M Orchestra sample library was not found.");
+                return;
+            }
+
+            auto instance = std::make_unique<MOrchestra::Instance> (juce::String());
+            instance->prepare (sampleRate, maximumBlockSize);
+            callback (std::move (instance), {});
+            return;
+        }
+
         auto instance = std::make_unique<TestSynthInstance>();
         instance->prepare (sampleRate, maximumBlockSize);
         callback (std::move (instance), {});
@@ -88,10 +156,11 @@ void PluginHost::createInstanceAsync (const juce::String& instrumentId,
     const auto paths = descriptor->allPluginPaths();
     const auto keepAlive = alive;
 
-    juce::Logger::writeToLog ("[Plugin] describing " + name + " off the UI thread");
-
-    juce::Thread::launch ([this, keepAlive, callback, id, name, paths, rate, block]
+    auto loadOnMessageThread = [this, keepAlive, callback, id, name, paths, rate, block]
     {
+        if (! keepAlive->load())
+            return;
+
         juce::PluginDescription description;
         juce::String error;
         bool cached = false;
@@ -109,11 +178,7 @@ void PluginHost::createInstanceAsync (const juce::String& instrumentId,
 
         if (! cached && ! resolveDescriptionFromPaths (paths, name, description, error))
         {
-            juce::MessageManager::callAsync ([keepAlive, callback, error]
-            {
-                if (keepAlive->load())
-                    callback ({}, error);
-            });
+            callback ({}, error);
             return;
         }
 
@@ -123,34 +188,39 @@ void PluginHost::createInstanceAsync (const juce::String& instrumentId,
             descriptionCache[id] = description;
         }
 
-        juce::MessageManager::callAsync ([this, keepAlive, callback, description, id, name, rate, block]
-        {
-            if (! keepAlive->load())
-                return;
+        juce::Logger::writeToLog ("[Plugin] creating " + name + " asynchronously");
+        formatManager.createPluginInstanceAsync (description, rate, block,
+            [keepAlive, callback, id, name] (std::unique_ptr<juce::AudioPluginInstance> plugin,
+                                              const juce::String& errorMessage)
+            {
+                if (! keepAlive->load())
+                    return;
 
-            juce::Logger::writeToLog ("[Plugin] creating " + name + " asynchronously");
-            formatManager.createPluginInstanceAsync (description, rate, block,
-                [keepAlive, callback, id, name, rate, block] (std::unique_ptr<juce::AudioPluginInstance> plugin,
-                                                              const juce::String& errorMessage)
+                if (plugin == nullptr)
                 {
-                    if (! keepAlive->load())
-                        return;
+                    juce::Logger::writeToLog ("[Plugin] " + name + " failed: " + errorMessage);
+                    callback ({}, errorMessage.isNotEmpty() ? errorMessage
+                                                            : name + " failed to load.");
+                    return;
+                }
 
-                    if (plugin == nullptr)
-                    {
-                        juce::Logger::writeToLog ("[Plugin] " + name + " failed: " + errorMessage);
-                        callback ({}, errorMessage.isNotEmpty() ? errorMessage
-                                                                : name + " failed to load.");
-                        return;
-                    }
+                juce::Logger::writeToLog ("[Plugin] " + name + " factory instance created");
+                auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin), id, name);
+                callback (std::move (instance), {});
+            });
+    };
 
-                    juce::Logger::writeToLog ("[Plugin] " + name + " factory instance created");
-                    auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin), id, name);
-                    callback (std::move (instance), {});
-                });
-        });
-    });
+    if (juce::MessageManager::getInstance()->isThisTheMessageThread())
+        loadOnMessageThread();
+    else
+        juce::MessageManager::callAsync (std::move (loadOnMessageThread));
    #endif
+}
+
+void PluginHost::precacheDescriptions()
+{
+    // Do not call findAllTypesForFile at startup.  BBCSO / Synchron can AV on
+    // type-scan after a previous process crash (iLok).  Resolve on first load.
 }
 
 std::unique_ptr<PluginInstance> PluginHost::createInstanceOrFallback (const juce::String& instrumentId,
@@ -224,7 +294,7 @@ juce::String PluginHost::inspectApprovedPlugins()
                 continue;
 
             types.clear();
-            format->findAllTypesForFile (types, path);
+            findVst3TypesSafe (*format, types, path);
 
             if (! types.isEmpty())
             {
@@ -264,7 +334,7 @@ bool PluginHost::resolveDescriptionFromPaths (const juce::StringArray& paths,
 
         juce::Logger::writeToLog ("[Plugin] reading VST3 types from " + path);
         types.clear();
-        format.findAllTypesForFile (types, path);
+        findVst3TypesSafe (format, types, path);
 
         if (! types.isEmpty())
             break;

@@ -2,7 +2,7 @@
   <view class="status">
     <view class="dot" :class="dotClass" />
     <text class="sel">{{ selectionText }}</text>
-      <text class="hint">Space play   Esc stop   E/M/I panels   L loop   Alt-drag ruler sets loop   Del clip</text>
+      <text class="hint">Space play   Esc stop   Enter piano roll</text>
     <text class="eng">{{ engineText }}</text>
   </view>
 </template>

@@ -44,7 +44,7 @@ InspectorPanel::InspectorPanel (DawSession& sessionToUse)
     content.addAndMakeVisible (trackNameLabel);
 
     DawWidgets::styleFlatButton (instrumentButton);
-    instrumentButton.setTooltip ("Choose an instrument from the catalogue");
+    instrumentButton.setTooltip ("Insert a plugin or open the current plugin");
     instrumentButton.onClick = [this] { showInstrumentMenu(); };
     content.addAndMakeVisible (instrumentButton);
     content.addAndMakeVisible (instrumentPanel);
@@ -188,7 +188,10 @@ void InspectorPanel::showInstrumentMenu()
     if (track == nullptr || track->isMaster())
         return;
 
-    session.showInstrumentSelector (&instrumentButton, session.getSelectedTrack());
+    if (track->instrumentDefinitionId.isNotEmpty())
+        session.showPluginUI (session.getSelectedTrack());
+    else
+        session.showInstrumentSelector (&instrumentButton, session.getSelectedTrack());
 }
 
 void InspectorPanel::refresh()

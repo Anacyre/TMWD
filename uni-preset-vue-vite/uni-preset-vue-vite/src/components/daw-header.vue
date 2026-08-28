@@ -1,27 +1,41 @@
 ﻿<template>
   <view class="header" @click="closeMenus">
     <view class="left">
-      <view
-        v-for="item in menus"
-        :key="item.id"
-        class="menu-wrap"
-      >
-        <text
-          class="menu-label"
-          @click.stop="toggleMenu(item.id)"
-        >{{ item.label }}</text>
+      <view v-for="item in menus" :key="item.id" class="menu-wrap">
+        <text class="menu-label" @click.stop="toggleMenu(item.id)">{{ item.label }}</text>
         <view v-if="session.openMenu === item.id" class="dropdown" @click.stop>
-          <view
-            v-for="(entry, idx) in item.items"
-            :key="idx"
-            class="drop-item"
-            :class="{ sep: entry.sep, disabled: entry.disabled, checked: entry.checked }"
-            @click="runMenu(entry)"
-          >
-            <text v-if="!entry.sep">{{ entry.label }}</text>
-          </view>
+          <template v-for="(entry, idx) in item.items" :key="idx">
+            <view v-if="entry.sep" class="drop-item sep" />
+            <view
+              v-else-if="entry.sub"
+              class="drop-item has-sub"
+              @mouseenter="hoverSub = entry.sub"
+              @mouseleave="hoverSub = ''"
+            >
+              <text>{{ entry.label }}</text>
+              <text class="arrow">›</text>
+              <view v-if="hoverSub === entry.sub" class="submenu">
+                <view
+                  v-for="sub in subMenus[entry.sub]"
+                  :key="sub.action"
+                  class="drop-item"
+                  @click="runMenu(sub)"
+                >{{ sub.label }}</view>
+              </view>
+            </view>
+            <view
+              v-else
+              class="drop-item"
+              :class="{ disabled: entry.disabled, checked: entry.checked }"
+              @click="runMenu(entry)"
+            >
+              <text>{{ entry.label }}</text>
+            </view>
+          </template>
         </view>
       </view>
+
+      <view class="rule" />
 
       <view class="user">
         <view class="avatar">
@@ -36,38 +50,33 @@
             @keyup.enter="commitName"
           >
           <text v-else class="proj" @dblclick.stop="editName = true">{{ session.projectName }}</text>
-          <text class="uname">{{ session.userName }}</text>
-        </view>
-        <view class="engine" :class="{ on: engineLink.connected }" :title="engineLink.url || 'Engine'">
-          <view class="dot" />
-          <text>{{ engineLink.connected ? 'Engine' : 'Local' }}</text>
-        </view>
-        <view class="icon-btn" title="Save" @click.stop="saveProject">
-          <daw-icon name="save" />
+          <text class="uname">{{ userLine }}</text>
         </view>
       </view>
-    </view>
 
-    <view class="center">
-      <view class="icon-btn" title="New" @click.stop="newProject"><daw-icon name="plus" /></view>
-        <view class="icon-btn" title="Open" @click.stop="openProject"><daw-icon name="grid" /></view>
-      <view class="icon-btn" title="Save" @click.stop="saveProject"><daw-icon name="save" /></view>
+      <view class="rule" />
+
+      <view class="icon-btn" title="New project" @click.stop="handleNew"><daw-icon name="plus" /></view>
+      <view class="icon-btn" title="Open project" @click.stop="openProject"><daw-icon name="grid" /></view>
+      <view class="icon-btn" title="Save project" @click.stop="saveProject"><daw-icon name="save" /></view>
+      <view class="gap" />
+      <view class="icon-btn dim" title="Undo"><daw-icon name="undo" /></view>
+      <view class="icon-btn dim" title="Redo"><daw-icon name="redo" /></view>
     </view>
 
     <view class="right">
+      <text v-if="showInfo" class="info">{{ projectInfo }}</text>
       <view class="vol">
         <view class="icon-btn static">
           <daw-icon name="speaker" />
         </view>
         <daw-fader :model-value="session.masterGain" @update:model-value="setMasterGain" />
       </view>
+      <view class="icon-btn" title="Audio settings" @click.stop="emit('audio-settings')">
+        <daw-icon name="settings" />
+      </view>
       <view class="icon-btn" title="Notifications" @click.stop="notify">
         <daw-icon name="bell" />
-      </view>
-      <view class="win-btns">
-        <view class="icon-btn" @click.stop="minimize"><daw-icon name="min" /></view>
-        <view class="icon-btn" @click.stop="maximize"><daw-icon name="max" /></view>
-        <view class="icon-btn close" @click.stop="closeWin"><daw-icon name="close" /></view>
       </view>
     </view>
   </view>
@@ -79,12 +88,12 @@ import DawIcon from './daw-icon.vue'
 import DawFader from './daw-fader.vue'
 import {
   session,
-  engineLink,
   addTrack,
   setMasterGain,
   closeMenus,
   showToast,
   newProject,
+  loadDemoProject,
   toggleEditor,
   toggleMixer,
   toggleInspector,
@@ -100,15 +109,47 @@ import {
   duplicateClip,
   duplicateTrack,
   deleteClip,
+  removeTrack,
   getSelectedClip,
+  addMidiClip,
   exportProject,
   importProjectJson,
   setProjectName,
+  setLoopRange,
+  openPluginPicker,
+  openPluginUI,
   TRACK_HEIGHTS
 } from '../store/session.js'
 
 const emit = defineEmits(['audio-settings'])
 const editName = ref(false)
+const hoverSub = ref('')
+
+const showInfo = computed(() => typeof window === 'undefined' || window.innerWidth >= 900)
+
+const userLine = computed(() => {
+  const base = session.userName || 'User'
+  return session.unsaved ? base + '  ·  unsaved' : base
+})
+
+const projectInfo = computed(() => {
+  const tracks = Math.max(0, session.tracks.filter((track) => track.type !== 'master').length)
+  return tracks + ' tracks   ' + session.clips.length + ' clips   '
+    + Math.round(session.bpm) + ' BPM   ' + session.timeSigNum + '/' + session.timeSigDen
+})
+
+const subMenus = {
+  sections: [
+    { label: 'Strings Section', action: 'secStrings' },
+    { label: 'Woodwinds Section', action: 'secWoodwinds' },
+    { label: 'Brass Section', action: 'secBrass' }
+  ],
+  heights: TRACK_HEIGHTS.map((item) => ({
+    label: item.name,
+    action: 'height',
+    value: item.value
+  }))
+}
 
 const menus = computed(() => [
   {
@@ -119,8 +160,12 @@ const menus = computed(() => [
       { label: 'Open...', action: 'open' },
       { sep: true },
       { label: 'Save', action: 'save' },
-      { label: 'Save As...', action: 'save' },
+      { label: 'Save As...', action: 'saveAs' },
       { sep: true },
+      { label: 'Export Audio...', action: 'exportAudio' },
+      { label: 'Export MIDI...', action: 'exportMidi' },
+      { sep: true },
+      { label: 'Load Demo Project', action: 'demo' },
       { label: 'Audio Settings...', action: 'audio' },
       { sep: true },
       { label: 'Exit', action: 'exit' }
@@ -130,41 +175,43 @@ const menus = computed(() => [
     id: 'edit',
     label: 'Edit',
     items: [
-      { label: 'Duplicate Clip', action: 'dupClip' },
-      { label: 'Delete Clip', action: 'delClip' },
+      { label: 'Undo', action: 'undo', disabled: true },
+      { label: 'Redo', action: 'redo', disabled: true },
       { sep: true },
-      { label: 'Duplicate Track', action: 'dupTrack' }
+      { label: 'Duplicate Selected Clip', action: 'dupClip', disabled: getSelectedClip() == null },
+      { label: 'Delete Selected Clip', action: 'delClip', disabled: getSelectedClip() == null },
+      { sep: true },
+      { label: 'Duplicate Selected Track', action: 'dupTrack', disabled: session.selectedTrack <= 0 },
+      { label: 'Delete Selected Track', action: 'delTrack', disabled: session.selectedTrack <= 0 }
     ]
   },
   {
     id: 'insert',
     label: 'Insert',
     items: [
+      { label: 'Instrument Track', action: 'midiTrack' },
       { label: 'Audio Track', action: 'audioTrack' },
-      { label: 'MIDI Track', action: 'midiTrack' }
+      { sep: true },
+      { label: 'MIDI Clip on Selected Track', action: 'addClip', disabled: session.selectedTrack <= 0 },
+      { label: 'Insert Plugin...', action: 'insertPlugin', disabled: session.selectedTrack <= 0 },
+      { label: 'Add Section', sub: 'sections' }
     ]
   },
   {
     id: 'view',
     label: 'View',
     items: [
-      { label: 'Snap to Grid', action: 'snap', checked: session.snap },
-      { label: 'Metronome', action: 'metro', checked: session.metronome },
-      { sep: true },
-      { label: 'Editor', action: 'editor', checked: session.editorVisible },
+      { label: 'Editor Panel', action: 'editor', checked: session.editorVisible },
       { label: 'Mixer', action: 'mixer', checked: session.mixerVisible },
       { label: 'Inspector', action: 'inspector', checked: session.inspectorVisible },
       { sep: true },
       { label: 'Piano Roll', action: 'piano', checked: session.editorTab === 'piano' },
+      { label: 'Orchestra Sampler', action: 'sampler', checked: session.editorTab === 'sampler' || session.editorTab === 'm-orchestra' },
       { label: 'Automation', action: 'automation', checked: session.editorTab === 'automation' },
       { label: 'Track Info', action: 'info', checked: session.editorTab === 'info' },
       { sep: true },
-      ...TRACK_HEIGHTS.map((item) => ({
-        label: 'Track Height ' + item.name,
-        action: 'height',
-        value: item.value,
-        checked: session.trackHeight === item.value
-      }))
+      { label: 'Snap to Grid', action: 'snap', checked: session.snap },
+      { label: 'Track Height', sub: 'heights' }
     ]
   },
   {
@@ -174,53 +221,94 @@ const menus = computed(() => [
       { label: session.playing ? 'Pause' : 'Play', action: 'play' },
       { label: 'Stop', action: 'stop' },
       { label: 'Return to Start', action: 'home' },
+      { sep: true },
       { label: 'Record', action: 'rec', checked: session.recording },
-      { label: 'Loop', action: 'loop', checked: session.looping }
+      { label: 'Loop', action: 'loop', checked: session.looping },
+      { label: 'Metronome', action: 'metro', checked: session.metronome },
+      { sep: true },
+      { label: 'Set Loop to Project Length', action: 'loopProject' }
     ]
   },
   {
     id: 'help',
     label: 'Help',
     items: [
-      { label: 'Shortcuts: Space play, Esc stop, E/M/I panels, L loop, Del clip', action: 'about' },
-      { label: 'About DawWeb', action: 'about' }
+      { label: 'Keyboard Shortcuts', action: 'shortcuts' },
+      { label: 'About DawWeb', action: 'about' },
+      { sep: true },
+      { label: 'Capture / Verify Plugin State...', action: 'capture' }
     ]
   }
 ])
 
 function toggleMenu (id) {
   session.openMenu = session.openMenu === id ? '' : id
+  hoverSub.value = ''
+}
+
+async function handleNew () {
+  await newProject()
+  await addTrack('midi', 'Instrument 1')
+}
+
+async function addSection (names) {
+  for (const name of names) await addTrack('midi', name)
+}
+
+function loopToProjectLength () {
+  let end = 32
+  session.clips.forEach((clip) => {
+    const clipEnd = (clip.startBeat || 0) + (clip.lengthBeats || 0)
+    if (clipEnd > end) end = clipEnd
+  })
+  setLoopRange(0, end)
+  showToast('Loop range set to project length.')
 }
 
 function runMenu (entry) {
   if (!entry || entry.sep || entry.disabled) return
   closeMenus()
+  hoverSub.value = ''
   const map = {
-    new: newProject,
+    new: handleNew,
+    demo: loadDemoProject,
     open: openProject,
     save: saveProject,
+    saveAs: saveProject,
+    exportAudio: () => showToast('Offline rendering needs the audio engine.'),
+    exportMidi: () => showToast('MIDI export needs the sequencer back end.'),
     audio: () => emit('audio-settings'),
-    exit: closeWin,
+    exit: () => showToast('Exit is handled by the browser / host window.'),
     audioTrack: () => addTrack('audio'),
     midiTrack: () => addTrack('midi'),
+    addClip: () => addMidiClip(session.selectedTrack),
+    secStrings: () => addSection(['Violin I', 'Violin II', 'Viola', 'Cello', 'Bass']),
+    secWoodwinds: () => addSection(['Flute', 'Oboe', 'Clarinet', 'Bassoon']),
+    secBrass: () => addSection(['Horn', 'Trumpet', 'Trombone', 'Tuba']),
     snap: toggleSnap,
     metro: toggleMetronome,
     editor: toggleEditor,
     mixer: toggleMixer,
     inspector: toggleInspector,
-    piano: () => setEditorTab('piano'),
-    automation: () => setEditorTab('automation'),
-    info: () => setEditorTab('info'),
+    piano: () => { toggleEditor(); setEditorTab('piano') },
+    sampler: () => openPluginUI(session.selectedTrack),
+    insertPlugin: () => openPluginPicker(session.selectedTrack),
+    automation: () => { toggleEditor(); setEditorTab('automation') },
+    info: () => { toggleEditor(); setEditorTab('info') },
     height: () => setTrackHeight(entry.value),
     play: togglePlay,
     stop,
     home: returnToStart,
     rec: toggleRecord,
     loop: toggleLoop,
+    loopProject: loopToProjectLength,
     dupClip: () => duplicateClip(getSelectedClip()),
     delClip: () => deleteClip(getSelectedClip()),
     dupTrack: () => duplicateTrack(session.selectedTrack),
-    about: () => showToast('DawWeb 1.0.0  路  Vue3 + C++ engine')
+    delTrack: () => removeTrack(session.selectedTrack),
+    shortcuts: () => showToast('Space play · Esc stop · E/M/I panels · L loop · Ctrl+S save'),
+    about: () => showToast('DawWeb 1.0.0 · Vue3 + C++ engine'),
+    capture: () => showToast('State capture runs in the native desktop app.')
   }
   map[entry.action] && map[entry.action]()
 }
@@ -245,29 +333,13 @@ function notify () {
   showToast('No new notifications.')
 }
 
-function minimize () {
-  showToast('Window chrome is decorative on H5.')
-}
-
 function commitName (e) {
   const value = (e && e.target && e.target.value) || session.projectName
   setProjectName(value)
   editName.value = false
 }
-
-async function maximize () {
-  try {
-    if (!document.fullscreenElement) await document.documentElement.requestFullscreen()
-    else await document.exitFullscreen()
-  } catch (err) {
-    showToast('Fullscreen is not available.')
-  }
-}
-
-function closeWin () {
-  showToast('Close is handled by the browser / host window.')
-}
 </script>
+
 <style scoped>
 .header {
   height: 44px;
@@ -276,32 +348,42 @@ function closeWin () {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 10px;
+  padding: 0 12px 0 10px;
   position: relative;
   z-index: 20;
   user-select: none;
+  flex-shrink: 0;
 }
-.left, .center, .right {
+.left, .right {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  min-width: 0;
 }
-.left { flex: 1; min-width: 0; }
-.right { flex: 1; justify-content: flex-end; }
-.center { gap: 8px; }
+.left { flex: 1; }
+.right { flex-shrink: 0; gap: 4px; }
+.rule {
+  width: 1px;
+  height: 24px;
+  background: #2a2a2a;
+  margin: 0 10px;
+  flex-shrink: 0;
+}
+.gap { width: 8px; flex-shrink: 0; }
 .menu-wrap { position: relative; }
 .menu-label {
   color: #8d8d8d;
   font-size: 13px;
   padding: 6px 8px;
   cursor: pointer;
+  line-height: 20px;
 }
 .menu-label:hover { color: #e6e6e6; }
 .dropdown {
   position: absolute;
-  top: 28px;
+  top: 30px;
   left: 0;
-  min-width: 180px;
+  min-width: 220px;
   background: #242424;
   border: 1px solid #2a2a2a;
   border-radius: 6px;
@@ -314,50 +396,47 @@ function closeWin () {
   color: #e6e6e6;
   font-size: 13px;
   cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: relative;
 }
 .drop-item:hover:not(.sep):not(.disabled) { background: #3a3a3a; }
 .drop-item.disabled { color: #6a6a6a; cursor: default; }
-.drop-item.checked::after { content: ' *'; color: #4da3ff; }
+.drop-item.checked::after { content: ' ✓'; color: #4da3ff; }
 .drop-item.sep {
   height: 1px;
   padding: 0;
   margin: 6px 10px;
   background: #2a2a2a;
 }
+.has-sub .arrow { color: #6a6a6a; margin-left: 12px; }
+.submenu {
+  position: absolute;
+  left: 100%;
+  top: -6px;
+  min-width: 180px;
+  background: #242424;
+  border: 1px solid #2a2a2a;
+  border-radius: 6px;
+  padding: 6px 0;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+}
 .user {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-left: 12px;
+  min-width: 0;
+  max-width: 170px;
 }
-.engine {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #8d8d8d;
-  font-size: 11px;
-  padding: 4px 8px;
-  border-radius: 999px;
-  border: 1px solid #2a2a2a;
-}
-.engine .dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #6a6a6a;
-}
-.engine.on {
-  color: #cfe6ff;
-  border-color: rgba(77,163,255,0.4);
-}
-.engine.on .dot { background: #4da3ff; }
 .avatar {
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: #3a3a3a;
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;
 }
 .avatar .head {
   width: 10px;
@@ -365,7 +444,7 @@ function closeWin () {
   border-radius: 50%;
   background: #c8c8c8;
   position: absolute;
-  left: 9px;
+  left: 8px;
   top: 5px;
 }
 .avatar .body {
@@ -374,11 +453,19 @@ function closeWin () {
   border-radius: 9px 9px 0 0;
   background: #c8c8c8;
   position: absolute;
-  left: 5px;
-  top: 16px;
+  left: 4px;
+  top: 15px;
 }
-.names { display: flex; flex-direction: column; }
-.proj { color: #e6e6e6; font-size: 13px; font-weight: 600; line-height: 16px; }
+.names { display: flex; flex-direction: column; min-width: 0; }
+.proj {
+  color: #e6e6e6;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .proj-input {
   width: 140px;
   background: #0e0e0e;
@@ -387,74 +474,39 @@ function closeWin () {
   font-size: 13px;
   font-weight: 600;
 }
-.uname { color: #8d8d8d; font-size: 11px; line-height: 14px; }
-.icon-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.icon-btn:hover { background: #353535; }
-.icon-btn.on { background: rgba(77,163,255,0.18); }
-.icon-btn.rec.on { background: rgba(231,76,60,0.2); }
-.icon-btn.play { width: 34px; }
-.icon-btn.static:hover { background: transparent; cursor: default; }
-.bpm {
-  width: 50px;
-  height: 26px;
-  background: #2b2b2b;
-  border-radius: 4px;
-  color: #e6e6e6;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  cursor: ns-resize;
-}
-.bpm-input {
-  width: 46px;
-  height: 22px;
-  background: transparent;
-  color: #e6e6e6;
-  text-align: center;
-  border: none;
-  font-size: 14px;
-}
-.transport { display: flex; align-items: center; gap: 2px; margin-left: 8px; }
-.time {
-  min-width: 110px;
-  text-align: center;
-  color: #e6e6e6;
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  font-variant-numeric: tabular-nums;
-}
-.panel-toggles { display: flex; gap: 2px; margin-left: 8px; }
-.letter {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
+.uname {
   color: #8d8d8d;
   font-size: 11px;
-  font-weight: 700;
+  line-height: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
 }
-.letter:hover { background: #353535; color: #e6e6e6; }
-.letter.on { background: rgba(77,163,255,0.18); color: #4da3ff; }
+.icon-btn:hover { background: #353535; }
+.icon-btn.static:hover { background: transparent; cursor: default; }
+.icon-btn.dim { opacity: 0.38; cursor: default; }
+.icon-btn.dim:hover { background: transparent; }
+.info {
+  color: #6a6a6a;
+  font-size: 11.5px;
+  margin-right: 14px;
+  white-space: nowrap;
+}
 .vol {
   width: 150px;
   display: flex;
   align-items: center;
   gap: 4px;
-  margin-right: 8px;
+  margin-right: 4px;
 }
-.win-btns { display: flex; margin-left: 4px; }
-.win-btns .close:hover { background: #c42b1c; }
 </style>

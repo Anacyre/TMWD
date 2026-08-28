@@ -19,7 +19,7 @@
         >
           <text>{{ bar + 1 }}</text>
         </view>
-        <view class="playhead-top" :style="{ left: playX + 'px' }" />
+        <view class="playhead-top" :class="{ live: session.playing }" :style="{ left: playX + 'px' }" />
       </view>
       <view class="ruler-tools">
         <view class="icon-btn" :class="{ on: session.snap }" title="Snap" @click.stop="toggleSnap">
@@ -95,6 +95,7 @@
           class="ghost"
           :style="ghost"
         />
+        <view class="playhead" :class="{ live: session.playing }" :style="{ left: playX + 'px' }" />
         <view v-if="session.openMenu === 'clip-menu'" class="clip-menu" :style="clipMenuStyle" @click.stop>
           <view class="drop-item" @click="openSelectedClip">Open Piano Roll</view>
           <view class="drop-item" @click="dupSelected">Duplicate</view>
@@ -196,13 +197,15 @@ function miniNoteStyle (clip, note) {
   const lo = Math.min.apply(null, pitches)
   const hi = Math.max.apply(null, pitches)
   const span = Math.max(1, hi - lo)
-  const bodyH = session.trackHeight - 26
-  return {
-    left: (note.start / Math.max(0.01, clip.lengthBeats) * 100) + '%',
-    width: (note.duration / Math.max(0.01, clip.lengthBeats) * 100) + '%',
-    bottom: ((note.pitch - lo) / span * (bodyH - 3)) + 'px',
-    height: '3px'
-  }
+    const start = note.start != null ? note.start : ((note.startTick || 0) / 960)
+    const duration = note.duration != null ? note.duration : ((note.durationTick || 240) / 960)
+    const bodyH = session.trackHeight - 26
+    return {
+      left: (start / Math.max(0.01, clip.lengthBeats) * 100) + '%',
+      width: (duration / Math.max(0.01, clip.lengthBeats) * 100) + '%',
+      bottom: ((note.pitch - lo) / span * (bodyH - 3)) + 'px',
+      height: '3px'
+    }
 }
 
 function openClip (clip) {
@@ -437,6 +440,10 @@ function onDrop (e) {
   bottom: 0;
   width: 1px;
   background: #fff;
+  pointer-events: none;
+}
+.playhead-top.live {
+  box-shadow: 0 0 10px 2px rgba(77, 163, 255, 0.55);
 }
 .ruler-tools {
   position: absolute;
@@ -559,6 +566,10 @@ function onDrop (e) {
   width: 1px;
   background: #fff;
   pointer-events: none;
+  z-index: 6;
+}
+.playhead.live {
+  box-shadow: 0 0 12px 3px rgba(77, 163, 255, 0.4);
 }
 .playhead::before {
   content: '';

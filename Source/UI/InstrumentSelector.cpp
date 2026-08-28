@@ -1,4 +1,6 @@
 #include "InstrumentSelector.h"
+#include "../Audio/MOrchestra/MOrchestraUi.h"
+#include "../Plugins/InstrumentRegistry.h"
 #include "Widgets.h"
 
 namespace
@@ -9,10 +11,10 @@ namespace
     constexpr int categoryWidth = 148;
 }
 
-InstrumentSelector::InstrumentSelector (DawSession& sessionToUse, int trackIndexToUse)
-    : session (sessionToUse), trackIndex (trackIndexToUse)
+InstrumentSelector::InstrumentSelector (DawSession& sessionToUse, int trackIndexToUse, Mode modeToUse)
+    : session (sessionToUse), trackIndex (trackIndexToUse), mode (modeToUse)
 {
-    title.setText ("Instrument", juce::dontSendNotification);
+    title.setText (mode == Mode::plugins ? "Insert Plugin" : "Instrument", juce::dontSendNotification);
     title.setFont (juce::Font (juce::FontOptions (15.0f).withStyleFlags (juce::Font::bold)));
     title.setColour (juce::Label::textColourId, DawColours::text);
     title.setInterceptsMouseClicks (false, false);
@@ -32,30 +34,37 @@ InstrumentSelector::InstrumentSelector (DawSession& sessionToUse, int trackIndex
     addAndMakeVisible (search);
 
     categoryList.setModel (&categoryModel);
-    instrumentList.setModel (&instrumentModel);
+    itemList.setModel (&itemModel);
     categoryList.setColour (juce::ListBox::backgroundColourId, DawColours::panel);
-    instrumentList.setColour (juce::ListBox::backgroundColourId, DawColours::panelSunken);
+    itemList.setColour (juce::ListBox::backgroundColourId, DawColours::panelSunken);
     categoryList.setRowHeight (26);
-    instrumentList.setRowHeight (38);
+    itemList.setRowHeight (38);
     categoryList.setOutlineThickness (0);
-    instrumentList.setOutlineThickness (0);
+    itemList.setOutlineThickness (0);
     addAndMakeVisible (categoryList);
-    addAndMakeVisible (instrumentList);
+    addAndMakeVisible (itemList);
+    categoryList.setVisible (mode != Mode::plugins);
 
     sourceLabel.setFont (juce::FontOptions (11.0f));
     sourceLabel.setColour (juce::Label::textColourId, DawColours::textDim);
     sourceLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (sourceLabel);
 
+    selectButton.setButtonText (mode == Mode::plugins ? "Insert" : "Select");
     DawWidgets::styleFlatButton (selectButton);
     selectButton.onClick = [this] { applySelection(); };
     addAndMakeVisible (selectButton);
 
-    categories = session.getEngineAPI().getInstruments().getBrowserCategories();
-
-    if (session.getEngineAPI().getInstruments().findDefinition (InstrumentRegistry::testSynthId) != nullptr
-        && ! categories.contains ("Internal"))
-        categories.add ("Internal");
+    if (mode == Mode::plugins)
+    {
+        categories.add ("Plugins");
+    }
+    else
+    {
+        for (const auto& category : session.getEngineAPI().getInstruments().getBrowserCategories())
+            if (category != "M Orchestra" && category != "Internal")
+                categories.add (category);
+    }
 
     rebuildVisible();
 }
@@ -63,7 +72,7 @@ InstrumentSelector::InstrumentSelector (DawSession& sessionToUse, int trackIndex
 InstrumentSelector::~InstrumentSelector()
 {
     categoryList.setModel (nullptr);
-    instrumentList.setModel (nullptr);
+    itemList.setModel (nullptr);
 }
 
 void InstrumentSelector::CategoryModel::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
@@ -94,11 +103,11 @@ void InstrumentSelector::CategoryModel::listBoxItemClicked (int row, const juce:
     owner.rebuildVisible();
 }
 
-void InstrumentSelector::InstrumentModel::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
+void InstrumentSelector::ItemModel::paintListBoxItem (int row, juce::Graphics& g, int width, int height, bool selected)
 {
-    const auto* definition = owner.definitionAt (row);
+    const auto* item = owner.rowAt (row);
 
-    if (definition == nullptr)
+    if (item == nullptr)
         return;
 
     if (selected)
@@ -109,88 +118,102 @@ void InstrumentSelector::InstrumentModel::paintListBoxItem (int row, juce::Graph
         g.fillRect (0, 4, 2, height - 8);
     }
 
-    const auto& registry = owner.session.getEngineAPI().getInstruments();
-    const auto* plugin = registry.find (definition->sourcePlugin);
-    juce::ignoreUnused (registry.findPreset (registry.resolvePresetId (*definition)));
-
-    const auto status = owner.session.getEngineAPI().describeDefinitionAvailability (*definition, owner.trackIndex);
-    const auto statusColour = status == "Ready" ? DawColours::soloOn
-                            : status == "Error" ? DawColours::muteOn
-                            : status == "Available" ? DawColours::textMuted
-                            : DawColours::textDim;
-
     auto bounds = juce::Rectangle<int> (12, 0, width - 20, height);
     auto nameRow = bounds.removeFromTop (18);
-    g.setColour (status == "Unavailable" ? DawColours::textDim : DawColours::text);
+    g.setColour (item->available ? DawColours::text : DawColours::textDim);
     g.setFont (juce::Font (juce::FontOptions (13.0f).withStyleFlags (juce::Font::bold)));
-    g.drawText (definition->displayName, nameRow.removeFromLeft (nameRow.getWidth() - 88),
-                juce::Justification::centredLeft, true);
-    g.setColour (statusColour);
-    g.setFont (juce::FontOptions (10.5f));
-    g.drawText (status, nameRow, juce::Justification::centredRight, true);
+    g.drawText (item->name, nameRow, juce::Justification::centredLeft, true);
 
     g.setColour (DawColours::textDim);
     g.setFont (juce::FontOptions (10.5f));
-    const auto source = plugin != nullptr ? plugin->displayName : definition->sourcePlugin;
-    g.drawText (source, bounds, juce::Justification::centredLeft, true);
+    g.drawText (item->detail, bounds, juce::Justification::centredLeft, true);
 }
 
-void InstrumentSelector::InstrumentModel::selectedRowsChanged (int)
+void InstrumentSelector::ItemModel::selectedRowsChanged (int)
 {
-    if (const auto* definition = owner.definitionAt (owner.instrumentList.getSelectedRow()))
-    {
-        const auto* plugin = owner.session.getEngineAPI().getInstruments().find (definition->sourcePlugin);
-        owner.sourceLabel.setText (plugin != nullptr ? plugin->displayName : definition->sourcePlugin,
-                                   juce::dontSendNotification);
-    }
+    if (const auto* item = owner.rowAt (owner.itemList.getSelectedRow()))
+        owner.sourceLabel.setText (item->detail, juce::dontSendNotification);
 }
 
-void InstrumentSelector::InstrumentModel::listBoxItemDoubleClicked (int, const juce::MouseEvent&)
+void InstrumentSelector::ItemModel::listBoxItemDoubleClicked (int, const juce::MouseEvent&)
 {
     owner.applySelection();
 }
 
-const InstrumentDefinition* InstrumentSelector::definitionAt (int row) const
+const InstrumentSelector::Row* InstrumentSelector::rowAt (int row) const
 {
-    return juce::isPositiveAndBelow (row, (int) visible.size()) ? visible[(size_t) row] : nullptr;
+    if (! juce::isPositiveAndBelow (row, visible.size()))
+        return nullptr;
+
+    return &visible.getReference (row);
 }
 
 void InstrumentSelector::rebuildVisible()
 {
     visible.clear();
-    const auto& registry = session.getEngineAPI().getInstruments();
-    const auto query = search.getText();
+    const auto query = search.getText().trim().toLowerCase();
     const auto category = juce::isPositiveAndBelow (categoryIndex, categories.size())
                               ? categories[categoryIndex] : juce::String();
 
-    for (const auto& definition : registry.getCatalogue())
+    if (mode == Mode::plugins)
     {
-        if (query.isNotEmpty())
-        {
-            if (! registry.matchesSearch (definition, query))
-                continue;
-        }
-        else if (category.isNotEmpty() && definition.category != category)
-        {
-            continue;
-        }
+        const Row plugins[] = {
+            { InstrumentRegistry::mOrchestraId, "M Orchestra", "Built-in orchestral plugin", true },
+            { InstrumentRegistry::orchestraSamplerPluginId, "Orchestra Sampler", "BBCSO Discover / Synchron Player", true },
+            { InstrumentRegistry::testSynthId, "Test Synth", "Built-in", true }
+        };
 
-        visible.push_back (&definition);
+        for (const auto& plugin : plugins)
+            if (query.isEmpty()
+                || plugin.name.toLowerCase().contains (query)
+                || plugin.id.toLowerCase().contains (query))
+                visible.add (plugin);
+    }
+    else
+    {
+        const auto& registry = session.getEngineAPI().getInstruments();
+
+        for (const auto& definition : registry.getCatalogue())
+        {
+            if (MOrchestraUi::isMOrchestraDefinition (definition.id)
+                || definition.sourcePlugin == InstrumentRegistry::mOrchestraId
+                || definition.sourcePlugin == InstrumentRegistry::testSynthId
+                || definition.id == InstrumentRegistry::testSynthId)
+                continue;
+
+            if (query.isNotEmpty())
+            {
+                if (! registry.matchesSearch (definition, query))
+                    continue;
+            }
+            else if (category.isNotEmpty() && definition.category != category)
+            {
+                continue;
+            }
+
+            const auto* plugin = registry.find (definition.sourcePlugin);
+            Row row;
+            row.id = definition.id;
+            row.name = definition.displayName;
+            row.detail = plugin != nullptr ? plugin->displayName : definition.sourcePlugin;
+            row.available = session.getEngineAPI().describeDefinitionAvailability (definition, trackIndex) != "Unavailable";
+            visible.add (std::move (row));
+        }
     }
 
     categoryList.updateContent();
     categoryList.selectRow (categoryIndex);
-    instrumentList.updateContent();
-    instrumentList.selectRow (visible.empty() ? -1 : 0);
-    instrumentModel.selectedRowsChanged (0);
+    itemList.updateContent();
+    itemList.selectRow (visible.isEmpty() ? -1 : 0);
+    itemModel.selectedRowsChanged (0);
     repaint();
 }
 
 void InstrumentSelector::applySelection()
 {
-    if (const auto* definition = definitionAt (instrumentList.getSelectedRow()))
-        if (onSelect)
-            onSelect (definition->id);
+    if (const auto* item = rowAt (itemList.getSelectedRow()))
+        if (item->available && onSelect)
+            onSelect (item->id);
 }
 
 void InstrumentSelector::paint (juce::Graphics& g)
@@ -200,7 +223,9 @@ void InstrumentSelector::paint (juce::Graphics& g)
     g.drawRect (getLocalBounds(), 1);
     g.drawHorizontalLine (headerHeight, 0.0f, (float) getWidth());
     g.drawHorizontalLine (getHeight() - footerHeight, 0.0f, (float) getWidth());
-    g.drawVerticalLine (categoryWidth, (float) headerHeight + searchHeight + 8, (float) getHeight() - footerHeight);
+
+    if (categoryList.isVisible())
+        g.drawVerticalLine (categoryWidth, (float) headerHeight + searchHeight + 8, (float) getHeight() - footerHeight);
 }
 
 void InstrumentSelector::resized()
@@ -217,42 +242,58 @@ void InstrumentSelector::resized()
     selectButton.setBounds (footer.removeFromRight (88).reduced (10, 8));
     sourceLabel.setBounds (footer.withTrimmedLeft (12));
 
-    categoryList.setBounds (area.removeFromLeft (categoryWidth));
-    instrumentList.setBounds (area);
+    if (categoryList.isVisible())
+        categoryList.setBounds (area.removeFromLeft (categoryWidth));
+
+    itemList.setBounds (area);
 }
 
 void InstrumentSelector::launch (DawSession& session, juce::Component* anchor, int trackIndex)
+{
+    launchWithMode (session, anchor, trackIndex, Mode::plugins);
+}
+
+void InstrumentSelector::launchPatches (DawSession& session, juce::Component* anchor, int trackIndex)
+{
+    launchWithMode (session, anchor, trackIndex, Mode::orchestraPatches);
+}
+
+void InstrumentSelector::launchWithMode (DawSession& session, juce::Component* anchor, int trackIndex, Mode mode)
 {
     session.dismissInstrumentBrowser();
 
     class BrowserWindow final : public juce::DocumentWindow
     {
     public:
-        BrowserWindow (DawSession& sessionToUse, int trackToUse, juce::Component* centreAround)
-            : DocumentWindow ("Instrument", DawColours::panel, DocumentWindow::closeButton),
+        BrowserWindow (DawSession& sessionToUse, int trackToUse, juce::Component* centreAround, Mode modeToUse)
+            : DocumentWindow (modeToUse == Mode::plugins ? "Insert Plugin" : "Instrument",
+                              DawColours::panel, DocumentWindow::closeButton),
               session (sessionToUse)
         {
             session.bindInstrumentBrowser (this);
             setUsingNativeTitleBar (true);
 
-            auto* selector = new InstrumentSelector (session, trackToUse);
+            auto* selector = new InstrumentSelector (session, trackToUse, modeToUse);
             selector->setSize (560, 420);
             selector->onClose = [this] { closeButtonPressed(); };
-            selector->onSelect = [this, trackToUse] (juce::String definitionId)
+            selector->onSelect = [this, trackToUse, modeToUse] (juce::String selectedId)
             {
                 auto* sessionPtr = &session;
-                const auto trackIndexToLoad = trackToUse;
                 juce::Component::SafePointer<BrowserWindow> safeWindow (this);
-                juce::MessageManager::callAsync ([sessionPtr, trackIndexToLoad, definitionId, safeWindow]
+                juce::MessageManager::callAsync ([sessionPtr, trackToUse, selectedId, modeToUse, safeWindow]
                 {
                     if (safeWindow != nullptr)
                         sessionPtr->dismissInstrumentBrowser();
 
-                    if (auto* track = sessionPtr->getTrack (trackIndexToLoad))
+                    if (modeToUse == Mode::plugins)
                     {
-                        sessionPtr->assignInstrumentDefinition (*track, definitionId);
+                        sessionPtr->insertPlugin (trackToUse, selectedId);
+                    }
+                    else if (auto* track = sessionPtr->getTrack (trackToUse))
+                    {
+                        sessionPtr->assignInstrumentDefinition (*track, selectedId);
                         sessionPtr->notify (DawSession::tracksChanged | DawSession::mixerChanged);
-                        sessionPtr->showOrchestraSampler (trackIndexToLoad);
+                        sessionPtr->showOrchestraSampler (trackToUse);
                     }
                 });
             };
@@ -291,5 +332,5 @@ void InstrumentSelector::launch (DawSession& session, juce::Component* anchor, i
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BrowserWindow)
     };
 
-    new BrowserWindow (session, trackIndex, anchor);
+    new BrowserWindow (session, trackIndex, anchor, mode);
 }

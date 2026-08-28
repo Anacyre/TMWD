@@ -4,7 +4,7 @@
 namespace
 {
     constexpr int loopLaneHeight = 7;
-    constexpr float clipEdgeGrab = 6.0f;
+    constexpr float clipEdgeGrab = 16.0f;
 
     bool fileIsSupported (const juce::File& file)
     {
@@ -39,23 +39,22 @@ public:
         const auto ppb = session.getPixelsPerBeat();
         const auto beatsPerBar = session.getBeatsPerBar();
         const auto rowHeight = session.getTrackHeight();
-        const auto numTracks = session.getNumTracks();
+        const auto visibleCount = session.getVisibleTrackCount();
         const auto height = (float) getHeight();
 
-        // Lane backgrounds: the master row and the selected row are tinted.
-        for (int t = 0; t < numTracks; ++t)
+        // Lane backgrounds: the selected row is tinted.
+        for (int row = 0; row < visibleCount; ++row)
         {
-            const auto y = t * rowHeight;
+            const auto t = session.getTrackIndexForVisibleRow (row);
+            const auto y = row * rowHeight;
 
             if (y + rowHeight < clip.getY() || y > clip.getBottom())
                 continue;
 
             if (t == session.getSelectedTrack())
                 g.setColour (DawColours::panel.withAlpha (0.55f));
-            else if (t == 0)
-                g.setColour (DawColours::panelSunken);
             else
-                g.setColour ((t % 2) == 0 ? juce::Colour (0xff121212) : DawColours::arrangement);
+                g.setColour ((row % 2) == 0 ? juce::Colour (0xff121212) : DawColours::arrangement);
 
             g.fillRect (0, y, getWidth(), rowHeight);
         }
@@ -85,8 +84,8 @@ public:
 
         g.setColour (DawColours::laneLine);
 
-        for (int t = 0; t <= numTracks; ++t)
-            g.drawHorizontalLine (t * rowHeight, (float) clip.getX(), (float) clip.getRight());
+        for (int row = 0; row <= visibleCount; ++row)
+            g.drawHorizontalLine (row * rowHeight, (float) clip.getX(), (float) clip.getRight());
 
         // Clips
         const auto& clips = session.getClips();
@@ -96,7 +95,7 @@ public:
             const auto& c = clips[(size_t) i];
             auto r = getClipBounds (c);
 
-            if (! r.toNearestInt().intersects (clip))
+            if (r.isEmpty() || ! r.toNearestInt().intersects (clip))
                 continue;
 
             paintClip (g, c, r, i == session.getSelectedClip());
@@ -111,11 +110,11 @@ public:
 
             g.setColour (DawColours::textDim);
             g.setFont (juce::FontOptions (15.0f));
-            g.drawFittedText ("Double-click a lane to create a MIDI clip",
+            g.drawFittedText ("Start your arrangement",
                               visible.removeFromTop (visible.getHeight() / 2 + 10),
                               juce::Justification::centredBottom, 1);
             g.setFont (juce::FontOptions (12.5f));
-            g.drawFittedText ("or drop audio / MIDI files here  -  WAV, MP3, FLAC, AIFF, MID",
+            g.drawFittedText ("+ Instrument    + Web Sampler    + Empty Track",
                               visible, juce::Justification::centredTop, 1);
         }
 
@@ -137,6 +136,13 @@ public:
         }
 
         const auto playX = (float) (session.getPositionBeats() * ppb);
+
+        if (session.isPlaying())
+        {
+            g.setColour (DawColours::accent.withAlpha (0.18f));
+            g.fillRect (playX - 4.0f, (float) clip.getY(), 9.0f, (float) clip.getHeight());
+        }
+
         g.setColour (DawColours::playhead);
         g.drawVerticalLine ((int) playX, (float) clip.getY(), (float) clip.getBottom());
     }
@@ -149,8 +155,8 @@ public:
         if (std::abs (x - lastPlayheadX) < 0.5f)
             return;
 
-        repaint (juce::Rectangle<int> ((int) lastPlayheadX - 2, 0, 5, getHeight()));
-        repaint (juce::Rectangle<int> ((int) x - 2, 0, 5, getHeight()));
+        repaint (juce::Rectangle<int> ((int) lastPlayheadX - 8, 0, 17, getHeight()));
+        repaint (juce::Rectangle<int> ((int) x - 8, 0, 17, getHeight()));
         lastPlayheadX = x;
     }
 
@@ -200,6 +206,7 @@ public:
 
         dragEdge = clipEdgeAt (index, e.position);
         gesture = dragEdge == Edge::none ? Gesture::moveClips : Gesture::resizeClip;
+        session.beginTransaction (gesture == Gesture::moveClips ? "Move clips" : "Resize clip");
         dragOriginals.clear();
 
         for (int i = 0; i < (int) clips.size(); ++i)
@@ -271,8 +278,9 @@ public:
                 c.startBeat = juce::jmax (0.0, session.snapBeat (original.startBeat + beatDelta));
 
                 const auto target = original.trackIndex + trackDelta;
+                const auto* dest = session.getTrack (target);
 
-                if (target >= 1 && target < session.getNumTracks())
+                if (dest != nullptr && ! dest->isMaster() && ! dest->isGroup())
                     c.trackIndex = target;
             }
         }
@@ -404,6 +412,7 @@ private:
         m.addItem (3, "Delete");
         m.addSeparator();
         m.addItem (4, "Set Loop to Clip");
+        m.addItem (5, "Loop Clip");
 
         m.showMenuAsync (juce::PopupMenu::Options().withParentComponent (getTopLevelComponent()),
                          [this, &session, index] (int r)
@@ -423,6 +432,16 @@ private:
                 case 2: session.duplicateClip (index); break;
                 case 3: session.removeClip (index); break;
                 case 4: session.setLoopRange (c->startBeat, c->getEndBeat()); break;
+                case 5:
+                    if (auto* clip = session.getClip (index))
+                    {
+                        session.beginTransaction ("Loop clip");
+                        const auto source = clip->getSourceLengthBeats();
+                        clip->loopLengthBeats = source;
+                        clip->lengthBeats = source * 4.0;
+                        session.notify (DawSession::clipsChanged);
+                    }
+                    break;
                 default: break;
             }
         });
@@ -441,16 +460,22 @@ private:
 
     int yToTrack (float y) const
     {
-        return juce::jlimit (0, juce::jmax (0, owner.session.getNumTracks() - 1),
-                             (int) (y / (float) owner.session.getTrackHeight()));
+        const auto row = (int) (y / (float) owner.session.getTrackHeight());
+        const auto index = owner.session.getTrackIndexForVisibleRow (row);
+        return index >= 0 ? index : owner.session.getSelectedTrack();
     }
 
     juce::Rectangle<float> getClipBounds (const ClipData& c) const
     {
+        const auto row = owner.session.getVisibleRowForTrack (c.trackIndex);
+
+        if (row < 0)
+            return {};
+
         const auto ppb = owner.session.getPixelsPerBeat();
         const auto rowHeight = owner.session.getTrackHeight();
         return { (float) (c.startBeat * ppb),
-                 (float) (c.trackIndex * rowHeight + 3),
+                 (float) (row * rowHeight + 3),
                  juce::jmax (3.0f, (float) (c.lengthBeats * ppb)),
                  (float) rowHeight - 7.0f };
     }
@@ -591,7 +616,25 @@ void ArrangementView::paint (juce::Graphics& g)
                     (float) loopLane.getHeight() - 2.0f);
     }
 
+    for (const auto& marker : session.getEngineAPI().getProject().getMarkers())
+    {
+        const auto mx = (float) (marker.startBeat * ppb - scrollX);
+        g.setColour (DawColours::textMuted);
+        g.setFont (juce::FontOptions (10.0f));
+        g.drawText (marker.name, (int) mx + 4, ruler.getY() + loopLaneHeight,
+                    72, 12, juce::Justification::centredLeft, true);
+        g.setColour (juce::Colour (0xff6a6a6a));
+        g.drawVerticalLine ((int) mx, (float) ruler.getY() + 8.0f, (float) ruler.getBottom() - 1.0f);
+    }
+
     const auto playX = (float) (session.getPositionBeats() * ppb - scrollX);
+
+    if (session.isPlaying())
+    {
+        g.setColour (DawColours::accent.withAlpha (0.28f));
+        g.fillRect (playX - 5.0f, (float) rulerBounds.getY(), 11.0f, (float) rulerBounds.getHeight());
+    }
+
     g.setColour (DawColours::playhead);
     g.drawVerticalLine ((int) playX, (float) rulerBounds.getY(), (float) rulerBounds.getBottom());
     juce::Path marker;
@@ -646,11 +689,40 @@ void ArrangementView::handleRulerDrag (const juce::MouseEvent& e, bool isStartOf
     {
         draggingLoop = e.getMouseDownY() < rulerBounds.getY() + loopLaneHeight;
         loopAnchorBeat = beat;
+        loopDragStart = session.getLoopStart();
+        loopDragEnd = session.getLoopEnd();
+        loopGesture = 1;
+
+        if (draggingLoop && session.isLooping())
+        {
+            const auto ppb = session.getPixelsPerBeat();
+            const auto x = e.x + viewport.getViewPositionX();
+            const auto left = session.getLoopStart() * ppb;
+            const auto right = session.getLoopEnd() * ppb;
+            const auto handle = 14.0;
+
+            if (std::abs (x - left) <= handle)
+                loopGesture = 2;
+            else if (std::abs (x - right) <= handle)
+                loopGesture = 3;
+            else if (x > left && x < right)
+                loopGesture = 4;
+        }
     }
 
     if (draggingLoop)
     {
-        if (std::abs (beat - loopAnchorBeat) > 0.001)
+        if (loopGesture == 2)
+            session.setLoopRange (beat, loopDragEnd);
+        else if (loopGesture == 3)
+            session.setLoopRange (loopDragStart, beat);
+        else if (loopGesture == 4)
+        {
+            const auto delta = beat - loopAnchorBeat;
+            session.setLoopRange (juce::jmax (0.0, loopDragStart + delta),
+                                  juce::jmax (0.25, loopDragEnd + delta));
+        }
+        else if (std::abs (beat - loopAnchorBeat) > 0.001)
         {
             session.setLoopRange (juce::jmin (loopAnchorBeat, beat), juce::jmax (loopAnchorBeat, beat));
 
@@ -742,7 +814,7 @@ void ArrangementView::updateContentSize()
     const auto w = juce::jmax (viewport.getMaximumVisibleWidth(),
                                (int) std::ceil (maxBeat * session.getPixelsPerBeat()));
     const auto h = juce::jmax (viewport.getMaximumVisibleHeight(),
-                               session.getNumTracks() * session.getTrackHeight());
+                               juce::jmax (1, session.getVisibleTrackCount()) * session.getTrackHeight());
     canvas->setSize (w, h);
 }
 
@@ -786,14 +858,13 @@ void ArrangementView::filesDropped (const juce::StringArray& files, int x, int y
     draggingFiles = false;
     const auto pos = toCanvas (x, y);
     const auto beat = session.snapBeat (pos.x / session.getPixelsPerBeat());
-    const auto track = juce::jlimit (0, juce::jmax (0, session.getNumTracks() - 1),
-                                     pos.y / session.getTrackHeight());
+    const auto track = session.getTrackIndexForVisibleRow (pos.y / session.getTrackHeight());
 
     for (const auto& path : files)
     {
         juce::File file (path);
 
-        if (fileIsSupported (file))
+        if (fileIsSupported (file) && track > 0)
             session.addClipFromFile (file, track, beat);
     }
 

@@ -3,8 +3,8 @@
 #include <JuceHeader.h>
 
 /*  Describes one hosted plugin the application is allowed to load.  The catalogue is
-    closed: only bbcso_discover and synchron_player are external, plus the built-in
-    test synth.  File locations come from instruments.json, not from C++.
+    closed: bbcso_discover and synchron_player are external, plus the built-in
+    test synth and M Orchestra.
 */
 struct PluginDescriptor
 {

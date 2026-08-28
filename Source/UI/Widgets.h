@@ -231,6 +231,60 @@ private:
 };
 
 //==============================================================================
+/** Animated master-meter bars used in the transport strip. */
+class MixVisualizer  : public juce::Component
+{
+public:
+    MixVisualizer()
+    {
+        setInterceptsMouseClicks (false, false);
+        setOpaque (true);
+    }
+
+    void setLevel (float newLevel)
+    {
+        level = juce::jlimit (0.0f, 1.0f, newLevel);
+        repaint();
+    }
+
+    void setPlaying (bool shouldPlay) { playing = shouldPlay; }
+
+    void paint (juce::Graphics& g) override
+    {
+        auto bounds = getLocalBounds().toFloat().reduced (1.0f);
+        g.fillAll (DawColours::panelSunken);
+        g.setColour (DawColours::divider);
+        g.drawRect (getLocalBounds(), 1);
+
+        const int bars = 16;
+        const auto t = (float) (juce::Time::getMillisecondCounterHiRes() * 0.001);
+        const auto gap = 1.5f;
+        const auto barW = juce::jmax (2.0f, (bounds.getWidth() - gap * (float) (bars - 1)) / (float) bars);
+
+        for (int i = 0; i < bars; ++i)
+        {
+            const auto phase = t * (2.4f + (float) i * 0.31f) + (float) i * 0.4f;
+            auto height = 0.12f + level * (0.35f + 0.53f * (0.5f + 0.5f * std::sin (phase)));
+            if (! playing)
+                height = 0.08f + level * 0.35f;
+
+            height = juce::jlimit (0.06f, 1.0f, height);
+            auto colour = height > 0.82f ? DawColours::meterHigh
+                                         : (height > 0.55f ? DawColours::meterMid : DawColours::meterLow);
+            g.setColour (playing ? colour : colour.withMultipliedSaturation (0.55f));
+
+            const auto x = bounds.getX() + (float) i * (barW + gap);
+            const auto h = bounds.getHeight() * height;
+            g.fillRoundedRectangle (x, bounds.getBottom() - h, barW, h, 1.0f);
+        }
+    }
+
+private:
+    float level = 0.0f;
+    bool playing = false;
+};
+
+//==============================================================================
 /** Flat tab row with an accent underline for the active tab. */
 class TabStrip  : public juce::Component
 {

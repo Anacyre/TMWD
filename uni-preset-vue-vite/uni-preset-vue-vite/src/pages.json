@@ -7,6 +7,14 @@
 				"navigationBarTitleText": "DawWeb",
 				"disableScroll": true
 			}
+		},
+		{
+			"path": "pages/plugin-editor/index",
+			"style": {
+				"navigationStyle": "custom",
+				"navigationBarTitleText": "Plugin",
+				"disableScroll": true
+			}
 		}
 	],
 	"globalStyle": {

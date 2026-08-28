@@ -3,13 +3,13 @@
 #include <JuceHeader.h>
 #include "DawSession.h"
 
-/*  Compact instrument browser popup.  Visual language follows the supplied
-    reference: dark, searchable, category-first, no native plugin chrome.
-*/
+/*  DAW-level plugin picker (Insert Plugin) or Orchestra Sampler patch picker. */
 class InstrumentSelector  : public juce::Component
 {
 public:
-    InstrumentSelector (DawSession& sessionToUse, int trackIndexToUse);
+    enum class Mode { plugins, orchestraPatches };
+
+    InstrumentSelector (DawSession& sessionToUse, int trackIndexToUse, Mode modeToUse);
     ~InstrumentSelector() override;
 
     void paint (juce::Graphics&) override;
@@ -19,8 +19,15 @@ public:
     std::function<void (juce::String)> onSelect;
 
     static void launch (DawSession& session, juce::Component* anchor, int trackIndex);
+    static void launchPatches (DawSession& session, juce::Component* anchor, int trackIndex);
 
 private:
+    struct Row
+    {
+        juce::String id, name, detail;
+        bool available = true;
+    };
+
     class CategoryModel  : public juce::ListBoxModel
     {
     public:
@@ -31,11 +38,11 @@ private:
         InstrumentSelector& owner;
     };
 
-    class InstrumentModel  : public juce::ListBoxModel
+    class ItemModel  : public juce::ListBoxModel
     {
     public:
-        explicit InstrumentModel (InstrumentSelector& o) : owner (o) {}
-        int getNumRows() override { return (int) owner.visible.size(); }
+        explicit ItemModel (InstrumentSelector& o) : owner (o) {}
+        int getNumRows() override { return owner.visible.size(); }
         void paintListBoxItem (int row, juce::Graphics&, int width, int height, bool selected) override;
         void selectedRowsChanged (int lastRow) override;
         void listBoxItemDoubleClicked (int row, const juce::MouseEvent&) override;
@@ -44,20 +51,22 @@ private:
 
     void rebuildVisible();
     void applySelection();
-    const InstrumentDefinition* definitionAt (int row) const;
+    const Row* rowAt (int row) const;
+    static void launchWithMode (DawSession& session, juce::Component* anchor, int trackIndex, Mode mode);
 
     DawSession& session;
     int trackIndex = -1;
+    Mode mode = Mode::plugins;
     CategoryModel categoryModel { *this };
-    InstrumentModel instrumentModel { *this };
+    ItemModel itemModel { *this };
 
     juce::Label title, sourceLabel;
     juce::TextEditor search;
-    juce::TextButton closeButton { "x" }, selectButton { "Select" };
+    juce::TextButton closeButton { "x" }, selectButton { "Insert" };
     juce::ListBox categoryList { "categories", nullptr };
-    juce::ListBox instrumentList { "instruments", nullptr };
+    juce::ListBox itemList { "items", nullptr };
     juce::StringArray categories;
-    std::vector<const InstrumentDefinition*> visible;
+    juce::Array<Row> visible;
     int categoryIndex = 0;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (InstrumentSelector)

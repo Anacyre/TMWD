@@ -27,6 +27,27 @@
     <view v-else-if="name === 'min'" class="win min" />
     <view v-else-if="name === 'max'" class="win max" />
     <view v-else-if="name === 'close'" class="win close" />
+    <view v-else-if="name === 'undo'" class="undo" />
+    <view v-else-if="name === 'redo'" class="redo" />
+    <view v-else-if="name === 'settings'" class="settings" />
+    <view v-else-if="name === 'note'" class="note">
+      <view class="head" /><view class="stem" /><view class="flag" />
+    </view>
+    <view v-else-if="name === 'mixer'" class="mixer">
+      <view /><view /><view />
+    </view>
+    <view v-else-if="name === 'inspector'" class="inspector">
+      <view class="pane left" /><view class="pane right" />
+    </view>
+    <view v-else-if="name === 'chevron'" class="chevron" />
+    <view v-else-if="name === 'chevron-right'" class="chevron right" />
+    <view v-else-if="name === 'more'" class="more">
+      <view /><view /><view />
+    </view>
+    <view v-else-if="name === 'arrange'" class="arrange">
+      <view /><view /><view />
+    </view>
+    <view v-else-if="name === 'dot'" class="status-dot" />
   </view>
 </template>
 
@@ -47,24 +68,33 @@ defineProps({
 }
 .play {
   position: absolute;
-  left: 28%;
-  top: 24%;
+  left: 50%;
+  top: 50%;
   width: 0;
   height: 0;
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
-  border-left: 13px solid currentColor;
+  border-top: 7px solid transparent;
+  border-bottom: 7px solid transparent;
+  border-left: 12px solid currentColor;
+  transform: translate(-30%, -50%);
+}
+.pause {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 14px;
+  height: 16px;
+  transform: translate(-50%, -50%);
 }
 .pause view {
   position: absolute;
-  top: 24%;
+  top: 0;
   width: 4px;
-  height: 52%;
+  height: 16px;
   border-radius: 1px;
   background: currentColor;
 }
-.pause view:first-child { left: 30%; }
-.pause view:last-child { right: 30%; }
+.pause view:first-child { left: 0; }
+.pause view:last-child { left: auto; right: 0; }
 .stop {
   position: absolute;
   left: 28%;
@@ -274,5 +304,163 @@ defineProps({
   height: 2px;
   background: currentColor;
   transform: rotate(90deg);
+}
+.undo, .redo {
+  position: absolute;
+  left: 22%;
+  top: 28%;
+  width: 52%;
+  height: 44%;
+  border: 1.6px solid currentColor;
+  border-bottom-color: transparent;
+  border-radius: 50%;
+}
+.undo { transform: rotate(-28deg); border-right-color: transparent; }
+.redo { transform: rotate(28deg); border-left-color: transparent; }
+.undo::after, .redo::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 0;
+  border-top: 3.5px solid transparent;
+  border-bottom: 3.5px solid transparent;
+}
+.undo::after {
+  left: -1px;
+  bottom: -1px;
+  border-right: 6px solid currentColor;
+}
+.redo::after {
+  right: -1px;
+  bottom: -1px;
+  border-left: 6px solid currentColor;
+}
+.settings {
+  position: absolute;
+  left: 28%;
+  top: 28%;
+  width: 44%;
+  height: 44%;
+  border: 1.6px solid currentColor;
+  border-radius: 50%;
+}
+.settings::before {
+  content: '';
+  position: absolute;
+  left: -18%;
+  top: 38%;
+  width: 136%;
+  height: 24%;
+  background: currentColor;
+  clip-path: polygon(18% 0, 82% 0, 100% 50%, 82% 100%, 18% 100%, 0 50%);
+}
+.chevron {
+  position: absolute;
+  left: 32%;
+  top: 38%;
+  width: 36%;
+  height: 36%;
+  border-right: 1.8px solid currentColor;
+  border-bottom: 1.8px solid currentColor;
+  transform: rotate(45deg);
+}
+.chevron.right {
+  left: 28%;
+  top: 30%;
+  transform: rotate(-45deg);
+}
+.more view {
+  position: absolute;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translateX(-50%);
+}
+.more view:nth-child(1) { top: 26%; }
+.more view:nth-child(2) { top: 48%; }
+.more view:nth-child(3) { top: 70%; }
+.arrange view {
+  position: absolute;
+  left: 22%;
+  right: 22%;
+  height: 2px;
+  background: currentColor;
+}
+.arrange view:nth-child(1) { top: 30%; width: 56%; }
+.arrange view:nth-child(2) { top: 48%; width: 40%; left: 30%; }
+.arrange view:nth-child(3) { top: 66%; width: 50%; }
+.status-dot {
+  position: absolute;
+  left: 34%;
+  top: 34%;
+  width: 32%;
+  height: 32%;
+  border-radius: 50%;
+  background: currentColor;
+}
+.note .head {
+  position: absolute;
+  left: 24%;
+  bottom: 22%;
+  width: 42%;
+  height: 34%;
+  border-radius: 50%;
+  background: currentColor;
+}
+.note .stem {
+  position: absolute;
+  left: 58%;
+  top: 18%;
+  width: 2px;
+  height: 62%;
+  background: currentColor;
+}
+.note .flag {
+  position: absolute;
+  left: 60%;
+  top: 18%;
+  width: 28%;
+  height: 2px;
+  background: currentColor;
+}
+.mixer view {
+  position: absolute;
+  top: 18%;
+  bottom: 18%;
+  width: 1.5px;
+  background: currentColor;
+}
+.mixer view:nth-child(1) { left: 28%; }
+.mixer view:nth-child(2) { left: 50%; }
+.mixer view:nth-child(3) { left: 72%; }
+.mixer view::after {
+  content: '';
+  position: absolute;
+  left: -2.5px;
+  top: 38%;
+  width: 6px;
+  height: 3px;
+  border-radius: 1px;
+  background: currentColor;
+}
+.inspector .pane {
+  position: absolute;
+  top: 22%;
+  bottom: 22%;
+  border: 1.5px solid currentColor;
+}
+.inspector .left {
+  left: 22%;
+  width: 34%;
+  border-right: none;
+  border-radius: 1px 0 0 1px;
+}
+.inspector .right {
+  right: 22%;
+  width: 34%;
+  border-left: none;
+  border-radius: 0 1px 1px 0;
 }
 </style>

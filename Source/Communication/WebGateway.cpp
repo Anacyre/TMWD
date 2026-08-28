@@ -1,4 +1,5 @@
 #include "WebGateway.h"
+#include "../Model/ProjectSchema.h"
 #include <cmath>
 #include <cstring>
 
@@ -176,7 +177,7 @@ public:
 
     bool sendText (const juce::String& text)
     {
-        if (! websocket.load())
+        if (! websocket.load() || audioChannel.load())
             return false;
 
         const juce::ScopedLock sl (outLock);
@@ -184,6 +185,24 @@ public:
         return true;
     }
 
+    bool sendBinary (const void* data, int size)
+    {
+        if (! websocket.load() || ! audioChannel.load() || data == nullptr || size <= 0)
+            return false;
+
+        return sendFrame (2, data, size);
+    }
+
+    void setAudioSubscribed (bool shouldSubscribe) noexcept { audioSubscribed.store (shouldSubscribe); }
+    void setAudioChannel (bool isAudio) noexcept
+    {
+        audioChannel.store (isAudio);
+
+        if (isAudio)
+            audioSubscribed.store (true);
+    }
+    bool wantsAudio() const noexcept { return audioSubscribed.load(); }
+    bool isAudioChannel() const noexcept { return audioChannel.load(); }
     bool isWebSocket() const noexcept { return websocket.load(); }
 
     void run() override
@@ -238,6 +257,10 @@ public:
                 return;
 
             websocket.store (true);
+
+            if (path == "/audio" || path == "/ws/audio")
+                setAudioChannel (true);
+
             serveWebSocket (buffer, headerEnd);
             return;
         }
@@ -399,14 +422,7 @@ private:
 
         if (path == "/health" || path == "/api/health")
         {
-            auto* object = new juce::DynamicObject();
-            object->setProperty ("ok", true);
-            object->setProperty ("port", owner.port);
-            object->setProperty ("ws", owner.getWebSocketUrl());
-            object->setProperty ("http", owner.getListenUrl());
-            object->setProperty ("clients", owner.getNumClients());
-            object->setProperty ("webRoot", owner.webRoot.getFullPathName());
-            sendHttpText (200, "OK", "application/json; charset=utf-8", jsonLine (juce::var (object)));
+            sendHttpText (200, "OK", "application/json; charset=utf-8", jsonLine (owner.makeHealth()));
             return;
         }
 
@@ -553,7 +569,7 @@ private:
             if (! fin)
                 continue;
 
-            if (messageOpcode == 1 || messageOpcode == 2)
+            if (messageOpcode == 1)
             {
                 const auto text = juce::String::fromUTF8 (static_cast<const char*> (message.getData()),
                                                           (int) message.getSize());
@@ -604,6 +620,31 @@ private:
     juce::CriticalSection outLock;
     juce::StringArray outbound;
     std::atomic<bool> websocket { false };
+    std::atomic<bool> audioSubscribed { false };
+    std::atomic<bool> audioChannel { false };
+};
+
+//==============================================================================
+class WebGateway::AudioPump  : public juce::Thread
+{
+public:
+    explicit AudioPump (WebGateway& ownerToUse)
+        : juce::Thread ("DawWeb-AudioTap"),
+          owner (ownerToUse)
+    {
+    }
+
+    void run() override
+    {
+        while (! threadShouldExit())
+        {
+            owner.pumpRemoteAudio();
+            wait (4);
+        }
+    }
+
+private:
+    WebGateway& owner;
 };
 
 //==============================================================================
@@ -624,8 +665,9 @@ bool WebGateway::start (int preferredPort)
 {
     stop();
     webRoot = findWebRoot();
-    juce::Logger::writeToLog ("Web gateway: binding 127.0.0.1:"
-                              + juce::String (firstPort) + "-" + juce::String (lastPort));
+    juce::Logger::writeToLog ("Web gateway: binding 0.0.0.0:"
+                              + juce::String (firstPort) + "-" + juce::String (lastPort)
+                              + " (localhost + LAN)");
 
     const auto first = juce::jlimit (firstPort, lastPort, preferredPort);
 
@@ -633,13 +675,15 @@ bool WebGateway::start (int preferredPort)
     {
         listener.close();
 
-        if (listener.createListener (candidate, "127.0.0.1"))
+        if (listener.createListener (candidate, {}))
         {
             port = candidate;
             serving.store (true);
             startThread();
             startTimerHz (20);
-            juce::Logger::writeToLog ("Web gateway listening on " + getListenUrl());
+            audioPump = std::make_unique<AudioPump> (*this);
+            audioPump->startThread();
+            juce::Logger::writeToLog ("Web gateway listening on " + getListenUrls().joinIntoString (", "));
 
             if (webRoot.isDirectory())
                 juce::Logger::writeToLog ("Serving Vue UI from " + webRoot.getFullPathName());
@@ -651,7 +695,7 @@ bool WebGateway::start (int preferredPort)
     }
 
     port = 0;
-    juce::Logger::writeToLog ("Web gateway could not bind 127.0.0.1:"
+    juce::Logger::writeToLog ("Web gateway could not bind 0.0.0.0:"
                               + juce::String (firstPort) + "-" + juce::String (lastPort));
     return false;
 }
@@ -662,6 +706,13 @@ void WebGateway::stop()
     stopTimer();
     signalThreadShouldExit();
     listener.close();
+
+    if (audioPump != nullptr)
+    {
+        audioPump->signalThreadShouldExit();
+        audioPump->stopThread (1000);
+        audioPump.reset();
+    }
 
     {
         const juce::ScopedLock sl (lock);
@@ -687,14 +738,69 @@ juce::String WebGateway::getWebSocketUrl() const
     return port > 0 ? "ws://127.0.0.1:" + juce::String (port) : juce::String();
 }
 
+juce::String WebGateway::getAudioWebSocketUrl() const
+{
+    return port > 0 ? "ws://127.0.0.1:" + juce::String (port) + "/audio" : juce::String();
+}
+
+juce::StringArray WebGateway::getLanAddresses() const
+{
+    juce::Array<juce::IPAddress> addresses;
+    juce::IPAddress::findAllAddresses (addresses, false);
+    juce::StringArray result;
+
+    for (const auto& address : addresses)
+    {
+        const auto text = address.toString();
+
+        if (text == "127.0.0.1" || text == "0.0.0.0" || text.startsWith ("169.254.")
+            || text.startsWith ("224.") || text.startsWith ("239."))
+            continue;
+
+        result.addIfNotAlreadyThere (text);
+    }
+
+    return result;
+}
+
+juce::StringArray WebGateway::getListenUrls() const
+{
+    juce::StringArray urls;
+
+    if (port <= 0)
+        return urls;
+
+    const auto suffix = ":" + juce::String (port);
+    urls.add ("http://127.0.0.1" + suffix);
+    urls.add ("http://localhost" + suffix);
+
+    for (const auto& address : getLanAddresses())
+        urls.add ("http://" + address + suffix);
+
+    return urls;
+}
+
 int WebGateway::getNumClients() const
 {
     const juce::ScopedLock sl (lock);
     return connections.size();
 }
 
-void WebGateway::onEngineChanged (int)
+int WebGateway::getNumAudioClients() const
 {
+    const juce::ScopedLock sl (lock);
+    int count = 0;
+
+    for (auto* connection : connections)
+        if (connection->isAudioChannel())
+            ++count;
+
+    return count;
+}
+
+void WebGateway::onEngineChanged (int changeFlags)
+{
+    dirtyFlags.fetch_or (changeFlags);
     stateDirty.store (true);
 }
 
@@ -730,10 +836,37 @@ void WebGateway::timerCallback()
 
     if (stateDirty.exchange (false))
     {
-        auto* object = new juce::DynamicObject();
-        object->setProperty ("type", "event.state");
-        object->setProperty ("project", api.describeProject());
-        broadcastText (jsonLine (juce::var (object)));
+        const auto flags = dirtyFlags.exchange (0);
+        const auto modelFlags = flags & ~(EngineAPI::transportChanged);
+        const bool notesOnly = (modelFlags & EngineAPI::notesChanged) != 0
+                            && (modelFlags & ~EngineAPI::notesChanged) == 0;
+
+        if (notesOnly)
+        {
+            auto delta = api.takeNoteDelta();
+            auto* object = new juce::DynamicObject();
+
+            if (delta.isObject())
+            {
+                object->setProperty ("type", "event.noteDelta");
+                object->setProperty ("delta", delta);
+            }
+            else
+            {
+                object->setProperty ("type", "event.notes");
+                object->setProperty ("notes", api.describeNotes());
+            }
+
+            broadcastText (jsonLine (juce::var (object)));
+        }
+        else
+        {
+            api.takeNoteDelta();
+            auto* object = new juce::DynamicObject();
+            object->setProperty ("type", "event.state");
+            object->setProperty ("project", api.describeProject());
+            broadcastText (jsonLine (juce::var (object)));
+        }
     }
 
     const auto beats = api.getPositionBeats();
@@ -756,6 +889,11 @@ void WebGateway::timerCallback()
             if (! connections[i]->isThreadRunning())
                 finished.add (connections.removeAndReturn (i));
     }
+
+    if (finished.size() > 0)
+        refreshAudioTap();
+
+    refreshAudioTap();
 }
 
 void WebGateway::postCommand (Connection* connection, juce::String jsonText)
@@ -776,6 +914,15 @@ void WebGateway::postCommand (Connection* connection, juce::String jsonText)
         auto reply = juce::JSON::parse (jsonText, parsed).failed()
                          ? api.handleMessage (jsonText)
                          : api.handleMessage (parsed);
+
+        const auto type = parsed.getProperty ("type", juce::var()).toString();
+
+        if (type == "audio.subscribe")
+            connection->setAudioSubscribed (true);
+        else if (type == "audio.unsubscribe")
+            connection->setAudioSubscribed (false);
+
+        refreshAudioTap();
 
         if (auto* object = reply.getDynamicObject())
         {
@@ -805,6 +952,68 @@ void WebGateway::broadcastText (const juce::String& jsonText)
 
     for (auto* connection : live)
         connection->sendText (jsonText);
+}
+
+void WebGateway::refreshAudioTap()
+{
+    api.getEngine().getRemoteAudio().setEnabled (getNumAudioClients() > 0);
+}
+
+void WebGateway::pumpRemoteAudio()
+{
+    if (! serving.load())
+        return;
+
+    juce::Array<Connection*> live;
+    {
+        const juce::ScopedLock sl (lock);
+
+        for (auto* connection : connections)
+            if (connection->isWebSocket() && connection->isAudioChannel() && connection->isThreadRunning())
+                live.add (connection);
+    }
+
+    if (live.isEmpty())
+        return;
+
+    juce::MemoryBlock packet;
+
+    if (! api.getEngine().getRemoteAudio().pullPacket (packet, 256))
+        return;
+
+    for (auto* connection : live)
+        connection->sendBinary (packet.getData(), (int) packet.getSize());
+}
+
+juce::var WebGateway::makeHealth() const
+{
+    auto* object = new juce::DynamicObject();
+    object->setProperty ("ok", true);
+    object->setProperty ("port", port);
+    object->setProperty ("sessionId", api.getSessionId());
+    object->setProperty ("schemaVersion", ProjectSchema::currentVersion);
+    object->setProperty ("maxAudioSessions", EngineAPI::maxAudioSessions);
+    object->setProperty ("ws", getWebSocketUrl());
+    object->setProperty ("audioWs", getAudioWebSocketUrl());
+    object->setProperty ("http", getListenUrl());
+    object->setProperty ("clients", getNumClients());
+    object->setProperty ("audioClients", getNumAudioClients());
+    object->setProperty ("webRoot", webRoot.getFullPathName());
+    object->setProperty ("control", "websocket-json");
+    object->setProperty ("audioTransport", "websocket-binary-pcm-v1");
+    object->setProperty ("audioTransportIsPrototype", true);
+
+    juce::Array<juce::var> lan;
+    for (const auto& address : getLanAddresses())
+        lan.add (address);
+    object->setProperty ("lan", lan);
+
+    juce::Array<juce::var> urls;
+    for (const auto& url : getListenUrls())
+        urls.add (url);
+    object->setProperty ("urls", urls);
+
+    return juce::var (object);
 }
 
 juce::File WebGateway::findWebRoot() const
@@ -842,34 +1051,38 @@ juce::String WebGateway::makeLandingPage() const
 {
     const auto ws = getWebSocketUrl();
     const auto http = getListenUrl();
+    const auto lan = getLanAddresses().joinIntoString (", ");
+    const auto urls = getListenUrls().joinIntoString ("<br/>");
 
     return R"(<!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="UTF-8"/>
   <title>DawWeb Engine</title>
   <style>
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
            background:#121212; color:#e6e6e6; margin:0; padding:48px; }
-    a { color:#4da3ff; }
+    a { color:#cfc6b8; }
     code { background:#1e1e1e; padding:2px 6px; border-radius:4px; }
-    .card { max-width:640px; background:#1a1a1a; border:1px solid #2a2a2a;
-            border-radius:10px; padding:28px; }
-    h1 { margin-top:0; font-size:22px; }
-    p { line-height:1.55; color:#c8c8c8; }
+    .card { max-width:680px; background:#161616; border:1px solid #2a2a2a;
+            border-radius:12px; padding:28px; }
+    h1 { margin-top:0; font-size:22px; font-weight:600; }
+    p { line-height:1.55; color:#b8b8b8; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>DawWeb 引擎已启动</h1>
-    <p>C++ 音频引擎正在本机运行。Vue3 界面通过 WebSocket 连接这里。</p>
-    <p>HTTP：<code>)" + http + R"(</code><br/>
-       WebSocket：<code>)" + ws + R"(</code></p>
-    <p>开发时在 <code>uni-preset-vue-vite/uni-preset-vue-vite</code> 执行
-       <code>npm run dev:h5</code>，然后打开
-       <a href="http://localhost:5173">http://localhost:5173</a>。</p>
-    <p>也可以先 <code>npm run build:h5</code>，把产物放到仓库的
-       <code>dist/build/h5</code>，再刷新本页即可由引擎直接托管界面。</p>
+    <h1>DawWeb Engine</h1>
+    <p>One audio session. JSON WebSocket is the control channel.
+       Mixed stereo PCM uses a separate <code>/audio</code> WebSocket (prototype, not WebRTC).</p>
+    <p>Local: <code>)" + http + R"(</code><br/>
+       Control: <code>)" + ws + R"(</code><br/>
+       Audio: <code>)" + getAudioWebSocketUrl() + R"(</code></p>
+    <p>LAN addresses: <code>)" + (lan.isNotEmpty() ? lan : juce::String ("none")) + R"(</code></p>
+    <p>)" + urls + R"(</p>
+    <p>Same Vue UI: open this host from a tablet on the LAN, or run
+       <code>npm run dev:h5</code> and connect to the PC IP.</p>
+    <p>Windows may prompt for a firewall allow on first LAN bind.</p>
   </div>
 </body>
 </html>)";

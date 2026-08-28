@@ -5,8 +5,9 @@
 #include "DawSession.h"
 #include "Icons.h"
 #include "Widgets.h"
+#include "TransportBar.h"
 
-/** Menus, project identity, file actions, undo/redo and the master output level. */
+/** Project identity, undo/redo and the unified transport strip. */
 class TopBar  : public juce::Component,
                 private DawSession::Listener
 {
@@ -35,11 +36,12 @@ private:
     void showHelpMenu();
     void openProject();
     void saveProject (bool saveAs);
+    void rememberRecent (const juce::File& file);
     static void showStub (const juce::String& title, const juce::String& message);
 
     DawSession& session;
 
-    juce::TextButton fileBtn { "File" }, editBtn { "Edit" }, insertBtn { "Insert" },
+    juce::TextButton fileBtn { "Project" }, editBtn { "Edit" }, insertBtn { "Insert" },
                      viewBtn { "View" }, transportBtn { "Transport" }, helpBtn { "Help" };
 
     juce::Label projectName, userName, projectInfo;
@@ -54,10 +56,12 @@ private:
     IconButton bellButton { Icons::drawBell };
     IconButton speakerIcon { Icons::drawSpeaker };
     juce::Slider masterVolume;
+    TransportBar transport { session };
 
     juce::Rectangle<float> avatarBounds;
     juce::Rectangle<int> dividerA, dividerB;
     std::shared_ptr<juce::FileChooser> fileChooser;
+    juce::StringArray recentFiles;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TopBar)
 };

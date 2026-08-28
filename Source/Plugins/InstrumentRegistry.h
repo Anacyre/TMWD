@@ -12,6 +12,9 @@ public:
     InstrumentRegistry();
 
     static constexpr const char* testSynthId      = "test_synth";
+    static constexpr const char* mOrchestraId     = "m_orchestra";
+    static constexpr const char* mOrchestraDefaultId = "m_orch_violin_1";
+    static constexpr const char* orchestraSamplerPluginId = "orchestra_sampler";
     static constexpr const char* bbcsoDiscoverId  = "bbcso_discover";
     static constexpr const char* synchronPlayerId = "synchron_player";
 

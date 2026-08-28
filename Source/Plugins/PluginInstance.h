@@ -18,6 +18,9 @@ public:
     virtual juce::String getInstrumentId() const = 0;
     virtual juce::String getDisplayName() const = 0;
 
+    virtual void setInstrumentDefinitionId (const juce::String&) {}
+    virtual juce::String getInstrumentDefinitionId() const { return {}; }
+
     virtual bool isExternalPlugin() const { return false; }
 
     virtual void prepare (double sampleRate, int maximumBlockSize) = 0;

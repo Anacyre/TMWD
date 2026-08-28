@@ -21,7 +21,9 @@ StatusBar::StatusBar (DawSession& sessionToUse)
     hintLabel.setText ("Space play   -   Ctrl+wheel zoom   -   double-click a lane to add a clip",
                        juce::dontSendNotification);
 
-    refresh();
+    // Defer the first refresh until after MainComponent has finished constructing
+    // all panels, so track data and session listeners are stable.
+    juce::MessageManager::callAsync ([this] { refresh(); });
 }
 
 StatusBar::~StatusBar()
@@ -64,21 +66,30 @@ void StatusBar::sessionChanged (int changeFlags)
 void StatusBar::refresh()
 {
     juce::String selection;
+    const int trackIndex = session.getSelectedTrack();
 
-    if (const auto* track = session.getTrack (session.getSelectedTrack()))
-        selection << "Track " << DawWidgets::makeTrackNumber (session.getSelectedTrack())
-                  << "  " << track->name;
+    if (juce::isPositiveAndBelow (trackIndex, session.getNumTracks()))
+    {
+        const auto& track = session.getTracks()[(size_t) trackIndex];
+        selection << "Track " << DawWidgets::makeTrackNumber (trackIndex)
+                  << "  " << track.name;
+
+        if (track.instrumentLoadState != InstrumentLoadState::Loaded
+            && track.instrumentLoadState != InstrumentLoadState::Active)
+        {
+            const auto loadMessage = track.instrumentLoadMessage;
+
+            if (loadMessage.isNotEmpty())
+                selection << "   -   " << loadMessage;
+        }
+    }
     else
+    {
         selection << "No track selected";
+    }
 
     if (const auto* clip = session.getClip (session.getSelectedClip()))
         selection << "   -   " << clip->name << "  (" << (int) clip->notes.size() << " notes)";
-
-    if (const auto* track = session.getTrack (session.getSelectedTrack()))
-        if (track->instrumentLoadMessage.isNotEmpty()
-            && track->instrumentLoadState != InstrumentLoadState::Loaded
-            && track->instrumentLoadState != InstrumentLoadState::Active)
-            selection << "   -   " << track->instrumentLoadMessage;
 
     selectionLabel.setText (selection, juce::dontSendNotification);
 

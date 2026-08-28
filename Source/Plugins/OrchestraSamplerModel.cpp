@@ -237,28 +237,34 @@ InstrumentSnapshot buildSnapshot (const InstrumentRegistry& registry,
         return snapshot;
     }
 
-    const auto* definition = registry.findDefinition (track->instrumentDefinitionId);
+    const juce::String instrumentDefinitionId = track->instrumentDefinitionId;
+    const juce::String techniqueId = track->techniqueId;
+    const juce::String presetId = track->presetId;
+    const juce::String loadMessage = track->instrumentLoadMessage;
+    const auto loadState = track->instrumentLoadState;
+    const bool usesFactoryState = track->usesFactoryState;
+    const bool legatoEnabled = track->legatoEnabled;
+
+    const auto* definition = registry.findDefinition (instrumentDefinitionId);
 
     if (definition == nullptr)
     {
         snapshot.loadState = "Error";
-        snapshot.loadMessage = "Unknown instrument: " + track->instrumentDefinitionId;
+        snapshot.loadMessage = "Unknown instrument: " + instrumentDefinitionId;
         return snapshot;
     }
 
     snapshot.capabilities = buildCapabilities (registry, *definition);
-    snapshot.techniqueId = track->techniqueId;
-    snapshot.presetId = track->presetId.isNotEmpty()
-                            ? track->presetId
-                            : registry.resolvePresetId (*definition, track->techniqueId);
-    snapshot.loadState = instrumentLoadStateLabel (track->instrumentLoadState);
-    snapshot.loadMessage = track->instrumentLoadMessage.isNotEmpty()
-                               ? track->instrumentLoadMessage
-                               : snapshot.loadState;
-    snapshot.usesFactoryState = track->usesFactoryState;
-    snapshot.legatoEnabled = track->legatoEnabled;
-    snapshot.ready = track->instrumentLoadState == InstrumentLoadState::Loaded
-                     || track->instrumentLoadState == InstrumentLoadState::Active;
+    snapshot.techniqueId = techniqueId;
+    snapshot.presetId = presetId.isNotEmpty()
+                            ? presetId
+                            : registry.resolvePresetId (*definition, techniqueId);
+    snapshot.loadState = instrumentLoadStateLabel (loadState);
+    snapshot.loadMessage = loadMessage.isNotEmpty() ? loadMessage : snapshot.loadState;
+    snapshot.usesFactoryState = usesFactoryState;
+    snapshot.legatoEnabled = legatoEnabled;
+    snapshot.ready = loadState == InstrumentLoadState::Loaded
+                     || loadState == InstrumentLoadState::Active;
 
     for (auto& technique : snapshot.capabilities.techniques)
         technique.selected = technique.id == snapshot.techniqueId

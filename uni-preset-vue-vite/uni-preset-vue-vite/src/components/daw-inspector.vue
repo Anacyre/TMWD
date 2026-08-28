@@ -21,6 +21,13 @@
       <text class="status" :class="{ err: isError }">{{ loadText }}</text>
       <view v-if="track && track.type !== 'master' && track.instrument" class="link" @click="unload">Remove Instrument</view>
 
+      <view v-if="track && track.type !== 'master'" class="inst-block">
+        <text class="cap">WEB SAMPLER</text>
+        <text class="src">{{ samplerHint }}</text>
+        <view class="btn" @click="pickWav">Load WAV…</view>
+        <input id="daw-wav-input" class="file" type="file" accept="audio/wav,audio/x-wav,.wav,.flac,.mp3,.ogg,.aif,.aiff" @change="onWav">
+      </view>
+
       <view v-if="definition && track && track.type === 'midi'" class="inst-block">
         <text class="src">{{ pluginName }}</text>
         <view v-if="techniques.length" class="field">
@@ -92,7 +99,9 @@ import {
   pluginById,
   unloadInstrument,
   setTechnique,
-  openInstrumentPicker
+  openPluginPicker,
+  openPluginUI,
+  loadSamplerWav
 } from '../store/session.js'
 import { setController } from '../store/session.js'
 
@@ -172,10 +181,30 @@ const clipTrackName = computed(() => {
 })
 const clipStart = computed(() => clip.value ? `Bar ${(clip.value.startBeat / session.timeSigNum + 1).toFixed(2)}` : '-')
 const clipLength = computed(() => clip.value ? `${(clip.value.lengthBeats / session.timeSigNum).toFixed(2)} bars` : '-')
+const samplerHint = computed(() => {
+  if (!track.value) return ''
+  if (track.value.source === 'web-sampler') {
+    const name = track.value.webSampler && track.value.webSampler.sampleName
+    return name ? ('Mapped WAV: ' + name) : 'No WAV mapped — sine fallback until you load a file'
+  }
+  return 'Assign Web Sampler or load a WAV to play in the browser'
+})
+
+function pickWav () {
+  const el = typeof document !== 'undefined' ? document.getElementById('daw-wav-input') : null
+  if (el && el.click) el.click()
+}
+
+function onWav (event) {
+  const file = event.target && event.target.files && event.target.files[0]
+  if (file && track.value) loadSamplerWav(track.value, file)
+  if (event.target) event.target.value = ''
+}
 
 function openPicker () {
   if (!track.value || track.value.type === 'master') return
-  openInstrumentPicker(session.selectedTrack)
+  if (track.value.definitionId) openPluginUI(session.selectedTrack)
+  else openPluginPicker(session.selectedTrack)
 }
 
 function unload () {
@@ -305,4 +334,16 @@ function onController (ctrl, value) {
 .drop-item.dim { color: #6a6a6a; }
 .group { display: block; color: #6a6a6a; font-size: 10px; padding: 6px 12px 2px; }
 .sep { height: 1px; background: #2a2a2a; margin: 6px 10px; }
+.file { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+.btn {
+  margin-top: 8px;
+  display: inline-block;
+  background: #2b2b2b;
+  border: 1px solid #3a3a3a;
+  padding: 6px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #e6e6e6;
+  font-size: 12px;
+}
 </style>

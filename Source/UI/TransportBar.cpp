@@ -75,15 +75,12 @@ TransportBar::TransportBar (DawSession& sessionToUse)
     toStartButton.onClick = [this] { session.returnToStart(); };
     addAndMakeVisible (toStartButton);
 
-    playButton.setTooltip ("Play  (Space)");
+    playButton.setTooltip ("Play / Pause  (Space)");
     playButton.setActiveColour (DawColours::soloOn);
-    playButton.onClick = [this] { session.play(); };
+    playButton.onClick = [this] { session.togglePlay(); };
     addAndMakeVisible (playButton);
 
-    pauseButton.setTooltip ("Pause");
-    pauseButton.setActiveColour (DawColours::accent);
-    pauseButton.onClick = [this] { session.pause(); };
-    addAndMakeVisible (pauseButton);
+    pauseButton.setVisible (false);
 
     stopButton.setTooltip ("Stop  (Esc)");
     stopButton.onClick = [this] { session.stop(); };
@@ -99,7 +96,7 @@ TransportBar::TransportBar (DawSession& sessionToUse)
     loopButton.onClick = [this] { session.toggleLoop(); };
     addAndMakeVisible (loopButton);
 
-    positionLabel.setFont (juce::Font (juce::FontOptions (21.0f).withStyleFlags (juce::Font::bold)));
+    positionLabel.setFont (juce::Font (juce::FontOptions (18.0f).withStyleFlags (juce::Font::bold)));
     positionLabel.setColour (juce::Label::textColourId, DawColours::text);
     positionLabel.setJustificationType (juce::Justification::centredLeft);
     positionLabel.setInterceptsMouseClicks (false, false);
@@ -111,7 +108,25 @@ TransportBar::TransportBar (DawSession& sessionToUse)
     secondsLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (secondsLabel);
 
-    DawWidgets::styleFlatButton (snapButton);
+    metronomeButton.setVisible (false);
+    bpmCaption.setVisible (false);
+    sigCaption.setVisible (false);
+    snapButton.setVisible (false);
+    visualizer.setVisible (false);
+    inspectorToggle.setVisible (false);
+    secondsLabel.setVisible (false);
+
+    bpmField.setSuffix (" BPM");
+    bpmField.setBoldFont (13.0f);
+
+    arrangeToggle.setTooltip ("Arrangement");
+    arrangeToggle.setActiveColour (DawColours::accent);
+    arrangeToggle.onClick = [this]
+    {
+        session.setEditorVisible (false);
+        session.setMixerVisible (false);
+    };
+    addAndMakeVisible (arrangeToggle);
     snapButton.setTooltip ("Snap grid");
     snapButton.onClick = [this]
     {
@@ -148,6 +163,7 @@ TransportBar::TransportBar (DawSession& sessionToUse)
         });
     };
     addAndMakeVisible (snapButton);
+    addAndMakeVisible (visualizer);
 
     editorToggle.setTooltip ("Editor panel  (E)");
     editorToggle.setActiveColour (DawColours::accent);
@@ -174,9 +190,7 @@ TransportBar::~TransportBar()
 
 void TransportBar::paint (juce::Graphics& g)
 {
-    g.fillAll (DawColours::panelRaised);
-    g.setColour (DawColours::divider);
-    g.drawHorizontalLine (getHeight() - 1, 0.0f, (float) getWidth());
+    g.fillAll (DawColours::header);
 
     if (! readoutBounds.isEmpty())
     {
@@ -191,33 +205,26 @@ void TransportBar::paint (juce::Graphics& g)
     }
 }
 
+void TransportBar::mouseDown (const juce::MouseEvent& e)
+{
+    if (readoutBounds.contains (e.getPosition()))
+        session.togglePositionFormat();
+}
+
 void TransportBar::resized()
 {
-    auto area = getLocalBounds().reduced (10, 6);
+    auto area = getLocalBounds().reduced (4, 4);
     const auto h = area.getHeight();
 
-    // Tempo / metre block on the left.
-    metronomeButton.setBounds (area.removeFromLeft (26).withSizeKeepingCentre (26, 26));
-    area.removeFromLeft (8);
-
-    auto tempoArea = area.removeFromLeft (54);
-    bpmCaption.setBounds (tempoArea.removeFromBottom (10));
-    bpmField.setBounds (tempoArea);
-    area.removeFromLeft (6);
-
-    auto sigArea = area.removeFromLeft (46);
-    sigCaption.setBounds (sigArea.removeFromBottom (10));
-    timeSigButton.setBounds (sigArea.withSizeKeepingCentre (46, juce::jmin (22, sigArea.getHeight())));
-
-    // Panel toggles on the right.
-    snapButton.setBounds (area.removeFromRight (46).withSizeKeepingCentre (46, juce::jmin (22, h)));
-    area.removeFromRight (12);
-    inspectorToggle.setBounds (area.removeFromRight (26).withSizeKeepingCentre (26, 26));
     mixerToggle.setBounds (area.removeFromRight (26).withSizeKeepingCentre (26, 26));
     editorToggle.setBounds (area.removeFromRight (26).withSizeKeepingCentre (26, 26));
+    arrangeToggle.setBounds (area.removeFromRight (26).withSizeKeepingCentre (26, 26));
+    area.removeFromRight (8);
+    timeSigButton.setBounds (area.removeFromRight (46).withSizeKeepingCentre (46, juce::jmin (22, h)));
+    area.removeFromRight (6);
+    bpmField.setBounds (area.removeFromRight (72).withSizeKeepingCentre (72, juce::jmin (22, h)));
 
-    // Transport cluster plus readout, centred in whatever space is left.
-    const int clusterWidth = 6 * 30 + 12 + 192;
+    const int clusterWidth = 5 * 30 + 12 + 148;
     auto centre = area.withSizeKeepingCentre (juce::jmin (clusterWidth, area.getWidth()), h);
 
     auto placeButton = [&centre] (IconButton& b, int width)
@@ -227,23 +234,24 @@ void TransportBar::resized()
 
     placeButton (toStartButton, 28);
     placeButton (playButton, 32);
-    placeButton (pauseButton, 28);
     placeButton (stopButton, 28);
     placeButton (recordButton, 30);
     centre.removeFromLeft (6);
     placeButton (loopButton, 28);
-    centre.removeFromLeft (12);
+    centre.removeFromLeft (10);
 
     readoutBounds = centre;
-    auto readout = centre.reduced (9, 2);
-    positionLabel.setBounds (readout.removeFromLeft (juce::jmax (0, readout.getWidth() - 52)));
-    secondsLabel.setBounds (readout);
+    positionLabel.setBounds (centre.reduced (9, 2));
 }
 
 void TransportBar::sessionChanged (int changeFlags)
 {
-    if ((changeFlags & (DawSession::positionChanged | DawSession::transportChanged)) != 0)
+    if ((changeFlags & (DawSession::positionChanged | DawSession::transportChanged | DawSession::metersChanged)) != 0)
+    {
         refreshPosition();
+        visualizer.setLevel (session.getTrackLevel (0));
+        visualizer.setPlaying (session.isPlaying());
+    }
 
     if ((changeFlags & (DawSession::transportChanged | DawSession::projectChanged | DawSession::viewChanged)) != 0)
         refresh();
@@ -252,7 +260,6 @@ void TransportBar::sessionChanged (int changeFlags)
 void TransportBar::refreshPosition()
 {
     positionLabel.setText (session.getPositionString(), juce::dontSendNotification);
-    secondsLabel.setText (session.getSecondsString(), juce::dontSendNotification);
 }
 
 void TransportBar::refresh()
@@ -267,17 +274,10 @@ void TransportBar::refresh()
     loopButton.setToggleState (session.isLooping());
     recordButton.setToggleState (session.isRecording());
     playButton.setToggleState (session.isPlaying());
+    playButton.setDrawFunction (session.isPlaying() ? Icons::drawPause : Icons::drawPlay);
     pauseButton.setToggleState (! session.isPlaying() && session.getPositionBeats() > 0.0);
 
-    juce::String snapText ("Off");
-
-    if (session.isSnapOn())
-        for (const auto& option : snapOptions)
-            if (option.beats > 0.0 && std::abs (session.getSnapGridBeats() - option.beats) < 1.0e-6)
-                snapText = option.name;
-
-    snapButton.setButtonText (snapText);
-
+    arrangeToggle.setToggleState (! session.isEditorVisible() && ! session.isMixerVisible());
     editorToggle.setToggleState (session.isEditorVisible());
     mixerToggle.setToggleState (session.isMixerVisible());
     inspectorToggle.setToggleState (session.isInspectorVisible());

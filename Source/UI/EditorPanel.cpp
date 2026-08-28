@@ -55,8 +55,9 @@ public:
         {
             auto& b = insertButtons[(size_t) i];
             DawWidgets::styleFlatButton (b);
-            b.setTooltip ("Insert slot " + juce::String (i + 1));
+            b.setTooltip ("Insert slot " + juce::String (i + 1) + " — double-click to open");
             b.onClick = [this, i] { showInsertMenu (i); };
+            b.addMouseListener (this, false);
             addAndMakeVisible (b);
         }
 
@@ -211,7 +212,7 @@ private:
             return;
 
         if (track->instrumentDefinitionId.isNotEmpty())
-            session.showOrchestraSampler (session.getSelectedTrack());
+            session.showPluginUI (session.getSelectedTrack());
         else
             session.showInstrumentSelector (&instrumentButton, session.getSelectedTrack());
     }
@@ -230,6 +231,8 @@ private:
             m.addItem (i + 1, effects[i], true, track->inserts[(size_t) slotIndex].name == effects[i]);
 
         m.addSeparator();
+        m.addItem (DawSession::insertMenuOpenId, "Open",
+                   ! track->inserts[(size_t) slotIndex].isEmpty());
         m.addItem (98, "Bypass", ! track->inserts[(size_t) slotIndex].isEmpty(),
                    track->inserts[(size_t) slotIndex].bypassed);
         m.addItem (99, "Remove", ! track->inserts[(size_t) slotIndex].isEmpty());
@@ -248,9 +251,15 @@ private:
             {
                 slot.bypassed = ! slot.bypassed;
             }
+            else if (r == DawSession::insertMenuOpenId)
+            {
+                session.showFxInsertEditor (session.getSelectedTrack(), slotIndex);
+                return;
+            }
             else if (r == 99)
             {
                 slot.name.clear();
+                slot.instrumentId.clear();
                 slot.bypassed = false;
             }
             else
@@ -258,11 +267,34 @@ private:
                 const auto effects = DawSession::getAvailableEffects();
 
                 if (r >= 1 && r <= effects.size())
+                {
                     slot.name = effects[r - 1];
+                    slot.instrumentId = DawSession::effectIdForName (slot.name);
+                    slot.bypassed = false;
+                    session.notify (DawSession::mixerChanged);
+                    session.showFxInsertEditor (session.getSelectedTrack(), slotIndex);
+                    return;
+                }
             }
 
             session.notify (DawSession::mixerChanged);
         });
+    }
+
+    void mouseDoubleClick (const juce::MouseEvent& e) override
+    {
+        for (int i = 0; i < (int) insertButtons.size(); ++i)
+        {
+            if (e.eventComponent != &insertButtons[(size_t) i])
+                continue;
+
+            auto* track = getTrack();
+
+            if (track != nullptr && i < (int) track->inserts.size() && ! track->inserts[(size_t) i].isEmpty())
+                session.showFxInsertEditor (session.getSelectedTrack(), i);
+
+            return;
+        }
     }
 
     void sessionChanged (int changeFlags) override
@@ -277,7 +309,7 @@ private:
     juce::Label nameEditor;
     std::vector<std::unique_ptr<InfoRow>> rows;
     juce::TextButton instrumentButton;
-    std::array<juce::TextButton, 2> insertButtons;
+    std::array<juce::TextButton, 5> insertButtons;
     std::vector<std::pair<juce::String, juce::Rectangle<int>>> captions;
 };
 
@@ -322,6 +354,30 @@ void EditorPanel::deleteSelection()
 {
     if (session.getEditorTab() == DawSession::EditorTab::pianoRoll)
         pianoRoll.deleteSelectedNotes();
+}
+
+void EditorPanel::duplicateSelection()
+{
+    if (session.getEditorTab() == DawSession::EditorTab::pianoRoll)
+        pianoRoll.duplicateSelectedNotes();
+}
+
+void EditorPanel::copySelection()
+{
+    if (session.getEditorTab() == DawSession::EditorTab::pianoRoll)
+        pianoRoll.copySelectedNotes();
+}
+
+void EditorPanel::pasteSelection()
+{
+    if (session.getEditorTab() == DawSession::EditorTab::pianoRoll)
+        pianoRoll.pasteNotes();
+}
+
+bool EditorPanel::hasNoteSelection() const
+{
+    return session.getEditorTab() == DawSession::EditorTab::pianoRoll
+        && pianoRoll.hasSelectedNotes();
 }
 
 void EditorPanel::paint (juce::Graphics& g)

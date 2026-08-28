@@ -1,0 +1,14 @@
+{
+  "id": "bbcso_piano",
+  "plugin": "bbcso_discover",
+  "instrument": "Piano",
+  "technique": "",
+  "library": "BBC Symphony Orchestra Discover",
+  "stateFile": "bbcso/piano.state",
+  "stateVersion": 1,
+  "pluginVersion": "1.7.0",
+  "libraryVersion": "",
+  "checksum": "3c1884407e1134ca-17236",
+  "capturedAt": "2026-08-25T15:51:33.968+08:00",
+  "byteSize": 17236
+}

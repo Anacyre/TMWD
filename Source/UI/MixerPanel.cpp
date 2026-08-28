@@ -34,8 +34,9 @@ ChannelStrip::ChannelStrip (DawSession& sessionToUse, int trackIndex)
     {
         auto& b = insertButtons[(size_t) i];
         DawWidgets::styleFlatButton (b);
-        b.setTooltip ("Insert slot " + juce::String (i + 1));
+        b.setTooltip ("Insert slot " + juce::String (i + 1) + " — double-click to open");
         b.onClick = [this, i] { showInsertMenu (i); };
+        b.addMouseListener (this, false);
         addAndMakeVisible (b);
     }
 
@@ -117,6 +118,8 @@ void ChannelStrip::showInsertMenu (int slotIndex)
         m.addItem (i + 1, effects[i], true, t->inserts[(size_t) slotIndex].name == effects[i]);
 
     m.addSeparator();
+    m.addItem (DawSession::insertMenuOpenId, "Open",
+               ! t->inserts[(size_t) slotIndex].isEmpty());
     m.addItem (98, "Bypass", ! t->inserts[(size_t) slotIndex].isEmpty(),
                t->inserts[(size_t) slotIndex].bypassed);
     m.addItem (99, "Remove", ! t->inserts[(size_t) slotIndex].isEmpty());
@@ -135,9 +138,15 @@ void ChannelStrip::showInsertMenu (int slotIndex)
         {
             slot.bypassed = ! slot.bypassed;
         }
+        else if (r == DawSession::insertMenuOpenId)
+        {
+            session.showFxInsertEditor (index, slotIndex);
+            return;
+        }
         else if (r == 99)
         {
             slot.name.clear();
+            slot.instrumentId.clear();
             slot.bypassed = false;
         }
         else
@@ -145,11 +154,34 @@ void ChannelStrip::showInsertMenu (int slotIndex)
             const auto effects = DawSession::getAvailableEffects();
 
             if (r >= 1 && r <= effects.size())
+            {
                 slot.name = effects[r - 1];
+                slot.instrumentId = DawSession::effectIdForName (slot.name);
+                slot.bypassed = false;
+                session.notify (DawSession::mixerChanged);
+                session.showFxInsertEditor (index, slotIndex);
+                return;
+            }
         }
 
         session.notify (DawSession::mixerChanged);
     });
+}
+
+void ChannelStrip::mouseDoubleClick (const juce::MouseEvent& e)
+{
+    for (int i = 0; i < (int) insertButtons.size(); ++i)
+    {
+        if (e.eventComponent != &insertButtons[(size_t) i])
+            continue;
+
+        auto* t = track();
+
+        if (t != nullptr && i < (int) t->inserts.size() && ! t->inserts[(size_t) i].isEmpty())
+            session.showFxInsertEditor (index, i);
+
+        return;
+    }
 }
 
 void ChannelStrip::mouseDown (const juce::MouseEvent&)
@@ -250,7 +282,12 @@ void ChannelStrip::refresh()
     {
         const auto empty = i >= (int) t->inserts.size() || t->inserts[(size_t) i].isEmpty();
         auto& b = insertButtons[(size_t) i];
-        b.setButtonText (empty ? "+" : t->inserts[(size_t) i].name);
+        b.setButtonText (empty ? "+" : (t->inserts[(size_t) i].instrumentId == "equalizer-x" ? "EQ"
+                                      : t->inserts[(size_t) i].instrumentId == "dynamic-x" ? "DYN"
+                                      : t->inserts[(size_t) i].instrumentId == "reverb-x" ? "REV"
+                                      : t->inserts[(size_t) i].instrumentId == "boost-x" ? "BOOST"
+                                      : t->inserts[(size_t) i].instrumentId == "limiter-x" ? "LIM"
+                                      : t->inserts[(size_t) i].name));
         b.setColour (juce::TextButton::textColourOffId,
                      empty ? DawColours::textDim
                            : (t->inserts[(size_t) i].bypassed ? DawColours::textDim : DawColours::text));
@@ -359,8 +396,7 @@ void MixerPanel::sessionChanged (int changeFlags)
             masterStrip->refreshMeter();
     }
 
-    if ((changeFlags & DawSession::tracksChanged) != 0
-        && (int) strips.size() != juce::jmax (0, session.getNumTracks() - 1))
+    if ((changeFlags & DawSession::tracksChanged) != 0)
     {
         rebuildStrips();
         return;
@@ -385,6 +421,11 @@ void MixerPanel::rebuildStrips()
 
     for (int i = 1; i < session.getNumTracks(); ++i)
     {
+        const auto* track = session.getTrack (i);
+
+        if (track == nullptr || track->isGroup())
+            continue;
+
         auto strip = std::make_unique<ChannelStrip> (session, i);
         holder.addAndMakeVisible (*strip);
         strips.push_back (std::move (strip));

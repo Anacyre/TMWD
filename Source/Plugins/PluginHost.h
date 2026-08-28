@@ -8,7 +8,8 @@
 #include <memory>
 
 /*  Creates instrument instances from stable plugin ids.  External hosting is limited
-    to bbcso_discover and synchron_player.  There is no plugin scanner.
+    to bbcso_discover and synchron_player.  Built-ins are Test Synth and M Orchestra.
+    There is no plugin scanner.
 */
 class PluginHost
 {
@@ -25,13 +26,16 @@ public:
                                                    int maximumBlockSize,
                                                    juce::String& errorMessage);
 
-    /** VST3 creation must not run on a blocked message thread.  The callback arrives
-        on the message thread after the plugin has been built in the background.
+    /** Loads an approved VST3 on the JUCE message thread and invokes callback there.
+        Callers may invoke this from any thread; work is marshalled when needed.
     */
     void createInstanceAsync (const juce::String& instrumentId,
                               double sampleRate,
                               int maximumBlockSize,
                               CreateCallback callback);
+
+    /** Reads VST3 descriptions for approved plugins.  Must run on the message thread. */
+    void precacheDescriptions();
 
     std::unique_ptr<PluginInstance> createInstanceOrFallback (const juce::String& instrumentId,
                                                              double sampleRate,

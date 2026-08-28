@@ -129,7 +129,14 @@ bool Project::removeTrack (int index)
         if (clip.trackIndex > index)
             --clip.trackIndex;
 
+    const auto removedId = track->id;
+
     tracks.erase (tracks.begin() + index);
+
+    for (auto& remaining : tracks)
+        if (remaining.parentId == removedId)
+            remaining.parentId = 0;
+
     return true;
 }
 
@@ -172,6 +179,9 @@ bool Project::isTrackAudible (int index) const
 
     if (track->isMaster())
         return ! track->mute;
+
+    if (track->isGroup())
+        return false;
 
     if (track->mute)
         return false;
@@ -235,8 +245,53 @@ NoteId Project::addNote (ClipId clipId, MidiNote note)
         return 0;
 
     note.id = nextNoteId();
+    note.pitch = juce::jlimit (0, 127, note.pitch);
+    note.startBeat = juce::jmax (0.0, note.startBeat);
+    note.lengthBeats = juce::jmax (MusicalTime::ticksToBeats (NoteModel::minDurationTicks), note.lengthBeats);
+    note.velocity = juce::jlimit (1.0f / 127.0f, 1.0f, note.velocity);
     clip->notes.push_back (note);
     return note.id;
+}
+
+int Project::updateNotesBatch (ClipId clipId, const juce::Array<juce::var>& patches)
+{
+    auto* clip = findClip (clipId);
+
+    if (clip == nullptr)
+        return 0;
+
+    int updated = 0;
+
+    for (const auto& patch : patches)
+    {
+        const auto noteId = (NoteId) (int) noteVarGet (patch, "id", "noteId");
+        auto* note = clip->findNote (noteId);
+
+        if (note == nullptr)
+            continue;
+
+        applyNoteFields (*note, patch);
+        ++updated;
+    }
+
+    return updated;
+}
+
+bool Project::removeNotes (ClipId clipId, const std::vector<NoteId>& noteIds)
+{
+    auto* clip = findClip (clipId);
+
+    if (clip == nullptr)
+        return false;
+
+    const auto before = clip->notes.size();
+    clip->notes.erase (std::remove_if (clip->notes.begin(), clip->notes.end(),
+                                       [&noteIds] (const MidiNote& n)
+                                       {
+                                           return std::find (noteIds.begin(), noteIds.end(), n.id) != noteIds.end();
+                                       }),
+                       clip->notes.end());
+    return clip->notes.size() != before;
 }
 
 bool Project::removeNote (ClipId clipId, NoteId noteId)
@@ -264,10 +319,79 @@ double Project::getLengthBeats() const
     return length;
 }
 
+ArrangementMarker* Project::findMarker (MarkerId markerId)
+{
+    for (auto& marker : markers)
+        if (marker.id == markerId)
+            return &marker;
+
+    return nullptr;
+}
+
+int Project::addMarker (ArrangementMarker marker)
+{
+    if (marker.id == 0)
+        marker.id = nextMarkerId();
+
+    markers.push_back (std::move (marker));
+    return (int) markers.size() - 1;
+}
+
+bool Project::removeMarker (MarkerId markerId)
+{
+    const auto before = markers.size();
+    markers.erase (std::remove_if (markers.begin(), markers.end(),
+                                   [markerId] (const ArrangementMarker& m) { return m.id == markerId; }),
+                   markers.end());
+    return markers.size() != before;
+}
+
+TimeSignatureChange Project::getTimeSignatureAtTick (juce::int64 tick) const
+{
+    TimeSignatureChange current;
+    current.numerator = timeSigNum;
+    current.denominator = timeSigDen;
+
+    for (const auto& change : timeSignatureChanges)
+        if (change.timeTick <= tick)
+            current = change;
+
+    return current;
+}
+
+bool Project::isTrackHiddenByCollapse (int index) const
+{
+    const auto* track = getTrack (index);
+
+    if (track == nullptr || track->parentId == 0)
+        return false;
+
+    auto parentId = track->parentId;
+    int guard = 0;
+
+    while (parentId != 0 && guard++ < 32)
+    {
+        const auto* parent = findTrack (parentId);
+
+        if (parent == nullptr)
+            return false;
+
+        if (parent->collapsed)
+            return true;
+
+        parentId = parent->parentId;
+    }
+
+    return false;
+}
+
 void Project::clear()
 {
     tracks.clear();
     clips.clear();
+    markers.clear();
+    timeSignatureChanges.clear();
+    webMixer = juce::var();
 
     TrackData master;
     master.id = nextTrackId();
@@ -295,4 +419,8 @@ void Project::assignMissingIds()
             if (note.id == 0)
                 note.id = nextNoteId();
     }
+
+    for (auto& marker : markers)
+        if (marker.id == 0)
+            marker.id = nextMarkerId();
 }

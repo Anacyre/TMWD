@@ -6,6 +6,7 @@ export default defineConfig({
     uni(),
   ],
   server: {
+    host: true,
     port: 5173,
     strictPort: false
   }

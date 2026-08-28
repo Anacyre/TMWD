@@ -62,6 +62,7 @@ public:
     void toggleLoop();
     void toggleMetronome();
     void toggleSnap();
+    void setSnapEnabled (bool shouldBeOn);
 
     bool isPlaying() const noexcept     { return playing; }
     bool isRecording() const noexcept   { return recording; }
@@ -117,6 +118,8 @@ public:
 
     double snapBeat (double beat) const;
     juce::String getPositionString() const;
+    bool isMusicalPosition() const noexcept { return musicalPosition; }
+    void togglePositionFormat();
     juce::String getSecondsString() const;
     void getBarBeatTick (int& bar, int& beat, int& tick) const;
 
@@ -136,12 +139,22 @@ public:
     juce::File getCurrentProjectFile() const { return currentProjectFile; }
 
     void showInstrumentSelector (juce::Component* anchor, int trackIndex = -1);
+    void showOrchestraPatchSelector (juce::Component* anchor, int trackIndex = -1);
     void dismissInstrumentBrowser();
     void bindInstrumentBrowser (juce::DocumentWindow* window) noexcept { instrumentBrowser = window; }
     juce::DocumentWindow* getInstrumentBrowserWindow() const noexcept { return instrumentBrowser; }
 
+    void insertPlugin (int trackIndex, const juce::String& pluginId);
+    void showPluginUI (int trackIndex = -1);
+    bool isMOrchestraTrack (const TrackData& track) const;
+
     void showOrchestraSampler (int trackIndex = -1);
     void closeOrchestraSampler();
+    void showMOrchestra (int trackIndex = -1);
+    void closeMOrchestra();
+
+    void showFxInsertEditor (int trackIndex, int slotIndex);
+    void closeFxInsertEditor();
 
     //==============================================================================
     // Content
@@ -153,13 +166,20 @@ public:
     int getNumTracks() const noexcept;
     TrackData* getTrack (int index);
     const TrackData* getTrack (int index) const;
+    TrackData* findTrack (TrackId trackId);
+    const TrackData* findTrack (TrackId trackId) const;
+    int indexOfTrack (TrackId trackId) const;
     ClipData* getClip (int index);
     const ClipData* getClip (int index) const;
+
+    Project& project() noexcept             { return api.getProject(); }
+    const Project& project() const noexcept { return api.getProject(); }
 
     int addTrack (TrackType type, const juce::String& name = {});
     void removeTrack (int index);
     void moveTrack (int fromIndex, int toIndex);
     int duplicateTrack (int index);
+    void setTrackCollapsed (int index, bool collapsed);
 
     int addClip (int trackIndex, double startBeat, double lengthBeats, const juce::String& name = {});
     int addClipFromFile (const juce::File& file, int trackIndex, double startBeat);
@@ -168,6 +188,12 @@ public:
 
     /** True when the track is audible given the current mute / solo state. */
     bool isTrackAudible (int index) const;
+
+    bool isPlaylistTrackVisible (int index) const;
+    int getVisibleTrackCount() const;
+    int getVisibleRowForTrack (int trackIndex) const;
+    int getTrackIndexForVisibleRow (int row) const;
+    int getTrackDepth (int index) const;
 
     //==============================================================================
     // Selection
@@ -208,12 +234,12 @@ public:
 
     //==============================================================================
     static constexpr int ticksPerBeat       = (int) MusicalTime::ticksPerQuarterNote;
-    static constexpr int topBarHeight       = 44;
-    static constexpr int transportHeight    = 44;
+    static constexpr int topBarHeight       = 48;
+    static constexpr int transportHeight    = 0;
     static constexpr int rulerHeight        = 32;
     static constexpr int statusBarHeight    = 24;
     static constexpr int defaultTrackHeight = 50;
-    static constexpr int minTrackHeight     = 34;
+    static constexpr int minTrackHeight     = 44;
     static constexpr int maxTrackHeight      = 132;
 
     /** Instruments the user may choose from.  Comes from the plugin host's registry, so
@@ -221,9 +247,11 @@ public:
     */
     juce::StringArray getAvailableInstruments() const;
     static juce::StringArray getAvailableEffects();
+    static juce::String effectIdForName (const juce::String& effectName);
 
     static constexpr int instrumentMenuIdBase = 1000;
     static constexpr int instrumentMenuRemoveId = 99;
+    static constexpr int insertMenuOpenId = 100;
 
     void fillInstrumentBrowserMenu (juce::PopupMenu& menu, const juce::String& currentDefinitionId) const;
     juce::String definitionIdFromMenuResult (int result) const;
@@ -246,9 +274,6 @@ private:
     void clampSelection();
     void pushTransportStateToEngine();
 
-    Project& project() noexcept             { return api.getProject(); }
-    const Project& project() const noexcept { return api.getProject(); }
-
     std::unique_ptr<EngineAPI> ownedApi;
     EngineAPI& api;
     bool applyingRemote = false;
@@ -270,12 +295,13 @@ private:
     double loopEnd = 32.0;
     double lastTimeMs = 0.0;
     double pixelsPerBeat = 21.0;
-    double snapGrid = 1.0;
+    double snapGrid = 0.25;
     int trackHeight = defaultTrackHeight;
     int colourIndex = 0;
     bool mixerVisible = false;
-    bool editorVisible = true;
-    bool inspectorVisible = true;
+    bool editorVisible = false;
+    bool inspectorVisible = false;
+    bool musicalPosition = true;
     EditorTab editorTab = EditorTab::pianoRoll;
     int selectedTrack = 1;
     int selectedClip = 0;
@@ -285,6 +311,8 @@ private:
     juce::StringArray undoNames, redoNames;
     juce::DocumentWindow* instrumentBrowser = nullptr;
     std::unique_ptr<class OrchestraSamplerWindow> orchestraSamplerWindow;
+    std::unique_ptr<class MOrchestraWindow> mOrchestraWindow;
+    std::unique_ptr<class FxInsertEditorWindow> fxInsertEditorWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (DawSession)
 };

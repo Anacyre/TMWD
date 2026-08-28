@@ -2,7 +2,7 @@
   <view
     class="knob"
     :title="title"
-    @mousedown.stop.prevent="onDown"
+    @pointerdown.stop.prevent="onDown"
     @dblclick.stop="reset"
   >
     <view class="disc">
@@ -35,11 +35,11 @@ function onDown (e) {
     emit('update:modelValue', Math.min(props.max, Math.max(props.min, next)))
   }
   const up = () => {
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', up)
+    window.removeEventListener('pointermove', move)
+    window.removeEventListener('pointerup', up)
   }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', up)
+  window.addEventListener('pointermove', move)
+  window.addEventListener('pointerup', up)
 }
 
 function reset () {
@@ -53,6 +53,7 @@ function reset () {
   height: 26px;
   flex-shrink: 0;
   cursor: ns-resize;
+  touch-action: pan-x;
 }
 .disc {
   width: 100%;

@@ -1,89 +1,429 @@
 <template>
-  <view class="mixer">
+  <view class="mix" :class="session.mixerMode">
     <view class="head">
-      <text>MIXER</text>
-      <view class="icon-btn" @click.stop="toggleMixer">×</view>
+      <text class="title">MIX</text>
+      <view class="modes">
+        <view class="mode" :class="{ on: session.mixerMode === 'compact' }" @click="setMode('compact')" @tap="setMode('compact')">Compact</view>
+        <view class="mode" :class="{ on: session.mixerMode === 'detail' }" @click="setMode('detail')" @tap="setMode('detail')">Detail</view>
+      </view>
+      <view class="head-hits">
+        <view class="text-hit" :class="{ on: session.showSends }" @click.stop="toggleSends" @tap.stop="toggleSends">Sends</view>
+        <view class="text-hit" @click.stop="loadDemoFxChain" @tap.stop="loadDemoFxChain">Demo</view>
+        <view class="icon-close" @click.stop="toggleMixer" @tap.stop="toggleMixer">
+          <daw-icon name="chevron" />
+        </view>
+      </view>
     </view>
+
+    <text v-if="session.webMixer.loadError" class="load-error">{{ session.webMixer.loadError }}</text>
     <scroll-view class="rack" scroll-x>
-      <view class="strips">
+      <view class="lane-row">
         <view
-          v-for="(track, index) in channelTracks"
-          :key="track.id"
+          v-for="(track, tIndex) in channelTracks"
+          :key="'t' + track.id"
           class="strip"
-          :class="{ on: session.selectedTrack === session.tracks.indexOf(track) }"
-          @click="selectTrack(session.tracks.indexOf(track))"
+          :class="{ on: isSelected(track), dim: !isTrackAudible(session.tracks.indexOf(track)) }"
+          @click="focusTrack(track)"
+          @tap="focusTrack(track)"
         >
-          <view class="tab" :style="{ background: track.colour }" />
-          <text class="name">{{ track.name }}</text>
-          <text class="inst">{{ track.instrument || (track.type === 'midi' ? 'Empty' : 'Audio') }}</text>
-          <view class="insert" v-for="slot in displayInserts(track)" :key="slot.name + slot.i">
-            {{ slot.name }}
+          <view class="strip-body">
+            <view class="strip-head">
+              <view class="accent" :style="{ background: track.colour, opacity: isTrackAudible(session.tracks.indexOf(track)) ? 1 : 0.35 }" />
+              <text class="num">{{ trackNum(tIndex) }}</text>
+            </view>
+            <text class="name">{{ track.name }}</text>
+            <text class="inst">{{ instrumentLabel(track) }}</text>
+            <view class="slots">
+              <view
+                v-for="slot in MIXER_INSERT_SLOTS"
+                :key="'ti' + track.id + slot"
+                class="slot"
+                :class="slotClass(webTrackInsert(track, slot - 1))"
+                @click.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
+                @tap.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
+                @contextmenu.prevent.stop="onSlotMenu({ type: 'track', id: track.id }, slot - 1)"
+                @touchstart.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
+                @mousedown.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
+              >{{ slotLabel(webTrackInsert(track, slot - 1)) }}</view>
+            </view>
+            <view class="pan-row">
+              <daw-knob
+                :model-value="track.pan || 0"
+                :min="-1"
+                :max="1"
+                title="Pan"
+                @update:model-value="onPan(track, $event)"
+              />
+              <text class="pan-lab">{{ formatPan(track.pan) }}</text>
+            </view>
+            <view v-if="session.showSends && track.source === 'web-sampler'" class="sends">
+              <view
+                v-for="send in trackSends(track)"
+                :key="send.id"
+                class="send"
+              >
+                <text class="send-id">{{ send.name }}</text>
+                <view class="send-bar" @mousedown.stop.prevent="beginSendLevel(track, send, $event)" @touchstart.stop.prevent="beginSendLevel(track, send, $event)">
+                  <view class="send-fill" :style="{ width: Math.round((send.level || 0) * 100) + '%' }" />
+                </view>
+              </view>
+            </view>
           </view>
-          <daw-knob :model-value="track.pan" @update:model-value="onPan(track, $event)" />
-          <view class="fader-row">
-            <daw-fader
-              orientation="vertical"
-              :model-value="track.volume"
-              @update:model-value="onVol(track, $event)"
-            />
-            <daw-meter :level="track.meterLevel || 0" />
-          </view>
-          <text class="db">{{ formatDb(track.volume) }}</text>
-          <view class="toggles">
-            <view class="tiny" :class="{ on: track.mute, mute: track.mute }" @click.stop="toggle(track, 'mute')">M</view>
-            <view class="tiny" :class="{ on: track.solo, solo: track.solo }" @click.stop="toggle(track, 'solo')">S</view>
+          <view class="strip-foot">
+            <view class="fader-row">
+              <daw-fader
+                class="vol"
+                orientation="vertical"
+                :model-value="track.volume"
+                @update:model-value="onVolume(track, $event)"
+              />
+              <view class="meter">
+                <view class="meter-fill" :style="meterStyle(trackMeter(track))" />
+              </view>
+            </view>
+            <text class="db">{{ formatVolumeDb(dbFromFader(track.volume)) }}</text>
+            <view class="toggles">
+              <view class="tog mute" :class="{ on: track.mute }" @click.stop="setTrackParameter(track, 'mute', !track.mute)" @tap.stop="setTrackParameter(track, 'mute', !track.mute)">M</view>
+              <view class="tog solo" :class="{ on: track.solo }" @click.stop="setTrackParameter(track, 'solo', !track.solo)" @tap.stop="setTrackParameter(track, 'solo', !track.solo)">S</view>
+            </view>
           </view>
         </view>
+
         <view
-          v-if="master"
-          class="strip master"
-          :class="{ on: session.selectedTrack === 0 }"
-          @click="selectTrack(0)"
+          class="strip fx"
+          :class="{ on: lane.type === 'remote' }"
+          @click="focusLane({ type: 'remote' })"
+          @tap="focusLane({ type: 'remote' })"
         >
-          <view class="tab" style="background:#8a8a8a" />
-          <text class="name">Master</text>
-          <text class="inst">Stereo Out</text>
-          <daw-knob :model-value="master.pan" @update:model-value="onPan(master, $event)" />
-          <view class="fader-row">
-            <daw-fader
-              orientation="vertical"
-              :model-value="master.volume"
-              @update:model-value="onVol(master, $event)"
-            />
-            <daw-meter :level="master.meterLevel || 0" />
+          <view class="strip-body">
+            <text class="name">Mix</text>
+            <text class="inst">Orchestra</text>
+            <view class="slots">
+              <view
+                v-for="slot in MIXER_INSERT_SLOTS"
+                :key="'ri' + slot"
+                class="slot"
+                :class="slotClass(remoteInsert(slot - 1))"
+                @click.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
+                @tap.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
+                @contextmenu.prevent.stop="onSlotMenu({ type: 'remote' }, slot - 1)"
+                @touchstart.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
+                @mousedown.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
+              >{{ slotLabel(remoteInsert(slot - 1)) }}</view>
+            </view>
+            <view class="knob dim" />
+            <view v-if="session.showSends" class="sends">
+              <view v-for="send in remoteSends" :key="send.id" class="send">
+                <text class="send-id">{{ send.name }}</text>
+                <view class="send-bar" @mousedown.stop.prevent="beginRemoteSend(send, $event)" @touchstart.stop.prevent="beginRemoteSend(send, $event)">
+                  <view class="send-fill" :style="{ width: Math.round((send.level || 0) * 100) + '%' }" />
+                </view>
+              </view>
+            </view>
           </view>
-          <text class="db">{{ formatDb(master.volume) }}</text>
-          <view class="toggles">
-            <view class="tiny" :class="{ on: master.mute, mute: master.mute }" @click.stop="toggle(master, 'mute')">M</view>
+          <view class="strip-foot">
+            <view class="fader-row">
+              <view class="vol ghost" />
+              <view class="meter">
+                <view class="meter-fill" :style="meterStyle(fxPeak('remote'))" />
+              </view>
+            </view>
+            <text class="db">PC</text>
+            <view class="toggles">
+              <view class="tog dim">M</view>
+              <view class="tog dim">S</view>
+            </view>
+          </view>
+        </view>
+
+        <view
+          v-for="bus in session.webMixer.buses"
+          :key="bus.id"
+          class="strip fx return"
+          :class="{ on: lane.type === 'bus' && lane.id === bus.id, dim: bus.mute }"
+          @click="focusLane({ type: 'bus', id: bus.id })"
+          @tap="focusLane({ type: 'bus', id: bus.id })"
+        >
+          <view class="strip-body">
+            <text class="name">↻ {{ bus.name }}</text>
+            <text class="inst">Return</text>
+            <view class="slots">
+              <view
+                v-for="slot in MIXER_INSERT_SLOTS"
+                :key="bus.id + 'i' + slot"
+                class="slot"
+                :class="slotClass(busInsert(bus, slot - 1))"
+                @click.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
+                @tap.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
+                @contextmenu.prevent.stop="onSlotMenu({ type: 'bus', id: bus.id }, slot - 1)"
+                @touchstart.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
+                @mousedown.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
+              >{{ slotLabel(busInsert(bus, slot - 1)) }}</view>
+            </view>
+            <view class="knob dim" />
+          </view>
+          <view class="strip-foot">
+            <view class="fader-row">
+              <daw-fader
+                class="vol"
+                orientation="vertical"
+                :model-value="busFader(bus)"
+                @update:model-value="setBusVolume(bus, $event)"
+              />
+              <view class="meter">
+                <view class="meter-fill" :style="meterStyle(fxPeak(bus.id === 'bus_delay' ? 'delay' : 'bus'))" />
+              </view>
+            </view>
+            <text class="db">{{ formatVolumeDb(bus.volumeDb != null ? bus.volumeDb : dbFromFader(bus.volume)) }}</text>
+            <view class="toggles">
+              <view class="tog mute" :class="{ on: bus.mute }" @click.stop="toggleBusMute(bus)" @tap.stop="toggleBusMute(bus)">M</view>
+              <view class="tog solo" :class="{ on: bus.solo }" @click.stop="toggleBusSolo(bus)" @tap.stop="toggleBusSolo(bus)">S</view>
+            </view>
           </view>
         </view>
       </view>
     </scroll-view>
+
+    <view
+      v-if="master"
+      class="strip master"
+      :class="{ on: isSelected(master) || lane.type === 'master', clip: masterClip }"
+      @click="focusMaster"
+      @tap="focusMaster"
+    >
+      <view class="strip-body">
+        <text class="name">Master</text>
+        <text class="inst">Out</text>
+        <view class="slots">
+          <view
+            v-for="slot in MIXER_INSERT_SLOTS"
+            :key="'mi' + slot"
+            class="slot"
+            :class="slotClass(masterInsert(slot - 1))"
+            @click.stop="onInsert({ type: 'master' }, slot - 1, $event)"
+            @tap.stop="onInsert({ type: 'master' }, slot - 1, $event)"
+            @contextmenu.prevent.stop="onSlotMenu({ type: 'master' }, slot - 1)"
+            @touchstart.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
+            @mousedown.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
+          >{{ slotLabel(masterInsert(slot - 1)) }}</view>
+        </view>
+      </view>
+      <view class="strip-foot">
+        <view class="fader-row master-meters">
+          <daw-fader
+            class="vol"
+            orientation="vertical"
+            :model-value="master.volume"
+            @update:model-value="onVolume(master, $event)"
+          />
+          <view class="meter stereo">
+            <view class="meter-fill" :style="meterStyle(master.meterLevel || fxPeak('master'))" />
+          </view>
+          <view class="meter stereo">
+            <view class="meter-fill" :style="meterStyle(fxPeak('master'))" />
+          </view>
+        </view>
+        <text class="db">{{ formatVolumeDb(dbFromFader(master.volume)) }}</text>
+        <view class="toggles">
+          <view class="tog mute" :class="{ on: master.mute }" @click.stop="setTrackParameter(master, 'mute', !master.mute)" @tap.stop="setTrackParameter(master, 'mute', !master.mute)">M</view>
+          <view class="tog clip" :class="{ on: masterClip }">CLIP</view>
+        </view>
+      </view>
+    </view>
+
+    <Teleport to="body">
+      <view v-if="picker" class="picker-mask" @click="picker = null" @tap="picker = null">
+        <view class="picker" @click.stop @tap.stop>
+          <text class="pick-title">{{ picker.insert ? 'Replace' : 'Effect' }}</text>
+          <view
+            v-for="plugin in catalogue"
+            :key="plugin.id"
+            class="pick"
+            @click="addPlugin(plugin.id)"
+            @tap="addPlugin(plugin.id)"
+          >
+            <text class="pick-short">{{ PLUGIN_SHORT[plugin.id] || plugin.name }}</text>
+            <text class="pick-name">{{ plugin.name }}</text>
+          </view>
+          <view v-if="picker.insert" class="pick remove" @click="removeCurrent" @tap="removeCurrent">
+            <text class="pick-short">✕</text>
+            <text class="pick-name">Remove</text>
+          </view>
+        </view>
+      </view>
+    </Teleport>
   </view>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import DawIcon from './daw-icon.vue'
 import DawFader from './daw-fader.vue'
 import DawKnob from './daw-knob.vue'
-import DawMeter from './daw-meter.vue'
-import { session, setTrackParameter, selectTrack, toggleMixer } from '../store/session.js'
+import {
+  session,
+  setTrackParameter,
+  selectTrack,
+  toggleMixer,
+  openPlugin,
+  addInsert,
+  persistWebMixer,
+  loadDemoFxChain,
+  setMixerLane,
+  listPlugins,
+  isTrackAudible,
+  flushTrackMix,
+  reorderInserts,
+  removeInsert,
+  showToast
+} from '../store/session.js'
+import { laneInserts, MIXER_INSERT_SLOTS, fxMeterLaneKey } from '../model/web-mixer.js'
+import { PLUGIN_SHORT, formatVolumeDb, formatPan, dbFromFader, faderFromDb, canAddInsert, defaultSends } from '../model/mixer-model.js'
+import { plugins } from '../dsp/registry.js'
 
-const channelTracks = computed(() => session.tracks.filter((track) => track.type !== 'master'))
+const picker = ref(null)
+const catalogue = computed(() => listPlugins())
+const channelTracks = computed(() => session.tracks.filter((track) => track.type !== 'master' && track.type !== 'group'))
 const master = computed(() => session.tracks.find((track) => track.type === 'master'))
+const lane = computed(() => session.mixerLane || { type: 'remote' })
+const remoteSends = computed(() => session.webMixer.remote.sends || defaultSends())
+const masterClip = computed(() => !!(session.webMixer.master && session.webMixer.master.clip) || fxPeak('master') >= 1 || (master.value && master.value.meterLevel > 0.99))
 
-function displayInserts (track) {
-  const slots = (track.inserts || []).slice(0, 2)
-  while (slots.length < 2) slots.push({ name: '—', i: slots.length })
-  return slots.map((slot, i) => ({ name: slot.name || '—', i }))
+function trackNum (index) {
+  return String(index + 1).padStart(2, '0')
 }
 
-function formatDb (volume) {
-  const db = 20 * Math.log10(Math.max(0.0001, Math.pow(volume, 2)))
-  return (db > -0.05 ? '0.0' : db.toFixed(1)) + ' dB'
+function instrumentLabel (track) {
+  if (track.source === 'web-sampler') return 'Sampler'
+  if (track.source === 'm-orchestra') return track.instrument || 'M Orchestra'
+  if (track.source === 'remote-vst') return track.instrument || 'VST'
+  return track.instrument || '—'
 }
 
-function onVol (track, value) {
+function isSelected (track) {
+  return session.tracks[session.selectedTrack] === track
+}
+
+function webTrackInsert (track, index) {
+  const key = String(track.id)
+  const mix = session.webMixer.tracks[key] || session.webMixer.tracks[track.id]
+  return (mix && mix.inserts && mix.inserts[index]) || null
+}
+
+function remoteInsert (index) {
+  return (session.webMixer.remote.inserts && session.webMixer.remote.inserts[index]) || null
+}
+
+function busInsert (bus, index) {
+  return (bus.inserts && bus.inserts[index]) || null
+}
+
+function masterInsert (index) {
+  return (session.webMixer.master.inserts && session.webMixer.master.inserts[index]) || null
+}
+
+function slotLabel (slot) {
+  if (!slot) return '+'
+  return PLUGIN_SHORT[slot.pluginId] || (plugins[slot.pluginId] && plugins[slot.pluginId].name) || '+'
+}
+
+function slotClass (slot) {
+  return { empty: !slot, off: slot && slot.enabled === false }
+}
+
+function meterStyle (level) {
+  const amount = Math.min(1, Math.max(0, level || 0))
+  const color = amount > 0.99 ? '#c45c4a' : (amount > 0.85 ? '#c4a35a' : '#6a9a6e')
+  return { height: Math.round(amount * 100) + '%', background: color }
+}
+
+function fxPeak (key) {
+  const meters = session.fxMeters[key] || {}
+  return meters.outPeak || meters.inPeak || 0
+}
+
+function trackMeter (track) {
+  const key = fxMeterLaneKey({ laneType: 'track', laneId: track.id }, session.tracks, {
+    localPlayback: !session.remoteAudioOn
+  })
+  const fx = fxPeak(key)
+  if (fx > 0) return fx
+  return track.meterLevel || 0
+}
+
+function trackSends (track) {
+  const mix = session.webMixer.tracks[String(track.id)]
+  return (mix && mix.sends && mix.sends.length) ? mix.sends : (track.sends && track.sends.length ? track.sends : defaultSends())
+}
+
+function busFader (bus) {
+  if (bus.volumeDb != null) return faderFromDb(bus.volumeDb)
+  return bus.volume == null ? 0.8 : bus.volume
+}
+
+function setMode (mode) {
+  session.mixerMode = mode
+}
+
+function toggleSends () {
+  session.showSends = !session.showSends
+}
+
+function focusLane (next) {
+  setMixerLane(next)
+  picker.value = null
+}
+
+function focusMaster () {
+  setMixerLane({ type: 'master' })
+  selectTrack(0)
+  picker.value = null
+}
+
+function focusTrack (track) {
+  setMixerLane({ type: 'track', id: track.id })
+  selectTrack(session.tracks.indexOf(track))
+  picker.value = null
+}
+
+function onInsert (nextLane, index, event) {
+  if (event && event.button === 2) return
+  const list = laneInserts(session.webMixer, nextLane)
+  setMixerLane(nextLane)
+  if (list[index]) {
+    picker.value = null
+    openPlugin(nextLane, index)
+    return
+  }
+  if (!canAddInsert(list)) {
+    showToast('Maximum 5 effects on this channel')
+    return
+  }
+  picker.value = { lane: nextLane, index }
+}
+
+function onSlotMenu (nextLane, index) {
+  const list = laneInserts(session.webMixer, nextLane)
+  if (!list[index]) return
+  setMixerLane(nextLane)
+  picker.value = { lane: nextLane, index, insert: list[index] }
+}
+
+function addPlugin (pluginId) {
+  if (!picker.value) return
+  const { lane, index } = picker.value
+  picker.value = null
+  addInsert(lane, pluginId, index)
+}
+
+function removeCurrent () {
+  if (!picker.value) return
+  const { lane, index } = picker.value
+  picker.value = null
+  removeInsert(lane, index)
+}
+
+function onVolume (track, value) {
   setTrackParameter(track, 'volume', value)
 }
 
@@ -91,82 +431,449 @@ function onPan (track, value) {
   setTrackParameter(track, 'pan', value)
 }
 
-function toggle (track, parameter) {
-  setTrackParameter(track, parameter, !track[parameter])
+function setBusVolume (bus, value) {
+  bus.volume = value
+  bus.volumeDb = dbFromFader(value)
+  persistWebMixer()
+}
+
+function toggleBusMute (bus) {
+  bus.mute = !bus.mute
+  persistWebMixer()
+}
+
+function toggleBusSolo (bus) {
+  bus.solo = !bus.solo
+  persistWebMixer()
+}
+
+function beginSendLevel (track, send, event) {
+  const startX = event.touches ? event.touches[0].clientX : event.clientX
+  const start = send.level || 0
+  const move = (ev) => {
+    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
+    send.level = Math.min(1, Math.max(0, start + (x - startX) / 90))
+    send.enabled = send.level > 0.001
+    const mix = session.webMixer.tracks[String(track.id)]
+    if (mix) mix.sends = trackSends(track)
+    persistWebMixer()
+  }
+  bindDrag(move)
+}
+
+function beginRemoteSend (send, event) {
+  const startX = event.touches ? event.touches[0].clientX : event.clientX
+  const start = send.level || 0
+  const move = (ev) => {
+    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
+    send.level = Math.min(1, Math.max(0, start + (x - startX) / 90))
+    send.enabled = send.level > 0.001
+    persistWebMixer()
+  }
+  bindDrag(move)
+}
+
+let dragSlot = null
+let longPress = 0
+
+function beginSlotDrag (nextLane, index, event) {
+  const list = laneInserts(session.webMixer, nextLane)
+  if (!list[index]) return
+  const isTouch = !!(event.touches && event.touches[0])
+  const startY = isTouch ? event.touches[0].clientY : event.clientY
+  const delay = isTouch ? 280 : 0
+  longPress = setTimeout(() => {
+    dragSlot = { lane: nextLane, index, startY }
+  }, delay)
+  const move = (ev) => {
+    if (!dragSlot) return
+    const y = ev.touches ? ev.touches[0].clientY : ev.clientY
+    const delta = Math.round((y - dragSlot.startY) / 36)
+    const target = Math.min(MIXER_INSERT_SLOTS - 1, Math.max(0, dragSlot.index + delta))
+    if (target !== dragSlot.index) {
+      reorderInserts(dragSlot.lane, dragSlot.index, target)
+      dragSlot.index = target
+      dragSlot.startY = y
+    }
+  }
+  const end = () => {
+    clearTimeout(longPress)
+    dragSlot = null
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', end)
+    window.removeEventListener('touchmove', move)
+    window.removeEventListener('touchend', end)
+    flushTrackMix()
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', end)
+  window.addEventListener('touchmove', move, { passive: false })
+  window.addEventListener('touchend', end)
+}
+
+function bindDrag (move) {
+  const end = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', end)
+    window.removeEventListener('touchmove', move)
+    window.removeEventListener('touchend', end)
+    flushTrackMix()
+  }
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', end)
+  window.addEventListener('touchmove', move, { passive: false })
+  window.addEventListener('touchend', end)
 }
 </script>
 
 <style scoped>
-.mixer {
+.mix {
   height: 100%;
-  background: #161616;
-  border-top: 1px solid #2a2a2a;
+  background: #141414;
+  color: #dedad4;
   display: flex;
-  flex-direction: column;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  position: relative;
+  container-type: size;
+  min-height: 0;
 }
 .head {
-  height: 24px;
-  background: #1a1a1a;
+  position: absolute;
+  left: 0;
+  right: 88px;
+  top: 0;
+  height: 28px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 10px;
   padding: 0 10px;
-  color: #8d8d8d;
+  z-index: 2;
+  pointer-events: none;
+}
+.head > * { pointer-events: auto; }
+.title {
   font-size: 10px;
   font-weight: 700;
+  letter-spacing: 0.14em;
+  color: #7a776f;
 }
-.rack { flex: 1; height: 0; }
-.strips { display: flex; height: 100%; min-width: 100%; }
+.modes { display: flex; gap: 2px; }
+.mode {
+  height: 22px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  font-size: 11px;
+  color: #8a8680;
+  min-width: 48px;
+  justify-content: center;
+}
+.mode.on { color: #dedad4; }
+.head-hits { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+.text-hit {
+  font-size: 11px;
+  color: #8a8680;
+  height: 28px;
+  min-width: 44px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.text-hit.on, .text-hit:active { color: #dedad4; }
+.load-error {
+  position: absolute;
+  left: 10px;
+  right: 96px;
+  top: 28px;
+  z-index: 3;
+  font-size: 11px;
+  color: #d07060;
+  pointer-events: none;
+}
+.icon-close {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.rack {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  margin-top: 28px;
+  height: calc(100% - 28px);
+}
+.lane-row {
+  display: flex;
+  height: 100%;
+  width: max-content;
+  min-height: 0;
+}
 .strip {
-  width: 78px;
+  width: 80px;
   flex-shrink: 0;
-  border-right: 1px solid #202020;
+  height: 100%;
+  min-height: 0;
+  padding: 4px 6px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.strip-body {
+  flex: 0 1 auto;
+  min-height: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 6px 6px 8px;
-  position: relative;
+}
+.strip-foot {
+  flex: 1 0 108px;
+  min-height: 108px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 .strip.on { background: #1c1c1c; }
-.strip.master { width: 92px; background: #141414; }
-.tab { position: absolute; top: 0; left: 6px; right: 6px; height: 3px; border-radius: 0 0 2px 2px; }
-.name { color: #e6e6e6; font-size: 11px; font-weight: 700; margin-top: 6px; text-align: center; }
-.inst { color: #6a6a6a; font-size: 9px; text-align: center; min-height: 12px; }
-.insert {
+.strip.dim { opacity: 0.45; }
+.strip-head {
   width: 100%;
-  height: 15px;
-  margin-top: 3px;
-  background: #222;
-  color: #8d8d8d;
-  font-size: 9px;
-  text-align: center;
-  line-height: 15px;
-  border-radius: 2px;
-}
-.fader-row {
-  flex: 1;
   display: flex;
-  gap: 6px;
-  width: 100%;
-  justify-content: center;
-  margin: 6px 0 4px;
-  min-height: 70px;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 2px;
 }
-.db { color: #8d8d8d; font-size: 9.5px; }
-.toggles { display: flex; gap: 4px; margin-top: 4px; }
-.tiny {
-  width: 18px;
-  height: 16px;
-  border-radius: 3px;
-  background: #2b2b2b;
-  color: #8d8d8d;
+.strip-head .accent {
+  width: 3px;
+  height: 14px;
+  border-radius: 1px;
+  flex-shrink: 0;
+}
+.strip-head .num {
+  font-size: 9px;
+  color: #6a6760;
+  letter-spacing: 0.06em;
+}
+.pan-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin: 6px 0 4px;
+}
+.pan-row :deep(.knob) {
+  width: 34px;
+  height: 34px;
+}
+.pan-lab {
+  font-size: 8px;
+  color: #6a6760;
+  letter-spacing: 0.04em;
+}
+.strip.fx { width: 80px; }
+.strip.master {
+  width: 96px;
+  border-left: 1px solid #2a2a2a;
+  background: #141414;
+  flex-shrink: 0;
+  height: 100%;
+  min-height: 0;
+  padding-top: 32px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.strip.master.on { background: #1c1c1c; }
+.strip.master.clip .name { color: #d07060; }
+.name {
+  width: 100%;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 16px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inst {
+  width: 100%;
+  text-align: center;
+  font-size: 9px;
+  color: #7a776f;
+  line-height: 12px;
+  margin-bottom: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.slots {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-height: 0;
+  overflow: hidden;
+  flex: 0 1 auto;
+}
+.slot {
+  width: 100%;
+  min-height: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  background: #222;
+  color: #c8c4bc;
   font-size: 10px;
+  letter-spacing: 0.04em;
   display: flex;
   align-items: center;
   justify-content: center;
-  cursor: pointer;
+  overflow: hidden;
 }
-.tiny.on.mute { background: #c45c26; color: #fff; }
-.tiny.on.solo { background: #2ea44f; color: #fff; }
-.icon-btn { cursor: pointer; padding: 0 4px; }
+.slot.empty { background: transparent; color: #5a5852; }
+.slot.off { color: #5a5852; }
+.knob {
+  width: 40px;
+  height: 40px;
+  margin: 8px 0 6px;
+  border-radius: 20px;
+  background: #222;
+  position: relative;
+  flex-shrink: 0;
+}
+.knob::after {
+  content: '';
+  position: absolute;
+  left: 19px;
+  top: 6px;
+  width: 2px;
+  height: 12px;
+  background: #dedad4;
+}
+.knob.dim { opacity: 0.2; }
+.sends { width: 100%; display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.send { display: flex; align-items: center; gap: 4px; }
+.send-id { font-size: 9px; color: #7a776f; width: 10px; }
+.send-bar { flex: 1; height: 10px; background: #1a1a1a; }
+.send-fill { height: 100%; background: #6a6a64; min-width: 0; }
+.fader-row {
+  flex: 1;
+  min-height: 56px;
+  width: 100%;
+  display: flex;
+  gap: 6px;
+  padding: 2px 4px 0 8px;
+  align-items: stretch;
+}
+.master-meters { padding-left: 4px; }
+.vol { flex: 1; min-width: 22px; min-height: 0; }
+.vol.ghost { visibility: hidden; }
+.meter {
+  width: 8px;
+  height: auto;
+  min-height: 0;
+  align-self: stretch;
+  background: #0c0c0c;
+  display: flex;
+  align-items: flex-end;
+  flex-shrink: 0;
+}
+.meter.stereo { width: 7px; }
+.meter-fill { width: 100%; min-height: 1px; }
+.db {
+  font-size: 10px;
+  color: #8a8680;
+  line-height: 16px;
+  text-align: center;
+  width: 100%;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.toggles {
+  height: 40px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+}
+.tog {
+  min-width: 36px;
+  height: 36px;
+  background: #222;
+  color: #8a8680;
+  font-size: 11px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tog.mute.on { color: #141414; background: #c4a07a; }
+.tog.solo.on { color: #141414; background: #7aaa7e; }
+.tog.clip { min-width: 40px; font-size: 8px; letter-spacing: 0.06em; }
+.tog.clip.on { color: #141414; background: #d07060; }
+.tog.dim { opacity: 0.28; pointer-events: none; }
+.picker-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.picker {
+  min-width: 240px;
+  background: #1c1c1c;
+  padding: 10px 0 8px;
+}
+.pick-title {
+  display: block;
+  padding: 4px 16px 10px;
+  color: #7a776f;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.pick {
+  min-height: 48px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.pick-short {
+  width: 48px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: #8a8680;
+}
+.pick-name { font-size: 14px; color: #dedad4; }
+.mix.compact .slot { min-height: 22px; height: 22px; }
+.mix.detail .strip { width: 92px; }
+.mix.detail .slot { min-height: 36px; height: 36px; font-size: 11px; }
+.mix.detail .tog { min-width: 40px; height: 40px; }
+@container (max-height: 200px) {
+  .inst, .pan-row, .knob, .sends { display: none; }
+  .strip-foot { flex-basis: 96px; min-height: 96px; }
+}
+@media (max-width: 720px) {
+  .strip, .strip.fx { width: 88px; }
+  .strip.master { width: 104px; }
+  .slot { min-height: 36px; height: 36px; }
+  .tog { min-width: 40px; height: 40px; }
+  .toggles { height: 44px; }
+  .send-bar { height: 14px; }
+  .picker-mask { align-items: flex-end; }
+  .picker {
+    width: 100%;
+    min-width: 0;
+    border-radius: 12px 12px 0 0;
+    padding-bottom: max(12px, env(safe-area-inset-bottom));
+  }
+  .pick { min-height: 52px; }
+}
 </style>

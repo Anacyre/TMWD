@@ -4,7 +4,6 @@
 #include "DawLookAndFeel.h"
 #include "DawSession.h"
 #include "TopBar.h"
-#include "TransportBar.h"
 #include "TrackListPanel.h"
 #include "ArrangementView.h"
 #include "EditorPanel.h"
@@ -49,7 +48,6 @@ private:
     DawSession session;
 
     TopBar topBar { session };
-    TransportBar transportBar { session };
     TrackListPanel trackList { session };
     ArrangementView arrangement { session };
     EditorPanel editor { session };
@@ -66,13 +64,13 @@ private:
     juce::Component::SafePointer<juce::Component> keyListenerHost;
     std::unique_ptr<StateCaptureWindow> captureWindow;
 
-    int trackListWidth = 258;
+    int trackListWidth = 140;
     int inspectorWidth = 250;
     int editorHeight = 268;
     int mixerHeight = 236;
     int dragStartValue = 0;
 
-    static constexpr int minTrackListWidth = 180;
+    static constexpr int minTrackListWidth = 120;
     static constexpr int minInspectorWidth = 190;
     static constexpr int minEditorHeight = 150;
     static constexpr int minMixerHeight = 150;

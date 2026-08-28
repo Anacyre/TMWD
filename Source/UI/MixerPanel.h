@@ -19,6 +19,7 @@ public:
     void refreshMeter();
 
 private:
+    void mouseDoubleClick (const juce::MouseEvent&) override;
     void showInsertMenu (int slotIndex);
     TrackData* track() { return session.getTrack (index); }
     const TrackData* track() const { return session.getTrack (index); }
@@ -27,7 +28,7 @@ private:
     int index = 0;
 
     juce::Label nameLabel, instrumentLabel, dbLabel;
-    std::array<juce::TextButton, 2> insertButtons;
+    std::array<juce::TextButton, 5> insertButtons;
     juce::Slider pan, fader;
     juce::TextButton mute { "M" }, solo { "S" };
     LevelMeter meter { true };

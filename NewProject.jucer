@@ -11,6 +11,9 @@
         <FILE id="mdl003" name="Project.cpp" compile="1" resource="0" file="Source/Model/Project.cpp"/>
         <FILE id="mdl004" name="ProjectFile.h" compile="0" resource="0" file="Source/Model/ProjectFile.h"/>
         <FILE id="mdl005" name="ProjectFile.cpp" compile="1" resource="0" file="Source/Model/ProjectFile.cpp"/>
+        <FILE id="mdl006" name="ProjectSchema.h" compile="0" resource="0" file="Source/Model/ProjectSchema.h"/>
+        <FILE id="mdl007" name="MixerModel.h" compile="0" resource="0" file="Source/Model/MixerModel.h"/>
+        <FILE id="mdl008" name="WebSamplerModel.h" compile="0" resource="0" file="Source/Model/WebSamplerModel.h"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000002}" name="Audio">
         <FILE id="aud001" name="LockFreeQueue.h" compile="0" resource="0" file="Source/Audio/LockFreeQueue.h"/>
@@ -26,6 +29,18 @@
         <FILE id="aud011" name="TestSynth.cpp" compile="1" resource="0" file="Source/Audio/TestSynth.cpp"/>
         <FILE id="aud012" name="AudioEngine.h" compile="0" resource="0" file="Source/Audio/AudioEngine.h"/>
         <FILE id="aud013" name="AudioEngine.cpp" compile="1" resource="0" file="Source/Audio/AudioEngine.cpp"/>
+        <FILE id="aud014" name="RemoteAudioOutput.h" compile="0" resource="0" file="Source/Audio/RemoteAudioOutput.h"/>
+        <FILE id="aud015" name="RemoteAudioOutput.cpp" compile="1" resource="0" file="Source/Audio/RemoteAudioOutput.cpp"/>
+        <FILE id="aud016" name="SessionDiagnostics.h" compile="0" resource="0" file="Source/Audio/SessionDiagnostics.h"/>
+        <FILE id="aud017" name="SessionDiagnostics.cpp" compile="1" resource="0" file="Source/Audio/SessionDiagnostics.cpp"/>
+        <FILE id="aud018" name="LimiterX.h" compile="0" resource="0" file="Source/Audio/LimiterX.h"/>
+        <FILE id="aud019" name="LimiterX.cpp" compile="1" resource="0" file="Source/Audio/LimiterX.cpp"/>
+        <FILE id="mor001" name="MOrchestraModel.h" compile="0" resource="0" file="Source/Audio/MOrchestra/MOrchestraModel.h"/>
+        <FILE id="mor002" name="MOrchestraModel.cpp" compile="1" resource="0" file="Source/Audio/MOrchestra/MOrchestraModel.cpp"/>
+        <FILE id="mor003" name="MOrchestraEngine.h" compile="0" resource="0" file="Source/Audio/MOrchestra/MOrchestraEngine.h"/>
+        <FILE id="mor004" name="MOrchestraEngine.cpp" compile="1" resource="0" file="Source/Audio/MOrchestra/MOrchestraEngine.cpp"/>
+        <FILE id="mor005" name="MOrchestraInstance.h" compile="0" resource="0" file="Source/Audio/MOrchestra/MOrchestraInstance.h"/>
+        <FILE id="mor006" name="MOrchestraInstance.cpp" compile="1" resource="0" file="Source/Audio/MOrchestra/MOrchestraInstance.cpp"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000003}" name="Plugins">
         <FILE id="plg001" name="PluginDescriptor.h" compile="0" resource="0" file="Source/Plugins/PluginDescriptor.h"/>
@@ -42,6 +57,7 @@
         <FILE id="plg011" name="PluginStateStore.h" compile="0" resource="0" file="Source/Plugins/PluginStateStore.h"/>
         <FILE id="plg012" name="PluginStateStore.cpp" compile="1" resource="0" file="Source/Plugins/PluginStateStore.cpp"/>
         <FILE id="plg010" name="instruments.json" compile="0" resource="0" file="Source/Resources/instruments.json"/>
+        <FILE id="morlib" name="library.json" compile="0" resource="0" file="Source/Resources/m-orchestra/library.json"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000004}" name="Communication">
         <FILE id="com001" name="EngineAPI.h" compile="0" resource="0" file="Source/Communication/EngineAPI.h"/>
@@ -85,6 +101,11 @@
         <FILE id="art002" name="InstrumentArtwork.cpp" compile="1" resource="0" file="Source/UI/InstrumentArtwork.cpp"/>
         <FILE id="smp001" name="OrchestraSamplerPanel.h" compile="0" resource="0" file="Source/UI/OrchestraSamplerPanel.h"/>
         <FILE id="smp002" name="OrchestraSamplerPanel.cpp" compile="1" resource="0" file="Source/UI/OrchestraSamplerPanel.cpp"/>
+        <FILE id="mor001" name="MOrchestraPanel.h" compile="0" resource="0" file="Source/UI/MOrchestraPanel.h"/>
+        <FILE id="mor002" name="MOrchestraPanel.cpp" compile="1" resource="0" file="Source/UI/MOrchestraPanel.cpp"/>
+        <FILE id="mor003" name="MOrchestraUi.h" compile="0" resource="0" file="Source/Audio/MOrchestra/MOrchestraUi.h"/>
+        <FILE id="fxe001" name="FxInsertEditor.h" compile="0" resource="0" file="Source/UI/FxInsertEditor.h"/>
+        <FILE id="fxe002" name="FxInsertEditor.cpp" compile="1" resource="0" file="Source/UI/FxInsertEditor.cpp"/>
         <FILE id="sel001" name="InstrumentSelector.h" compile="0" resource="0" file="Source/UI/InstrumentSelector.h"/>
         <FILE id="sel002" name="InstrumentSelector.cpp" compile="1" resource="0" file="Source/UI/InstrumentSelector.cpp"/>
         <FILE id="cap001" name="StateCaptureWindow.h" compile="0" resource="0" file="Source/UI/StateCaptureWindow.h"/>
@@ -109,7 +130,7 @@
     <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0"/>
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_WEB_BROWSER="0" JUCE_USE_CURL="0"
-               JUCE_PLUGINHOST_VST3="1"/>
+               JUCE_PLUGINHOST_VST3="1" JUCE_USE_MP3AUDIOFORMAT="1" JUCE_MODAL_LOOPS_PERMITTED="1"/>
   <EXPORTFORMATS>
     <VS2022 targetFolder="Builds/VisualStudio2026"
             preBuildCommand="taskkill /F /IM NewProject.exe /T 2&gt;nul&#10;exit /B 0">

@@ -57,7 +57,7 @@ void EngineHostComponent::resized()
     auto r = getLocalBounds().reduced (22);
     title.setBounds (r.removeFromTop (32));
     r.removeFromTop (10);
-    status.setBounds (r.removeFromTop (110));
+    status.setBounds (r.removeFromTop (150));
     hint.setBounds (r.removeFromTop (48));
     r.removeFromTop (8);
 
@@ -82,10 +82,18 @@ void EngineHostComponent::refreshStatus()
 {
     juce::String text;
     text << (gateway.isListening() ? "Listening  " : "Not listening  ")
-         << gateway.getListenUrl() << "\n"
-         << "WebSocket  " << gateway.getWebSocketUrl() << "\n"
+         << gateway.getListenUrl() << "\n";
+
+    const auto lan = gateway.getLanAddresses();
+    if (lan.size() > 0)
+        text << "LAN  http://" << lan[0] << ":" << juce::String (gateway.getPort()) << "\n";
+    else
+        text << "LAN  none\n";
+
+    text << "Session  " << api.getSessionId() << "\n"
          << api.getEngine().getStatusDescription() << "\n"
-         << "Clients  " << juce::String (gateway.getNumClients());
+         << "Clients  " << juce::String (gateway.getNumClients())
+         << "   audio  " << juce::String (gateway.getNumAudioClients());
 
     if (gateway.getWebRoot().isDirectory())
         text << "\nUI  " << gateway.getWebRoot().getFullPathName();
@@ -108,6 +116,7 @@ void EngineHostComponent::showAudioSettings()
     options.escapeKeyTriggersCloseButton = true;
     options.useNativeTitleBar = true;
     options.resizable = true;
+    options.componentToCentreAround = this;
     options.launchAsync();
 }
 

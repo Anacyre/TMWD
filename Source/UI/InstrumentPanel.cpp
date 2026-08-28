@@ -55,7 +55,7 @@ InstrumentPanel::InstrumentPanel (DawSession& sessionToUse)
     openSamplerButton.setWantsKeyboardFocus (false);
     openSamplerButton.onClick = [this]
     {
-        session.showOrchestraSampler (session.getSelectedTrack());
+        session.showPluginUI (session.getSelectedTrack());
     };
     addAndMakeVisible (openSamplerButton);
     rebuild();
@@ -167,6 +167,8 @@ void InstrumentPanel::rebuild()
     const bool showTechnique = definition->techniques.size() > 0;
     techniqueCaption.setVisible (showTechnique);
     techniqueBox.setVisible (showTechnique);
+    openSamplerButton.setButtonText (session.isMOrchestraTrack (*track) ? "Open M Orchestra"
+                                                                       : "Open Orchestra Sampler");
     openSamplerButton.setVisible (true);
 
     controllerRows.clear();

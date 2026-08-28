@@ -278,6 +278,20 @@ namespace Icons
         }
     }
 
+    inline void drawArrange (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
+    {
+        r = pad (r, 6.0f);
+        g.setColour (c);
+
+        for (int i = 0; i < 3; ++i)
+        {
+            const auto y = r.getY() + r.getHeight() * (0.12f + 0.32f * (float) i);
+            const auto x = r.getX() + r.getWidth() * (i == 1 ? 0.28f : 0.08f);
+            const auto w = r.getWidth() * (i == 2 ? 0.55f : 0.78f);
+            g.fillRoundedRectangle (x, y, w, r.getHeight() * 0.18f, 1.2f);
+        }
+    }
+
     inline void drawMixer (juce::Graphics& g, juce::Rectangle<float> r, juce::Colour c)
     {
         r = pad (r, 6.0f);

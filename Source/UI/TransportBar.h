@@ -15,6 +15,7 @@ public:
 
     void paint (juce::Graphics&) override;
     void resized() override;
+    void mouseDown (const juce::MouseEvent&) override;
 
 private:
     void sessionChanged (int changeFlags) override;
@@ -38,8 +39,10 @@ private:
     juce::Label positionLabel, secondsLabel;
 
     juce::TextButton snapButton { "1/1" };
+    MixVisualizer visualizer;
     IconButton editorToggle    { Icons::drawNote, IconButton::Mode::Toggle };
     IconButton mixerToggle     { Icons::drawMixer, IconButton::Mode::Toggle };
+    IconButton arrangeToggle   { Icons::drawArrange, IconButton::Mode::Toggle };
     IconButton inspectorToggle { Icons::drawInspector, IconButton::Mode::Toggle };
 
     juce::Rectangle<int> readoutBounds;

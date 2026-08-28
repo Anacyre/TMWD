@@ -1,7 +1,13 @@
 <template>
   <view class="transport" @click="closeMenus">
-    <view class="group">
-      <view class="icon-btn" :class="{ on: session.metronome }" title="Metronome" @click.stop="toggleMetronome">
+    <!-- Left: tempo / metre -->
+    <view class="left">
+      <view
+        class="icon-btn"
+        :class="{ on: session.metronome }"
+        title="Metronome"
+        @click.stop="toggleMetronome"
+      >
         <daw-icon name="metronome" :active="session.metronome" :color="session.metronome ? '#4da3ff' : ''" />
       </view>
       <view class="stack">
@@ -14,11 +20,11 @@
             @blur="commitBpm"
             @keyup.enter="commitBpm"
           >
-          <text v-else>{{ Math.round(session.bpm) }}</text>
+          <text v-else>{{ bpmText }}</text>
         </view>
         <text class="cap">BPM</text>
       </view>
-      <view class="stack">
+      <view class="stack sig-wrap">
         <view class="sig" @click.stop="toggleMenu('timesig')">{{ session.timeSigNum }}/{{ session.timeSigDen }}</view>
         <text class="cap">SIG</text>
         <view v-if="session.openMenu === 'timesig'" class="dropdown" @click.stop>
@@ -33,42 +39,94 @@
       </view>
     </view>
 
-    <view class="group buttons">
-      <view class="icon-btn" title="Return to start" @click.stop="returnToStart"><daw-icon name="to-start" /></view>
-      <view class="icon-btn play" :class="{ on: session.playing }" title="Play  (Space)" @click.stop="play">
-        <daw-icon name="play" :active="session.playing" :color="session.playing ? '#2ea44f' : '#e6e6e6'" />
-      </view>
-      <view class="icon-btn" :class="{ on: !session.playing }" title="Pause" @click.stop="pause">
-        <daw-icon name="pause" />
-      </view>
-      <view class="icon-btn" title="Stop  (Esc)" @click.stop="stop"><daw-icon name="stop" /></view>
-      <view class="icon-btn rec" :class="{ on: session.recording }" title="Record  (R)" @click.stop="toggleRecord">
-        <daw-icon name="record" color="#e74c3c" />
-      </view>
-      <view class="icon-btn" :class="{ on: session.looping }" title="Loop  (L)" @click.stop="toggleLoop">
-        <daw-icon name="loop" :active="session.looping" :color="session.looping ? '#4da3ff' : ''" />
-      </view>
-    </view>
-
-    <view class="clock">
-      <text class="time">{{ positionText }}</text>
-      <text class="secs">{{ secondsText }}</text>
-    </view>
-
-    <view class="group right">
-      <view class="snap" @click.stop="toggleMenu('snap')">{{ snapLabel }}</view>
-      <view v-if="session.openMenu === 'snap'" class="dropdown right-drop" @click.stop>
+    <!-- Centre: transport + readout -->
+    <view class="center">
+      <view class="cluster">
+        <view class="icon-btn" title="Return to start" @click.stop="returnToStart">
+          <daw-icon name="to-start" />
+        </view>
         <view
-          v-for="option in SNAP_OPTIONS"
-          :key="option.name"
-          class="drop-item"
-          :class="{ checked: isSnapOption(option) }"
-          @click="pickSnap(option)"
-        >{{ option.name }}</view>
+          class="icon-btn play"
+          :class="{ on: session.playing }"
+          title="Play  (Space)"
+          @click.stop="play"
+        >
+          <daw-icon name="play" :active="session.playing" :color="session.playing ? '#2ea44f' : '#e6e6e6'" />
+        </view>
+        <view
+          class="icon-btn"
+          :class="{ on: paused }"
+          title="Pause"
+          @click.stop="pause"
+        >
+          <daw-icon name="pause" :active="paused" :color="paused ? '#4da3ff' : ''" />
+        </view>
+        <view class="icon-btn" title="Stop  (Esc)" @click.stop="stop">
+          <daw-icon name="stop" />
+        </view>
+        <view
+          class="icon-btn rec"
+          :class="{ on: session.recording }"
+          title="Record  (R)"
+          @click.stop="toggleRecord"
+        >
+          <daw-icon name="record" color="#e74c3c" />
+        </view>
+        <view class="spacer" />
+        <view
+          class="icon-btn"
+          :class="{ on: session.looping }"
+          title="Loop  (L)"
+          @click.stop="toggleLoop"
+        >
+          <daw-icon name="loop" :active="session.looping" :color="session.looping ? '#4da3ff' : ''" />
+        </view>
+        <view class="readout" :class="{ recording: session.recording }">
+          <text class="time">{{ positionText }}</text>
+          <text class="secs">{{ secondsText }}</text>
+        </view>
       </view>
-      <view class="letter" :class="{ on: session.editorVisible }" title="Editor panel  (E)" @click.stop="toggleEditor">E</view>
-      <view class="letter" :class="{ on: session.mixerVisible }" title="Mixer  (M)" @click.stop="toggleMixer">M</view>
-      <view class="letter" :class="{ on: session.inspectorVisible }" title="Inspector  (I)" @click.stop="toggleInspector">I</view>
+    </view>
+
+    <!-- Right: panel toggles + snap + visualizer -->
+    <view class="right">
+      <view
+        class="icon-btn panel"
+        :class="{ on: session.editorVisible }"
+        title="Editor panel  (E)"
+        @click.stop="toggleEditor"
+      >
+        <daw-icon name="note" :active="session.editorVisible" :color="session.editorVisible ? '#4da3ff' : ''" />
+      </view>
+      <view
+        class="icon-btn panel"
+        :class="{ on: session.mixerVisible }"
+        title="Mixer  (M)"
+        @click.stop="toggleMixer"
+      >
+        <daw-icon name="mixer" :active="session.mixerVisible" :color="session.mixerVisible ? '#4da3ff' : ''" />
+      </view>
+      <view
+        class="icon-btn panel"
+        :class="{ on: session.inspectorVisible }"
+        title="Inspector  (I)"
+        @click.stop="toggleInspector"
+      >
+        <daw-icon name="inspector" :active="session.inspectorVisible" :color="session.inspectorVisible ? '#4da3ff' : ''" />
+      </view>
+      <daw-visualizer />
+      <view class="snap-wrap">
+        <view class="snap" @click.stop="toggleMenu('snap')">{{ snapLabel }}</view>
+        <view v-if="session.openMenu === 'snap'" class="dropdown snap-drop" @click.stop>
+          <view
+            v-for="option in SNAP_OPTIONS"
+            :key="option.name"
+            class="drop-item"
+            :class="{ checked: isSnapOption(option) }"
+            @click="pickSnap(option)"
+          >{{ option.name }}</view>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -76,6 +134,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import DawIcon from './daw-icon.vue'
+import DawVisualizer from './daw-visualizer.vue'
 import {
   session,
   positionText,
@@ -99,6 +158,13 @@ import {
 } from '../store/session.js'
 
 const editBpm = ref(false)
+
+const bpmText = computed(() => {
+  const value = session.bpm
+  return Number.isInteger(value) ? String(value) : value.toFixed(1)
+})
+
+const paused = computed(() => !session.playing && session.positionBeats > 0)
 
 const snapLabel = computed(() => {
   if (!session.snap) return 'Off'
@@ -130,7 +196,7 @@ function dragBpm (e) {
   if (editBpm.value) return
   const startY = e.clientY
   const start = session.bpm
-  const move = (ev) => setBpm(start - (ev.clientY - startY) * 0.4)
+  const move = (ev) => setBpm(start - (ev.clientY - startY) * 0.35)
   const up = () => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', up)
@@ -150,37 +216,135 @@ function commitBpm (e) {
   height: 44px;
   background: #1e1e1e;
   border-bottom: 1px solid #2a2a2a;
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
   align-items: center;
   padding: 0 10px;
-  gap: 16px;
   user-select: none;
   flex-shrink: 0;
+  position: relative;
   z-index: 18;
+}
+.left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-self: start;
+}
+.center {
+  justify-self: center;
+  min-width: 0;
+}
+.right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+.cluster {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.spacer { width: 6px; flex-shrink: 0; }
+.stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   position: relative;
 }
-.group { display: flex; align-items: center; gap: 8px; position: relative; }
-.group.right { margin-left: auto; }
-.stack { display: flex; flex-direction: column; align-items: center; position: relative; }
-.cap { color: #6a6a6a; font-size: 9px; font-weight: 700; letter-spacing: 0.4px; }
+.cap {
+  color: #6a6a6a;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  line-height: 10px;
+  margin-top: 1px;
+}
 .icon-btn {
-  width: 30px;
-  height: 30px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  flex-shrink: 0;
 }
+.icon-btn.panel { width: 26px; height: 26px; }
 .icon-btn:hover { background: #353535; }
 .icon-btn.on { background: rgba(77,163,255,0.18); }
 .icon-btn.play.on { background: rgba(46,164,79,0.18); }
 .icon-btn.rec.on { background: rgba(231,76,60,0.2); }
-.icon-btn.play { width: 34px; }
+.icon-btn.play { width: 32px; }
 .bpm, .sig, .snap {
-  min-width: 48px;
+  min-width: 46px;
   height: 22px;
+  background: transparent;
+  border: none;
+  border-radius: 3px;
+  color: #e6e6e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.sig {
+  min-width: 46px;
+  background: #2b2b2b;
+  border: 1px solid #2a2a2a;
+  font-size: 13px;
+  font-weight: 400;
+}
+.bpm { cursor: ns-resize; }
+.bpm-input {
+  width: 44px;
   background: #0e0e0e;
+  color: #e6e6e6;
+  border: 1px solid #4da3ff;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  border-radius: 3px;
+}
+.readout {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 174px;
+  height: 28px;
+  margin-left: 10px;
+  padding: 0 9px;
+  background: #0e0e0e;
+  border-radius: 3px;
+  box-sizing: border-box;
+}
+.readout.recording {
+  box-shadow: inset 0 0 0 1px rgba(231, 76, 60, 0.6);
+}
+.time {
+  color: #e6e6e6;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  font-variant-numeric: tabular-nums;
+  line-height: 28px;
+  flex: 1;
+  min-width: 0;
+}
+.secs {
+  color: #8d8d8d;
+  font-size: 12px;
+  line-height: 28px;
+  flex-shrink: 0;
+}
+.snap-wrap { position: relative; }
+.snap {
+  min-width: 46px;
+  height: 22px;
+  background: #2b2b2b;
   border: 1px solid #2a2a2a;
   border-radius: 3px;
   color: #e6e6e6;
@@ -190,38 +354,6 @@ function commitBpm (e) {
   font-size: 13px;
   cursor: pointer;
 }
-.bpm { cursor: ns-resize; font-weight: 700; }
-.bpm-input {
-  width: 44px;
-  background: transparent;
-  color: #e6e6e6;
-  border: none;
-  text-align: center;
-}
-.clock { display: flex; flex-direction: column; min-width: 140px; }
-.time {
-  color: #e6e6e6;
-  font-size: 21px;
-  font-weight: 700;
-  letter-spacing: 0.4px;
-  font-variant-numeric: tabular-nums;
-  line-height: 22px;
-}
-.secs { color: #8d8d8d; font-size: 12px; }
-.letter {
-  width: 22px;
-  height: 22px;
-  border-radius: 3px;
-  color: #8d8d8d;
-  font-size: 11px;
-  font-weight: 700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-}
-.letter:hover { background: #353535; color: #e6e6e6; }
-.letter.on { background: rgba(77,163,255,0.18); color: #4da3ff; }
 .dropdown {
   position: absolute;
   top: 36px;
@@ -232,9 +364,15 @@ function commitBpm (e) {
   border-radius: 6px;
   padding: 6px 0;
   z-index: 40;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.45);
 }
-.right-drop { right: 70px; left: auto; }
-.drop-item { padding: 6px 12px; color: #e6e6e6; font-size: 12px; cursor: pointer; }
+.snap-drop { right: 0; left: auto; }
+.drop-item {
+  padding: 6px 12px;
+  color: #e6e6e6;
+  font-size: 12px;
+  cursor: pointer;
+}
 .drop-item:hover { background: #3a3a3a; }
 .drop-item.checked::after { content: ' ✓'; color: #4da3ff; }
 </style>

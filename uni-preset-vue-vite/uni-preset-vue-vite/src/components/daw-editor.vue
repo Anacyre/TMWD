@@ -2,12 +2,15 @@
   <view class="editor">
     <view class="tabs">
       <text class="tab" :class="{ on: session.editorTab === 'piano' }" @click="setEditorTab('piano')">Piano Roll</text>
+      <text class="tab" :class="{ on: pluginTabOn }" @click="openPluginTab">{{ pluginTabLabel }}</text>
       <text class="tab" :class="{ on: session.editorTab === 'automation' }" @click="setEditorTab('automation')">Automation</text>
       <text class="tab" :class="{ on: session.editorTab === 'info' }" @click="setEditorTab('info')">Track Info</text>
       <view class="spacer" />
-      <view class="icon-btn" @click.stop="toggleEditor">×</view>
+      <view class="icon-btn" @click.stop="closeEditor" @tap.stop="closeEditor">×</view>
     </view>
     <daw-piano-roll v-if="session.editorTab === 'piano'" embedded />
+    <daw-m-orchestra v-else-if="pluginTabOn && (session.editorTab === 'm-orchestra' || mOrchestra)" />
+    <daw-orchestra-sampler v-else-if="pluginTabOn" />
     <view v-else-if="session.editorTab === 'automation'" class="info">
       <text class="note">Automation lanes are visual only, matching the native editor. Volume, pan, expression and send are not yet played by the engine.</text>
     </view>
@@ -20,7 +23,7 @@
       <view class="row"><text>Volume</text><text>{{ track ? track.volume.toFixed(2) : '-' }}</text></view>
       <view class="row"><text>Pan</text><text>{{ track ? track.pan.toFixed(2) : '-' }}</text></view>
       <view class="row"><text>Output</text><text>{{ track && track.type === 'master' ? 'Stereo Out' : 'Master' }}</text></view>
-      <view class="btn" v-if="track && track.type !== 'master'" @click="openInstrumentPicker(session.selectedTrack)">Browse Instruments…</view>
+      <view class="btn" v-if="track && track.type !== 'master'" @click="openPluginPicker(session.selectedTrack)">Insert Plugin…</view>
     </view>
   </view>
 </template>
@@ -28,9 +31,19 @@
 <script setup>
 import { computed } from 'vue'
 import DawPianoRoll from './daw-piano-roll.vue'
-import { session, getSelectedTrack, setEditorTab, toggleEditor, openInstrumentPicker } from '../store/session.js'
+import DawOrchestraSampler from './daw-orchestra-sampler.vue'
+import DawMOrchestra from './daw-m-orchestra.vue'
+import { session, getSelectedTrack, setEditorTab, closeEditor, openPluginPicker } from '../store/session.js'
+import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
 
 const track = computed(() => getSelectedTrack())
+const mOrchestra = computed(() => isMOrchestraTrack(track.value))
+const pluginTabOn = computed(() => session.editorTab === 'sampler' || session.editorTab === 'm-orchestra')
+const pluginTabLabel = computed(() => mOrchestra.value ? 'M Orchestra' : 'Orchestra Sampler')
+
+function openPluginTab () {
+  setEditorTab(mOrchestra.value ? 'm-orchestra' : 'sampler')
+}
 </script>
 
 <style scoped>

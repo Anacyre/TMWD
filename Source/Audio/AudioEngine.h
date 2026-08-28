@@ -5,6 +5,7 @@
 #include "MidiSequencer.h"
 #include "MixerEngine.h"
 #include "PlaybackSequence.h"
+#include "RemoteAudioOutput.h"
 #include "Transport.h"
 #include "../Model/Project.h"
 #include "../Plugins/PluginHost.h"
@@ -44,6 +45,7 @@ public:
         editor without deadlocking against processBlock. */
     void detachAudioCallback();
     void attachAudioCallback();
+    bool isAudioCallbackAttached() const noexcept { return audioCallbackAttached; }
 
     bool isRunning() const noexcept          { return deviceRunning.load(); }
     juce::String getLastError() const        { return lastError; }
@@ -52,7 +54,11 @@ public:
     int getBlockSize() const noexcept        { return currentBlockSize.load(); }
 
     juce::AudioDeviceManager& getDeviceManager() noexcept { return deviceManager; }
+    const juce::AudioDeviceManager& getDeviceManager() const noexcept { return deviceManager; }
     PluginHost& getPluginHost() noexcept { return pluginHost; }
+    RemoteAudioOutput& getRemoteAudio() noexcept { return remoteAudio; }
+    const RemoteAudioOutput& getRemoteAudio() const noexcept { return remoteAudio; }
+    float getAudioCpuPercent() const { return (float) (deviceManager.getCpuUsage() * 100.0); }
 
     //==============================================================================
     // Transport
@@ -95,6 +101,8 @@ public:
     // Metering
     float getTrackLevel (int trackIndex) const  { return mixer.getChannelLevel (trackIndex); }
     float getMasterLevel() const                { return mixer.getMasterLevel(); }
+    MixerEngine& getMixer() noexcept            { return mixer; }
+    const MixerEngine& getMixer() const noexcept { return mixer; }
 
     //==============================================================================
     // Instruments
@@ -163,6 +171,7 @@ private:
     Transport transport;
     MidiSequencer sequencer;
     MixerEngine mixer;
+    RemoteAudioOutput remoteAudio;
 
     std::array<TrackNode, (size_t) maxTracks> nodes;
     std::array<juce::MidiBuffer, (size_t) maxTracks> trackMidi;

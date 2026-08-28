@@ -27,6 +27,7 @@ private:
 
     DawSession& session;
     int index = 0;
+    juce::Rectangle<int> twistBounds;
 
     juce::Label nameLabel, instrumentLabel;
     juce::Slider volume, pan;

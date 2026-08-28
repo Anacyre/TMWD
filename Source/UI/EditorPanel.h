@@ -22,6 +22,10 @@ public:
 
     /** Forwards a delete request to whichever editor is showing. */
     void deleteSelection();
+    void duplicateSelection();
+    void copySelection();
+    void pasteSelection();
+    bool hasNoteSelection() const;
 
 private:
     void sessionChanged (int changeFlags) override;
