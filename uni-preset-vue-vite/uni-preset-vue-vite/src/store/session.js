@@ -13,7 +13,7 @@ import { canAddInsert, dbFromFader, CONTROL_HZ, defaultSends, normalizeSends, de
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts } from '../model/web-mixer.js'
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
-import { attachMixerGraph, syncMixerGraph, getLaneAnalyser } from '../audio/mixer-graph.js'
+import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting } from '../audio/mixer-graph.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/engine.js'
@@ -556,8 +556,13 @@ export function setMasterGain (gain) {
   session.masterGain = Math.min(1, Math.max(0, gain))
   if (session.tracks[0] && session.tracks[0].type === 'master') {
     session.tracks[0].volume = session.masterGain
+    session.tracks[0].volumeDb = dbFromFader(session.masterGain)
+  }
+  if (session.webMixer && session.webMixer.master) {
+    session.webMixer.master.volumeDb = dbFromFader(session.masterGain)
   }
   queueMixCommand('mixer.setMasterVolume', { value: session.masterGain, volumeDb: dbFromFader(session.masterGain) })
+  refreshMixerGraph()
 }
 
 const mixQueue = new Map()
@@ -2282,7 +2287,15 @@ async function unlockAudio () {
   ensureClickBuffer()
   try {
     await ensureMixerAttached()
+    ensureOutputRouting(graph)
+    refreshMixerGraph()
+    session.tracks.forEach((track) => {
+      if (track.source === 'm-orchestra' && track.definitionId) {
+        mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
+      }
+    })
   } catch (err) {
+    ensureOutputRouting(graph)
     showToast(err.message || 'Browser audio failed to start')
   }
   return graph
@@ -2337,6 +2350,7 @@ async function doEnsureMixerAttached () {
     graph.remoteGain.connect(graph.master)
     graph.samplerGain.connect(graph.master)
     graph.master.connect(graph.context.destination)
+    ensureOutputRouting(graph)
     if (!dryMixToast) {
       dryMixToast = true
       showToast('Browser FX unavailable — dry mix')
@@ -2409,7 +2423,11 @@ export async function startRemoteAudio () {
     const reply = await sendCommand('audio.subscribe')
     if (reply && reply.ok === false) throw new Error(reply.error || 'audio.subscribe failed')
     session.remoteAudioOn = true
-    allLocalNotesOff()
+    soundingNotes.forEach((voiceKey, key) => {
+      releaseWebSampler(voiceKey)
+      mOrchestraCloud.noteOff(voiceKey)
+    })
+    soundingNotes.clear()
     refreshMixerGraph()
     startBrowserMeterLoop()
   } catch (err) {
@@ -2478,11 +2496,18 @@ function tickLocalNotes (nowBeats) {
       })
     })
   })
-  Array.from(soundingNotes.keys()).forEach((key) => {
+  Array.from(soundingNotes.entries()).forEach(([key, voiceKey]) => {
     if (next.has(key)) return
-    const voiceKey = soundingNotes.get(key)
+    const clipKey = key.split(':')[0]
+    const clip = session.clips.find((item) => String(item.id) === clipKey)
+    const track = clip ? session.tracks[clip.trackIndex] : null
     releaseWebSampler(voiceKey)
-    mOrchestraCloud.noteOff(voiceKey)
+    if (track && isMOrchestraTrack(track)) {
+      mOrchestraCloud.cancelPending(voiceKey, track.id)
+      mOrchestraCloud.noteOff(voiceKey, track.id)
+    } else {
+      mOrchestraCloud.noteOff(voiceKey)
+    }
     soundingNotes.delete(key)
   })
 }

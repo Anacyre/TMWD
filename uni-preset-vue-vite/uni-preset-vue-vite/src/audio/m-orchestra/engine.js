@@ -295,6 +295,9 @@ export function applyControllers (track) {
 
 export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   if (!graph || !track) return null
+  if (graph.context.state === 'suspended') {
+    try { await graph.context.resume() } catch (err) { /* autoplay policy */ }
+  }
   const key = voiceKey(track.id, pitch, id)
   const epoch = noteEpoch
   pending.set(key, { cancelled: false, epoch })

@@ -189,6 +189,13 @@ export function detachMixerGraph (graph) {
   wireDryBypass(graph)
 }
 
+/** Reconnect dry path when mixer nodes are missing (e.g. after HMR or FX attach failure). */
+export function ensureOutputRouting (graph) {
+  if (!graph || !graph.context || !graph.master) return
+  if (graph.mixerNodes) return
+  wireDryBypass(graph)
+}
+
 export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   if (!graph || !graph.mixerNodes || !webMixer) return
   const ctx = graph.context
@@ -197,13 +204,14 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   const chainOpts = { localPlayback }
   const remoteSends = (webMixer.remote && webMixer.remote.sends) || []
   const samplerTrack = (tracks || []).find((track) => track.source === 'web-sampler' && track.type !== 'master')
-  const orchTrack = (tracks || []).find((track) => isMOrchestraTrack(track) && track.type !== 'master' && track.type !== 'group')
+  const orchTracks = (tracks || []).filter((track) => isMOrchestraTrack(track) && track.type !== 'master' && track.type !== 'group')
+  const orchTrack = orchTracks[0] || null
   const samplerLane = samplerTrack && webMixer.tracks
     ? (webMixer.tracks[String(samplerTrack.id)] || webMixer.tracks[samplerTrack.id])
     : null
   const samplerSends = (samplerLane && samplerLane.sends) || remoteSends
   const samplerAudible = samplerTrack ? isTrackAudible(samplerTrack, tracks) : false
-  const orchAudible = orchTrack ? isTrackAudible(orchTrack, tracks) : false
+  const orchAudible = orchTracks.some((track) => isTrackAudible(track, tracks))
 
   const remoteAudible = true
   smoothGain(nodes.remoteSendAPost, sendAmount(remoteSends, 'send_a', false, remoteAudible), ctx)
@@ -239,16 +247,17 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
     const db = samplerTrack.volumeDb != null ? samplerTrack.volumeDb : dbFromFader(samplerTrack.volume)
     samplerBusGain = samplerAudible ? dbToGain(db) : 0
   }
-  if (orchTrack) {
-    const db = orchTrack.volumeDb != null ? orchTrack.volumeDb : dbFromFader(orchTrack.volume)
-    const orchGain = orchAudible ? dbToGain(db) : 0
+  orchTracks.forEach((track) => {
+    if (!isTrackAudible(track, tracks)) return
+    const db = track.volumeDb != null ? track.volumeDb : dbFromFader(track.volume)
+    const orchGain = dbToGain(db)
     if (orchGain > samplerBusGain) samplerBusGain = orchGain
-    if (!samplerTrack) {
-      const pan = Math.min(1, Math.max(-1, Number(orchTrack.pan) || 0))
-      nodes.samplerPan.pan.setTargetAtTime(pan, ctx.currentTime, SMOOTH_SEC)
-    }
+  })
+  if (!samplerTrack && orchTrack) {
+    const pan = Math.min(1, Math.max(-1, Number(orchTrack.pan) || 0))
+    nodes.samplerPan.pan.setTargetAtTime(pan, ctx.currentTime, SMOOTH_SEC)
   }
-  if (!samplerTrack && !orchTrack) samplerBusGain = 1
+  if (!samplerTrack && !orchTracks.length) samplerBusGain = 1
   else if (samplerBusGain < 0.001 && (samplerAudible || orchAudible)) samplerBusGain = 1
   smoothGain(nodes.samplerMix, samplerBusGain, ctx)
 
