@@ -277,6 +277,7 @@
       <text class="ghint">{{ groupHint }}</text>
     </view>
 
+    <view v-if="context" class="ctx-scrim" @click.stop="dismissContext" @pointerdown.stop="dismissContext" />
     <view v-if="context" class="menu ctx" :style="context.style" @click.stop>
       <view v-for="item in context.items" :key="item.label" class="item" @click="runContext(item)">{{ item.label }}</view>
     </view>
@@ -358,6 +359,7 @@ const viewportW = ref(1600)
 let raf = 0
 let gesture = null
 let longPress = 0
+let skipHeaderClick = false
 let lastUserScroll = 0
 let lastEmptyTap = { at: 0, x: 0, y: 0 }
 let lastClipTap = { at: 0, id: 0, x: 0, y: 0 }
@@ -554,10 +556,36 @@ function openTrackPlugin (row) {
   onTrackInstrumentClick(row.index)
 }
 
-function onHeaderTap (row) {
-  if (lite.value && session.selectedTrackIds.length && session.selectedTrackIds.includes(row.track.id) === false && session.selectedTrackIds.length >= 1) {
-    /* keep multi-select only via long-press */
+function dismissContext () {
+  context.value = null
+}
+
+function bindHoldEnd (origin) {
+  const end = (ev) => {
+    if (ev && ev.type === 'pointermove' && Math.hypot(ev.clientX - origin.x, ev.clientY - origin.y) < 14) return
+    clearTimeout(longPress)
+    longPress = 0
+    document.removeEventListener('pointerup', end, true)
+    document.removeEventListener('pointercancel', end, true)
+    document.removeEventListener('pointermove', end, true)
+    document.removeEventListener('touchend', end, true)
+    document.removeEventListener('touchcancel', end, true)
+    document.removeEventListener('mouseup', end, true)
   }
+  document.addEventListener('pointerup', end, true)
+  document.addEventListener('pointercancel', end, true)
+  document.addEventListener('pointermove', end, true)
+  document.addEventListener('touchend', end, true)
+  document.addEventListener('touchcancel', end, true)
+  document.addEventListener('mouseup', end, true)
+}
+
+function onHeaderTap (row) {
+  if (skipHeaderClick) {
+    skipHeaderClick = false
+    return
+  }
+  dismissContext()
   selectTrack(row.index)
   if (!session.selectedTrackIds.includes(row.track.id) || session.selectedTrackIds.length <= 1) {
     session.selectedTrackIds = [row.track.id]
@@ -572,17 +600,11 @@ function onHeaderPointer (row, e) {
   if (lite.value) {
     const ox = e.clientX
     const oy = e.clientY
-    longPress = setTimeout(() => openTrackMenu(row, e), 420)
-    const moved = (ev) => {
-      if (Math.hypot(ev.clientX - ox, ev.clientY - oy) > 12) clearTimeout(longPress)
-    }
-    const up = () => {
-      clearTimeout(longPress)
-      window.removeEventListener('pointermove', moved)
-      window.removeEventListener('pointerup', up)
-    }
-    window.addEventListener('pointermove', moved)
-    window.addEventListener('pointerup', up)
+    longPress = setTimeout(() => {
+      skipHeaderClick = true
+      openTrackMenu(row, { clientX: ox, clientY: oy })
+    }, 520)
+    bindHoldEnd({ x: ox, y: oy })
     return
   }
   if (e.pointerType === 'touch') {
@@ -1479,6 +1501,12 @@ onUnmounted(() => {
 }
 .add-menu { top: 30px; left: 6px; }
 .snap-menu, .tools-menu { top: 36px; right: 8px; }
+.ctx-scrim {
+  position: fixed;
+  inset: 0;
+  z-index: 59;
+  background: transparent;
+}
 .ctx {
   position: fixed;
   z-index: 60;

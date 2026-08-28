@@ -22,12 +22,28 @@ namespace
         return std::pow (2.0f, cents / 1200.0f);
     }
 
-    float readSample (const SampleBuffer& buffer, double position)
+    bool isSustaining (Articulation artic)
     {
+        return artic == Articulation::longArt || artic == Articulation::sustain;
+    }
+
+    void readSample (const SampleBuffer& buffer, double position, float& left, float& right)
+    {
+        left = 0.0f;
+        right = 0.0f;
         const auto length = buffer.audio.getNumSamples();
+        const auto channels = juce::jmax (1, buffer.audio.getNumChannels());
 
         if (length <= 1)
-            return 0.0f;
+            return;
+
+        auto lerp = [&] (int channel, double pos) -> float
+        {
+            const auto i = juce::jlimit (0, length - 2, (int) pos);
+            const auto frac = (float) (pos - (double) i);
+            const auto* data = buffer.audio.getReadPointer (juce::jmin (channel, channels - 1));
+            return data[i] + (data[i + 1] - data[i]) * frac;
+        };
 
         auto wrapped = position;
 
@@ -45,27 +61,23 @@ namespace
             if (wrapped >= end - xf)
             {
                 const auto fade = (float) ((end - wrapped) / xf);
-                const auto a = wrapped;
                 const auto b = start + (wrapped - (end - xf));
-                const auto ia = juce::jlimit (0, length - 2, (int) a);
-                const auto ib = juce::jlimit (0, length - 2, (int) b);
-                const auto fa = (float) (a - (double) ia);
-                const auto fb = (float) (b - (double) ib);
-                const auto* data = buffer.audio.getReadPointer (0);
-                const auto sa = data[ia] + (data[ia + 1] - data[ia]) * fa;
-                const auto sb = data[ib] + (data[ib + 1] - data[ib]) * fb;
-                return sa * fade + sb * (1.0f - fade);
+                const auto la = lerp (0, wrapped);
+                const auto ra = lerp (1, wrapped);
+                const auto lb = lerp (0, b);
+                const auto rb = lerp (1, b);
+                left = la * fade + lb * (1.0f - fade);
+                right = ra * fade + rb * (1.0f - fade);
+                return;
             }
         }
         else if (wrapped >= (double) (length - 1))
         {
-            return 0.0f;
+            return;
         }
 
-        const auto i = juce::jlimit (0, length - 2, (int) wrapped);
-        const auto frac = (float) (wrapped - (double) i);
-        const auto* data = buffer.audio.getReadPointer (0);
-        return data[i] + (data[i + 1] - data[i]) * frac;
+        left = lerp (0, wrapped);
+        right = lerp (1, wrapped);
     }
 }
 
@@ -106,8 +118,7 @@ void Instance::setInstrumentDefinitionId (const juce::String& id)
 
         for (int note : notes)
             for (auto art : instrument->articulations)
-                if (const auto* ref = Engine::get().pickSample (*instrument, art, note, 100, 96))
-                    Engine::get().requestSample (*ref, true);
+                Engine::get().prefetchAround (*instrument, art, note, 100, 96);
     }
 
     {
@@ -153,6 +164,10 @@ bool Instance::applyProgram (const juce::String& name)
         articulation = Articulation::shortArt;
     else if (text.contains ("hit") || text == "2")
         articulation = Articulation::hit;
+    else if (text.contains ("pizz") || text.contains ("pluck") || text == "3")
+        articulation = Articulation::pluck;
+    else if (text.contains ("trem") || text == "4")
+        articulation = Articulation::sustain;
     else
         articulation = Articulation::longArt;
 
@@ -241,8 +256,11 @@ void Instance::stealQuietestVoice()
         voices[best].envTarget = 0.0f;
         if (voices[best].env < 0.08f)
         {
+            if (voices[best].startedNotify)
+                Engine::get().notifyVoiceEnded();
             voices[best].active = false;
-            Engine::get().notifyVoiceEnded();
+            voices[best].pending = false;
+            voices[best].startedNotify = false;
         }
     }
 }
@@ -256,9 +274,12 @@ void Instance::allOff (bool immediate)
 
         if (immediate)
         {
+            if (voice.startedNotify)
+                Engine::get().notifyVoiceEnded();
             voice.active = false;
+            voice.pending = false;
+            voice.startedNotify = false;
             voice.env = 0.0f;
-            Engine::get().notifyVoiceEnded();
         }
         else
         {
@@ -278,38 +299,89 @@ void Instance::noteOff (int note)
         }
 }
 
-void Instance::startSources (Voice& voice, const SampleRef& ref)
+void Instance::addSource (Voice& voice, const SampleRef& ref, SamplePtr sample, int role, int index, int count)
 {
-    const auto* instrument = spec();
-    const auto count = instrument != nullptr ? juce::jlimit (1, 4, instrument->sourceVoices) : 1;
-    auto sample = Engine::get().requestSample (ref, false);
-    voice.sourceCount = 0;
-
-    if (sample == nullptr)
+    juce::ignoreUnused (ref);
+    if (sample == nullptr || voice.sourceCount >= 4)
         return;
 
-    const auto width = instrument != nullptr && instrument->sectionSize > 1
-        ? juce::jlimit (0.12f, 0.7f, 0.18f + 0.03f * (float) instrument->sectionSize)
-        : 0.0f;
+    const auto* instrument = spec();
+    const auto& rules = Engine::get().getLibrary().playback;
+    auto& source = voice.sources[voice.sourceCount];
+    source = Source {};
+    source.sample = std::move (sample);
+    source.pos = 0.0;
+    source.role = role;
+    source.dynLayer = role == 1 ? voice.dynLayerB : voice.dynLayerA;
+    const auto seed = mixHash (voice.seed, (uint32_t) (role + 1) * 0x9e3779b9u);
+    const auto detuneSpan = instrument != nullptr && instrument->solo
+        ? rules.soloDetuneCents
+        : rules.sectionDetuneCents;
+    source.cents = role == 0 ? 0.0f : (hash01 (seed) - 0.5f) * 2.0f * detuneSpan;
+    source.delaySamples = role == 0 ? 0.0
+        : hash01 (mixHash (seed, 17)) * 0.0035f * (float) sampleRate;
+    source.velOffset = (hash01 (mixHash (seed, 31)) - 0.5f) * 0.05f;
+    source.cutoff = rules.cutoffMinHz + rules.cutoffSpanHz;
+    source.lpL = 0.0f;
+    source.lpR = 0.0f;
 
-    for (int i = 0; i < count; ++i)
+    const auto width = instrument != nullptr && instrument->sectionSize > 1
+        ? juce::jlimit (0.12f, 0.55f, 0.16f + 0.025f * (float) instrument->sectionSize)
+        : 0.0f;
+    const auto pan = count <= 1 ? 0.0f : (-width * 0.5f + width * (float) index / (float) juce::jmax (1, count - 1));
+    source.panL = std::cos ((pan + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+    source.panR = std::sin ((pan + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
+
+    const auto semitones = (float) (voice.midiNote - source.sample->rootNote) + source.cents / 100.0f;
+    const auto pitch = std::pow (2.0f, juce::jlimit (-(float) rules.maxStretchSemitones,
+                                                     (float) rules.maxStretchSemitones,
+                                                     semitones) / 12.0f);
+    source.ratio = (source.sample->sampleRate / sampleRate) * (double) pitch;
+    ++voice.sourceCount;
+}
+
+void Instance::tryFillSources (Voice& voice)
+{
+    if (! voice.hasPrimary)
+        return;
+
+    auto hasRole = [&] (int role)
     {
-        auto& source = voice.sources[i];
-        source.sample = sample;
-        source.pos = 0.0;
-        const auto seed = mixHash (voice.seed, (uint32_t) (i + 1) * 0x9e3779b9u);
-        source.cents = (hash01 (seed) - 0.5f) * (instrument != nullptr && instrument->sectionSize > 1 ? 7.0f : 2.2f);
-        source.delaySamples = hash01 (mixHash (seed, 17)) * (0.004f + 0.0004f * (float) (instrument != nullptr ? instrument->sectionSize : 1)) * (float) sampleRate;
-        source.velOffset = (hash01 (mixHash (seed, 31)) - 0.5f) * 0.08f;
-        source.cutoff = 1800.0f;
-        source.lp = 0.0f;
-        const auto pan = count <= 1 ? 0.0f : (-width * 0.5f + width * (float) i / (float) (count - 1));
-        source.panL = std::cos ((pan + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-        source.panR = std::sin ((pan + 1.0f) * juce::MathConstants<float>::halfPi * 0.5f);
-        const auto semitones = (float) (voice.midiNote - sample->rootNote) + source.cents / 100.0f;
-        const auto pitch = std::pow (2.0f, juce::jlimit (-4.0f, 4.0f, semitones) / 12.0f);
-        source.ratio = (sample->sampleRate / sampleRate) * (double) pitch;
-        ++voice.sourceCount;
+        for (int i = 0; i < voice.sourceCount; ++i)
+            if (voice.sources[i].role == role && voice.sources[i].sample != nullptr)
+                return true;
+        return false;
+    };
+
+    int wanted = 1;
+    if (voice.hasLayer) ++wanted;
+    if (voice.hasNeighbor) ++wanted;
+
+    if (! hasRole (0))
+    {
+        if (auto sample = Engine::get().requestSample (voice.primaryRef, false))
+            addSource (voice, voice.primaryRef, sample, 0, 0, wanted);
+        else
+        {
+            voice.pending = true;
+            return;
+        }
+    }
+
+    if (voice.hasLayer && ! hasRole (1))
+        if (auto sample = Engine::get().requestSample (voice.layerRef, false))
+            addSource (voice, voice.layerRef, sample, 1, 1, wanted);
+
+    if (voice.hasNeighbor && ! hasRole (2))
+        if (auto sample = Engine::get().requestSample (voice.neighborRef, false))
+            addSource (voice, voice.neighborRef, sample, 2, voice.hasLayer ? 2 : 1, wanted);
+
+    voice.pending = false;
+
+    if (! voice.startedNotify && voice.sourceCount > 0)
+    {
+        voice.startedNotify = true;
+        Engine::get().notifyVoiceStarted();
     }
 }
 
@@ -322,12 +394,36 @@ void Instance::noteOn (int note, float velocity)
 
     const auto art = currentArtic();
     const int dynamics = juce::roundToInt (cc1.load() * 127.0f);
-    const auto* ref = Engine::get().pickSample (*instrument, art, note,
-                                                juce::roundToInt (velocity * 127.0f),
-                                                dynamics);
+    const int velocityMidi = juce::roundToInt (velocity * 127.0f);
+    const auto* primary = Engine::get().pickSample (*instrument, art, note, velocityMidi, dynamics, nextVoiceId);
 
-    if (ref == nullptr)
+    if (primary == nullptr)
         return;
+
+    const auto* layer = isSustaining (art)
+        ? Engine::get().pickLayer (*instrument, art, note, velocityMidi, dynamics, primary->dynamicLayer, nextVoiceId + 1)
+        : nullptr;
+
+    if (layer != nullptr && Engine::get().sampleKey (*layer) == Engine::get().sampleKey (*primary))
+        layer = nullptr;
+
+    const auto& rules = Engine::get().getLibrary().playback;
+    int wanted = juce::jlimit (1, rules.maxSources, instrument->sourceVoices);
+    if (instrument->solo || instrument->sectionSize <= 1)
+        wanted = layer != nullptr ? 2 : 1;
+    else if (layer != nullptr)
+        wanted = juce::jmax (wanted, 2);
+
+    const auto* neighbor = (! instrument->solo && instrument->sectionSize > 1 && wanted >= (layer != nullptr ? 3 : 2))
+        ? Engine::get().pickNeighbor (*instrument, art, note, velocityMidi, dynamics, primary->rootNote, nextVoiceId + 2)
+        : nullptr;
+
+    if (neighbor != nullptr && Engine::get().sampleKey (*neighbor) == Engine::get().sampleKey (*primary))
+        neighbor = nullptr;
+    if (neighbor != nullptr && layer != nullptr && Engine::get().sampleKey (*neighbor) == Engine::get().sampleKey (*layer))
+        neighbor = nullptr;
+
+    Engine::get().prefetchAround (*instrument, art, note, velocityMidi, dynamics);
 
     if (Engine::get().shouldSteal())
         Engine::get().stealQuietest();
@@ -362,25 +458,34 @@ void Instance::noteOn (int note, float velocity)
     voice = Voice {};
     voice.active = true;
     voice.releasing = false;
+    voice.pending = true;
     voice.midiNote = note;
     voice.id = nextVoiceId++;
     voice.velocity = juce::jlimit (0.05f, 1.0f, velocity);
+    voice.velocityMidi = velocityMidi;
     voice.env = 0.0f;
     voice.envTarget = 1.0f;
     voice.age = 0.0f;
     voice.seed = makeSeed (note, voice.id);
     voice.vibratoPhase = hash01 (voice.seed) * juce::MathConstants<float>::twoPi;
     voice.vibratoRate = 4.7f + hash01 (mixHash (voice.seed, 9)) * 1.1f;
-    startSources (voice, *ref);
-
-    if (voice.sourceCount <= 0)
+    voice.hasPrimary = true;
+    voice.primaryRef = *primary;
+    voice.dynLayerA = primary->dynamicLayer;
+    if (layer != nullptr)
     {
-        voice.active = false;
-        Engine::get().requestSample (*ref, false);
-        return;
+        voice.hasLayer = true;
+        voice.dualLayer = true;
+        voice.layerRef = *layer;
+        voice.dynLayerB = layer->dynamicLayer;
+    }
+    if (neighbor != nullptr)
+    {
+        voice.hasNeighbor = true;
+        voice.neighborRef = *neighbor;
     }
 
-    Engine::get().notifyVoiceStarted();
+    tryFillSources (voice);
 }
 
 void Instance::handleMidi (const juce::MidiMessage& message)
@@ -408,28 +513,63 @@ void Instance::handleMidi (const juce::MidiMessage& message)
 
 void Instance::renderVoice (Voice& voice, juce::AudioBuffer<float>& buffer, int numSamples)
 {
+    if (voice.pending || voice.sourceCount <= 0)
+        tryFillSources (voice);
+
+    if (voice.sourceCount <= 0)
+    {
+        voice.age += (float) numSamples / (float) sampleRate;
+        if (voice.age > 2.0f)
+        {
+            voice.active = false;
+            voice.pending = false;
+            if (voice.startedNotify)
+                Engine::get().notifyVoiceEnded();
+            voice.startedNotify = false;
+        }
+        return;
+    }
+
     const auto* instrument = spec();
-    const auto dynamics = std::pow (juce::jlimit (0.0f, 1.0f, cc1.load()),
-                                    instrument != nullptr ? instrument->gamma : 1.35f);
+    const auto& rules = Engine::get().getLibrary().playback;
+    const auto art = currentArtic();
+    const auto dyn01 = juce::jlimit (0.0f, 1.0f, cc1.load());
+    const auto dynamics = std::pow (dyn01, instrument != nullptr ? instrument->gamma : 1.35f);
     const auto expression = 0.22f + 0.78f * juce::jlimit (0.0f, 1.0f, cc11.load());
     const auto attack = juce::jmap (voice.velocity, 0.05f, 1.0f, 0.028f, 0.006f);
-    const auto release = currentArtic() == Articulation::hit ? 0.04f
-                       : currentArtic() == Articulation::shortArt ? 0.08f : 0.2f;
+    const auto release = art == Articulation::hit ? rules.releaseHitSec
+                       : (art == Articulation::shortArt || art == Articulation::pluck) ? rules.releaseShortSec
+                       : rules.releaseLongSec;
     const auto attackCoeff = 1.0f - std::exp (-1.0f / (float) juce::jmax (1.0, sampleRate * attack));
     const auto releaseCoeff = 1.0f - std::exp (-1.0f / (float) juce::jmax (1.0, sampleRate * release));
     const auto sustainGain = (0.28f + 0.72f * dynamics) * (0.55f + 0.45f * voice.velocity) * expression;
-    const auto cutoffHz = 900.0f + 7800.0f * dynamics * (0.65f + 0.35f * voice.velocity);
-    const auto sat = 0.04f * dynamics;
+    const auto cutoffOpen = rules.cutoffMinHz + rules.cutoffSpanHz * dynamics * (0.7f + 0.3f * voice.velocity);
+    const auto sat = 0.03f * dynamics;
     const auto noiseAmt = instrument != nullptr && instrument->noise != NoiseKind::none
-        ? 0.0032f * dynamics : 0.0f;
+        ? rules.noiseAmount * dynamics : 0.0f;
+    const auto noiseHpCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * rules.noiseHpHz / (float) sampleRate);
+    const auto vibAmt = vibratoAmt.load();
     const auto vibratoDepth = (instrument != nullptr && instrument->vibrato
-                               && currentArtic() == Articulation::longArt)
-        ? vibratoAmt.load() * 0.22f : 0.0f;
+                               && isSustaining (art)
+                               && vibAmt >= rules.vibratoGate)
+        ? ((vibAmt - rules.vibratoGate) / juce::jmax (0.001f, 1.0f - rules.vibratoGate)) * rules.vibratoDepthSemis
+        : 0.0f;
     const auto onset = 0.18f;
     const auto sectionScale = 0.62f / std::sqrt ((float) juce::jmax (1, voice.sourceCount));
     auto* left = buffer.getWritePointer (0);
     auto* right = buffer.getNumChannels() > 1 ? buffer.getWritePointer (1) : left;
     uint32_t noise = voice.seed;
+
+    float layerMixB = 0.0f;
+    if (voice.dualLayer)
+    {
+        const auto a = (float) voice.dynLayerA / 127.0f;
+        const auto b = (float) voice.dynLayerB / 127.0f;
+        if (std::abs (b - a) > 0.02f)
+            layerMixB = juce::jlimit (0.0f, 1.0f, (dyn01 - a) / (b - a));
+        else
+            layerMixB = 0.5f;
+    }
 
     for (int i = 0; i < numSamples; ++i)
     {
@@ -439,8 +579,11 @@ void Instance::renderVoice (Voice& voice, juce::AudioBuffer<float>& buffer, int 
 
         if (voice.releasing && voice.env < 0.0008f)
         {
+            if (voice.startedNotify)
+                Engine::get().notifyVoiceEnded();
             voice.active = false;
-            Engine::get().notifyVoiceEnded();
+            voice.pending = false;
+            voice.startedNotify = false;
             break;
         }
 
@@ -452,6 +595,11 @@ void Instance::renderVoice (Voice& voice, juce::AudioBuffer<float>& buffer, int 
             vibrato = centsRatio (amount * vibratoDepth * 100.0f
                                   * std::sin (voice.vibratoPhase));
         }
+
+        const auto releaseDark = voice.releasing ? juce::jlimit (0.35f, 1.0f, 0.35f + 0.65f * voice.env) : 1.0f;
+        const auto cutoffHz = cutoffOpen * releaseDark;
+        const auto lpCoeff = juce::jlimit (0.0005f, 0.9f,
+            1.0f - std::exp (-juce::MathConstants<float>::twoPi * cutoffHz / (float) sampleRate));
 
         float mixL = 0.0f;
         float mixR = 0.0f;
@@ -474,36 +622,51 @@ void Instance::renderVoice (Voice& voice, juce::AudioBuffer<float>& buffer, int 
 
             if (ended)
             {
-                if (currentArtic() != Articulation::longArt)
-                    voice.releasing = true;
+                voice.releasing = true;
+                voice.envTarget = 0.0f;
                 continue;
             }
 
-            const auto value = readSample (sample, source.pos);
+            float sl = 0.0f, sr = 0.0f;
+            readSample (sample, source.pos, sl, sr);
             source.pos += source.ratio * (double) vibrato;
-            const auto lpCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * cutoffHz / (float) sampleRate);
-            source.lp += (value - source.lp) * juce::jlimit (0.0005f, 0.9f, lpCoeff);
-            auto shaped = source.lp * (1.0f + source.velOffset);
-            shaped = shaped - sat * shaped * shaped * shaped;
-            mixL += shaped * source.panL;
-            mixR += shaped * source.panR;
+            source.lpL += (sl - source.lpL) * lpCoeff;
+            source.lpR += (sr - source.lpR) * lpCoeff;
+            auto shapedL = source.lpL * (1.0f + source.velOffset);
+            auto shapedR = source.lpR * (1.0f + source.velOffset);
+            shapedL = shapedL - sat * shapedL * shapedL * shapedL;
+            shapedR = shapedR - sat * shapedR * shapedR * shapedR;
+
+            float layerGain = 1.0f;
+            if (voice.dualLayer && source.role == 0)
+                layerGain = 1.0f - layerMixB;
+            else if (voice.dualLayer && source.role == 1)
+                layerGain = layerMixB;
+            else if (source.role == 2)
+                layerGain = 0.72f;
+
+            mixL += shapedL * source.panL * layerGain;
+            mixR += shapedR * source.panR * layerGain;
             ++live;
         }
 
         if (live == 0 && voice.releasing)
         {
+            if (voice.startedNotify)
+                Engine::get().notifyVoiceEnded();
             voice.active = false;
-            Engine::get().notifyVoiceEnded();
+            voice.pending = false;
+            voice.startedNotify = false;
             break;
         }
 
         noise = noise * 1664525u + 1013904223u;
-        const auto n = ((int) (noise >> 9) - 4194304) * (1.0f / 4194304.0f) * noiseAmt;
+        const auto rawN = ((int) (noise >> 9) - 4194304) * (1.0f / 4194304.0f);
+        voice.noiseLp += (rawN - voice.noiseLp) * juce::jlimit (0.0005f, 0.9f, noiseHpCoeff);
+        const auto n = (rawN - voice.noiseLp) * noiseAmt;
         const auto gain = voice.env * sustainGain * sectionScale;
-        const auto outL = (mixL + n) * gain;
-        const auto outR = (mixR + n) * gain;
-        left[i] += outL;
-        right[i] += outR;
+        left[i] += (mixL + n) * gain;
+        right[i] += (mixR + n) * gain;
     }
 }
 

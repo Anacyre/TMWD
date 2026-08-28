@@ -1292,7 +1292,10 @@ export function setController (track, controllerId, value) {
   if (!track) return
   if (!track.controllerValues) track.controllerValues = {}
   track.controllerValues[controllerId] = value
-  if (isMOrchestraTrack(track)) return
+  if (isMOrchestraTrack(track)) {
+    mOrchestraCloud.applyControllers(track)
+    return
+  }
   fire('instrument.setController', { trackId: track.id, controllerId, value })
 }
 

@@ -52,7 +52,16 @@ namespace MOrchestra
         SamplePtr findCached (const juce::String& key) const;
         SamplePtr requestSample (const SampleRef& ref, bool waitIfNeeded);
         const SampleRef* pickSample (const InstrumentSpec& spec, Articulation artic,
-                                     int midiNote, int velocity, int dynamics) const;
+                                     int midiNote, int velocity, int dynamics, int rrIndex = 0) const;
+        const SampleRef* pickLayer (const InstrumentSpec& spec, Articulation artic,
+                                    int midiNote, int velocity, int dynamics,
+                                    int excludeLayer, int rrIndex = 0) const;
+        const SampleRef* pickNeighbor (const InstrumentSpec& spec, Articulation artic,
+                                       int midiNote, int velocity, int dynamics,
+                                       int excludeRoot, int rrIndex = 0) const;
+        void prefetchAround (const InstrumentSpec& spec, Articulation artic,
+                             int midiNote, int velocity, int dynamics);
+        juce::String sampleKey (const SampleRef& ref) const;
 
         void registerInstance (Instance* instance);
         void unregisterInstance (Instance* instance);
@@ -74,7 +83,10 @@ namespace MOrchestra
         SamplePtr decode (const SampleRef& ref);
         void insertCache (SamplePtr buffer);
         void evictIfNeeded (size_t extraBytes);
-        juce::String sampleKey (const SampleRef& ref) const;
+        void findLoopPoints (SampleBuffer& buffer) const;
+        const SampleRef* pickRanked (const InstrumentSpec& spec, Articulation artic,
+                                     int midiNote, int velocity, int dynamics, int rrIndex,
+                                     int excludeLayer, int excludeRoot) const;
 
         LibrarySpec library;
         juce::File root;

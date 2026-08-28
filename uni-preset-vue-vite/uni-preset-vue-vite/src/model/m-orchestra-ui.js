@@ -77,7 +77,32 @@ export function mOrchestraInstrument (definitionId) {
 export const CLOUD_TECHNIQUES = {
   long: { id: 'm_orch_long', displayName: 'Long', mapped: true, available: true },
   short: { id: 'm_orch_short', displayName: 'Short', mapped: true, available: true },
-  hit: { id: 'm_orch_hit', displayName: 'Hit', mapped: true, available: true }
+  hit: { id: 'm_orch_hit', displayName: 'Hit', mapped: true, available: true },
+  pizz: { id: 'm_orch_pizz', displayName: 'Pizz', mapped: true, available: true },
+  trem: { id: 'm_orch_trem', displayName: 'Trem', mapped: true, available: true }
+}
+
+const PIZZ_IDS = new Set([
+  'm_orch_violin_1',
+  'm_orch_violin_2',
+  'm_orch_viola',
+  'm_orch_bass',
+  'm_orch_solo_violin'
+])
+
+const TREM_IDS = new Set([
+  'm_orch_violin_1',
+  'm_orch_violin_2',
+  'm_orch_solo_violin'
+])
+
+export function cloudTechniquesFor (definitionId) {
+  const item = mOrchestraInstrument(definitionId)
+  if (item && item.family === 'percussion') return [CLOUD_TECHNIQUES.hit]
+  const list = [CLOUD_TECHNIQUES.long, CLOUD_TECHNIQUES.short]
+  if (PIZZ_IDS.has(definitionId)) list.push(CLOUD_TECHNIQUES.pizz)
+  if (TREM_IDS.has(definitionId)) list.push(CLOUD_TECHNIQUES.trem)
+  return list
 }
 
 export const CLOUD_CONTROLLERS = [
@@ -85,12 +110,6 @@ export const CLOUD_CONTROLLERS = [
   { id: 'expression', displayName: 'Expression', mapped: true },
   { id: 'vibrato', displayName: 'Vibrato', mapped: true }
 ]
-
-export function cloudTechniquesFor (definitionId) {
-  const item = mOrchestraInstrument(definitionId)
-  if (item && item.family === 'percussion') return [CLOUD_TECHNIQUES.hit]
-  return [CLOUD_TECHNIQUES.long, CLOUD_TECHNIQUES.short]
-}
 
 export function insertablePlugins (options = {}) {
   const list = [

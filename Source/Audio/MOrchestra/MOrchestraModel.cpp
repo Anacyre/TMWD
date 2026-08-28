@@ -23,10 +23,32 @@ namespace
             || a.contains ("mallet") || a.contains ("stick") || a.contains ("beater");
     }
 
+    bool isAllowedArtic (const juce::String& artic)
+    {
+        const auto a = artic.toLowerCase();
+        if (a.contains ("gliss"))
+            return false;
+        if (a.isEmpty() || isPrimaryArtic (a))
+            return true;
+        if (a.contains ("pizz"))
+            return true;
+        if (a.contains ("tremolo"))
+            return true;
+        if (a.contains ("stacc") || a.contains ("spicc"))
+            return true;
+        return false;
+    }
+
     bool shouldSkipDuration (const juce::String& duration)
     {
         const auto d = duration.toLowerCase();
         return d == "phrase" || d == "rhythm";
+    }
+
+    bool shouldSkipDynamic (const juce::String& dynamic)
+    {
+        const auto d = dynamic.toLowerCase();
+        return d.contains ("crescendo") || d.contains ("diminuendo") || d.contains ("decrescendo");
     }
 
     juce::String readString (const juce::var& object, const char* name, const juce::String& fallback = {})
@@ -50,6 +72,35 @@ namespace
     {
         const auto value = object.getProperty (name, juce::var());
         return value.isVoid() ? fallback : (bool) value;
+    }
+
+    PlaybackRules parsePlayback (const juce::var& object)
+    {
+        PlaybackRules rules;
+        if (! object.isObject())
+            return rules;
+
+        rules.maxStretchSemitones = juce::jlimit (1, 12, readInt (object, "maxStretchSemitones", rules.maxStretchSemitones));
+        rules.dynamicsVelocityMix = juce::jlimit (0.0f, 1.0f, readFloat (object, "dynamicsVelocityMix", rules.dynamicsVelocityMix));
+        rules.minCrossfadeMs = juce::jlimit (8, 400, readInt (object, "minCrossfadeMs", rules.minCrossfadeMs));
+        rules.loopSearchStart = juce::jlimit (0.05f, 0.7f, readFloat (object, "loopSearchStart", rules.loopSearchStart));
+        rules.loopSearchEnd = juce::jlimit (0.4f, 0.98f, readFloat (object, "loopSearchEnd", rules.loopSearchEnd));
+        rules.loopWindowSec = juce::jlimit (0.08f, 1.2f, readFloat (object, "loopWindowSec", rules.loopWindowSec));
+        rules.maxLoopRms = juce::jlimit (0.05f, 1.0f, readFloat (object, "maxLoopRms", rules.maxLoopRms));
+        rules.minLoopSamples = juce::jlimit (256, 48000, readInt (object, "minLoopSamples", rules.minLoopSamples));
+        rules.releaseLongSec = juce::jlimit (0.05f, 4.0f, readFloat (object, "releaseLongSec", rules.releaseLongSec));
+        rules.releaseShortSec = juce::jlimit (0.02f, 1.0f, readFloat (object, "releaseShortSec", rules.releaseShortSec));
+        rules.releaseHitSec = juce::jlimit (0.01f, 0.6f, readFloat (object, "releaseHitSec", rules.releaseHitSec));
+        rules.sectionDetuneCents = juce::jlimit (0.0f, 12.0f, readFloat (object, "sectionDetuneCents", rules.sectionDetuneCents));
+        rules.soloDetuneCents = juce::jlimit (0.0f, 12.0f, readFloat (object, "soloDetuneCents", rules.soloDetuneCents));
+        rules.cutoffMinHz = juce::jlimit (200.0f, 8000.0f, readFloat (object, "cutoffMinHz", rules.cutoffMinHz));
+        rules.cutoffSpanHz = juce::jlimit (200.0f, 12000.0f, readFloat (object, "cutoffSpanHz", rules.cutoffSpanHz));
+        rules.noiseAmount = juce::jlimit (0.0f, 0.05f, readFloat (object, "noiseAmount", rules.noiseAmount));
+        rules.noiseHpHz = juce::jlimit (200.0f, 8000.0f, readFloat (object, "noiseHpHz", rules.noiseHpHz));
+        rules.vibratoDepthSemis = juce::jlimit (0.0f, 1.0f, readFloat (object, "vibratoDepthSemis", rules.vibratoDepthSemis));
+        rules.vibratoGate = juce::jlimit (0.0f, 0.9f, readFloat (object, "vibratoGate", rules.vibratoGate));
+        rules.maxSources = juce::jlimit (1, 4, readInt (object, "maxSources", rules.maxSources));
+        return rules;
     }
 
     InstrumentSpec parseInstrument (const juce::var& entry)
@@ -131,10 +182,16 @@ int dynamicToLayer (const juce::String& token)
 
 Articulation classifyArticulation (const juce::String& duration, const juce::String& artic, bool percussion)
 {
-    juce::ignoreUnused (artic);
-
     if (percussion)
         return Articulation::hit;
+
+    const auto a = artic.toLowerCase();
+    if (a.contains ("pizz") && ! a.contains ("gliss"))
+        return Articulation::pluck;
+    if (a.contains ("tremolo"))
+        return Articulation::sustain;
+    if (a.contains ("stacc") || a.contains ("spicc"))
+        return Articulation::shortArt;
 
     const auto d = duration.toLowerCase();
     if (d == "025" || d == "05")
@@ -159,6 +216,7 @@ LibrarySpec loadLibrarySpec (const juce::File& jsonFile)
     spec.displayName = readString (parsed, "displayName", spec.displayName);
     spec.cacheBudgetMb = juce::jlimit (32, 1024, readInt (parsed, "cacheBudgetMb", spec.cacheBudgetMb));
     spec.globalMaxVoices = juce::jlimit (8, 256, readInt (parsed, "globalMaxVoices", spec.globalMaxVoices));
+    spec.playback = parsePlayback (parsed.getProperty ("playback", juce::var()));
 
     const auto roots = parsed.getProperty ("libraryRoots", juce::var());
     if (auto* array = roots.getArray())
@@ -255,16 +313,18 @@ void scanPacks (LibrarySpec& spec, const juce::File& root)
                     artic += "_" + tokens[t];
             }
 
-            if (shouldSkipDuration (duration) || artic.containsIgnoreCase ("rhythm")
+            if (shouldSkipDuration (duration) || shouldSkipDynamic (dynamic)
+                || artic.containsIgnoreCase ("rhythm")
                 || artic.containsIgnoreCase ("phrase") || artic.containsIgnoreCase ("roll"))
                 continue;
 
-            if (! percussion && ! isPrimaryArtic (artic) && artic.isNotEmpty())
+            if (! percussion && ! isAllowedArtic (artic) && artic.isNotEmpty())
                 continue;
 
             ref.dynamicLayer = dynamicToLayer (dynamic);
             ref.articulation = classifyArticulation (duration, artic, percussion || ref.unpitched);
-            ref.loop = ref.articulation == Articulation::longArt;
+            ref.loop = ref.articulation == Articulation::longArt
+                    || ref.articulation == Articulation::sustain;
             spec.samples.push_back (std::move (ref));
         }
     }

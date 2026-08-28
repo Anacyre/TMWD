@@ -45,14 +45,21 @@ function dynamicToLayer (token) {
   return 64
 }
 
-function isPrimaryArtic (artic) {
+function isAllowedArtic (artic) {
   const a = String(artic || '').toLowerCase()
-  return a === 'arco-normal' || a === 'normal' || a === 'struck-singly'
-    || a.includes('mallet') || a.includes('stick') || a.includes('beater')
+  if (a.includes('gliss')) return false
+  if (!a || a === 'arco-normal' || a === 'normal' || a === 'struck-singly'
+      || a.includes('mallet') || a.includes('stick') || a.includes('beater')) return true
+  if (a.includes('pizz') || a.includes('tremolo') || a.includes('stacc') || a.includes('spicc')) return true
+  return false
 }
 
-function classifyArticulation (duration, percussion) {
+function classifyArticulation (duration, artic, percussion) {
   if (percussion) return 'hit'
+  const a = String(artic || '').toLowerCase()
+  if (a.includes('pizz') && !a.includes('gliss')) return 'pluck'
+  if (a.includes('tremolo')) return 'sustain'
+  if (a.includes('stacc') || a.includes('spicc')) return 'short'
   const d = String(duration || '').toLowerCase()
   if (d === '025' || d === '05') return 'short'
   return 'long'
@@ -95,11 +102,13 @@ async function scanZip (pack, zipPath) {
     }
     const d = duration.toLowerCase()
     if (d === 'phrase' || d === 'rhythm') continue
+    const dyn = String(dynamic || '').toLowerCase()
+    if (dyn.includes('crescendo') || dyn.includes('diminuendo') || dyn.includes('decrescendo')) continue
     if (artic.toLowerCase().includes('rhythm') || artic.toLowerCase().includes('phrase') || artic.toLowerCase().includes('roll')) continue
-    if (!percussion && artic && !isPrimaryArtic(artic)) continue
+    if (!percussion && artic && !isAllowedArtic(artic)) continue
     ref.dynamicLayer = dynamicToLayer(dynamic)
-    ref.articulation = classifyArticulation(duration, percussion || ref.unpitched)
-    ref.loop = ref.articulation === 'long'
+    ref.articulation = classifyArticulation(duration, artic, percussion || ref.unpitched)
+    ref.loop = ref.articulation === 'long' || ref.articulation === 'sustain'
     samples.push(ref)
   }
   return samples
@@ -140,6 +149,7 @@ async function main () {
     displayName: library.displayName,
     cacheBudgetMb: library.cacheBudgetMb,
     globalMaxVoices: library.globalMaxVoices,
+    playback: library.playback || {},
     missing: library.missing || [],
     instruments: library.instruments || [],
     packs: zips.map((name) => name.replace(/\.zip$/i, '')),

@@ -699,6 +699,26 @@
         "program": 2,
         "mapped": true
       }
+    },
+    {
+      "id": "m_orch_pizz",
+      "displayName": "Pizz",
+      "pluginId": "m_orchestra",
+      "action": {
+        "type": "ProgramChange",
+        "program": 3,
+        "mapped": true
+      }
+    },
+    {
+      "id": "m_orch_trem",
+      "displayName": "Trem",
+      "pluginId": "m_orchestra",
+      "action": {
+        "type": "ProgramChange",
+        "program": 4,
+        "mapped": true
+      }
     }
   ],
   "controllers": [
@@ -1427,7 +1447,9 @@
       "description": "M Orchestra · 16-player violin section",
       "techniques": [
         "m_orch_long",
-        "m_orch_short"
+        "m_orch_short",
+        "m_orch_pizz",
+        "m_orch_trem"
       ],
       "controllers": [
         "dynamics",
@@ -1456,7 +1478,9 @@
       "description": "M Orchestra · 12-player violin section",
       "techniques": [
         "m_orch_long",
-        "m_orch_short"
+        "m_orch_short",
+        "m_orch_pizz",
+        "m_orch_trem"
       ],
       "controllers": [
         "dynamics",
@@ -1485,7 +1509,8 @@
       "description": "M Orchestra · 8-player viola section",
       "techniques": [
         "m_orch_long",
-        "m_orch_short"
+        "m_orch_short",
+        "m_orch_pizz"
       ],
       "controllers": [
         "dynamics",
@@ -1543,7 +1568,8 @@
       "description": "M Orchestra · 6-player bass section",
       "techniques": [
         "m_orch_long",
-        "m_orch_short"
+        "m_orch_short",
+        "m_orch_pizz"
       ],
       "controllers": [
         "dynamics",
@@ -1828,7 +1854,9 @@
       "description": "M Orchestra · Solo violin",
       "techniques": [
         "m_orch_long",
-        "m_orch_short"
+        "m_orch_short",
+        "m_orch_pizz",
+        "m_orch_trem"
       ],
       "controllers": [
         "dynamics",

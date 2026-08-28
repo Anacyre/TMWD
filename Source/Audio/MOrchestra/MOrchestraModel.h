@@ -36,6 +36,30 @@ namespace MOrchestra
         air
     };
 
+    struct PlaybackRules
+    {
+        int maxStretchSemitones = 4;
+        float dynamicsVelocityMix = 0.35f;
+        int minCrossfadeMs = 80;
+        float loopSearchStart = 0.35f;
+        float loopSearchEnd = 0.85f;
+        float loopWindowSec = 0.3f;
+        float maxLoopRms = 0.55f;
+        int minLoopSamples = 2048;
+        float releaseLongSec = 0.9f;
+        float releaseShortSec = 0.12f;
+        float releaseHitSec = 0.08f;
+        float sectionDetuneCents = 2.0f;
+        float soloDetuneCents = 0.8f;
+        float cutoffMinHz = 1800.0f;
+        float cutoffSpanHz = 4200.0f;
+        float noiseAmount = 0.0012f;
+        float noiseHpHz = 2200.0f;
+        float vibratoDepthSemis = 0.12f;
+        float vibratoGate = 0.12f;
+        int maxSources = 3;
+    };
+
     struct SampleRef
     {
         juce::String pack;
@@ -83,7 +107,8 @@ namespace MOrchestra
         juce::StringArray libraryRoots;
         std::vector<InstrumentSpec> instruments;
         std::vector<SampleRef> samples;
-        juce::StringArray missing;   // requested instruments with no samples
+        juce::StringArray missing;
+        PlaybackRules playback;
     };
 
     inline const char* familyName (Family f)
@@ -118,8 +143,8 @@ namespace MOrchestra
         const auto t = s.toLowerCase();
         if (t == "short") return Articulation::shortArt;
         if (t == "hit") return Articulation::hit;
-        if (t == "pluck") return Articulation::pluck;
-        if (t == "sustain") return Articulation::sustain;
+        if (t == "pluck" || t == "pizz" || t == "pizzicato") return Articulation::pluck;
+        if (t == "sustain" || t == "trem" || t == "tremolo") return Articulation::sustain;
         return Articulation::longArt;
     }
 
