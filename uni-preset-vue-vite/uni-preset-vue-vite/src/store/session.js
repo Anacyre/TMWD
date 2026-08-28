@@ -20,7 +20,7 @@ import * as mOrchestraCloud from '../audio/m-orchestra/engine.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
-import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip } from '../model/playlist-model.js'
+import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache } from '../model/playlist-model.js'
 import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker, expandRepeats } from '../model/note-model.js'
 import {
   INTERFACE_LITE,
@@ -195,6 +195,7 @@ export const session = reactive({
   },
   tracks: starterDemo.tracks,
   clips: starterDemo.clips.map(normalizeClipNotes),
+  clipPreviewRevision: 0,
   clockStamp: { positionBeats: 0, playing: false, bpm: starterDemo.bpm, receivedAt: 0 },
   clipboard: null,
   webMixer: defaultWebMixer(),
@@ -342,7 +343,9 @@ function applyProject (project) {
   }
   if (project.clips) {
     const selectedClipId = (session.clips[session.selectedClip] || {}).id
+    clearClipPreviewCache()
     session.clips = project.clips.map(mapClip)
+    session.clipPreviewRevision++
     const nextClip = session.clips.findIndex((clip) => clip.id === selectedClipId)
     session.selectedClip = nextClip >= 0 ? nextClip : (session.clips.length ? 0 : -1)
     syncSelectionIds()
@@ -401,6 +404,16 @@ function syncTrackMixLane (track) {
 }
 
 let pianoDragClipId = 0
+let clipPreviewBumpTimer = 0
+
+function bumpClipPreview (clipId) {
+  if (clipId != null) invalidateClipPreview(clipId)
+  if (clipPreviewBumpTimer) return
+  clipPreviewBumpTimer = setTimeout(() => {
+    clipPreviewBumpTimer = 0
+    session.clipPreviewRevision++
+  }, 16)
+}
 
 function applyNoteDelta (delta) {
   if (!delta || (pianoDragClipId && delta.clipId === pianoDragClipId)) return
@@ -424,6 +437,7 @@ function applyNoteDelta (delta) {
     const ids = new Set(delta.deleted.map((id) => Number(id)))
     clip.notes = clip.notes.filter((note) => !ids.has(note.id))
   }
+  bumpClipPreview(clip.id)
 }
 
 function applyNotesState (payload) {
@@ -433,6 +447,7 @@ function applyNotesState (payload) {
     if (!clip) return
     if (pianoDragClipId && clip.id === pianoDragClipId) return
     clip.notes = (entry.notes || []).map((note) => normalizeNote(note))
+    bumpClipPreview(clip.id)
   })
 }
 
@@ -958,6 +973,7 @@ export function addMidiClip (trackIndex, startBeat = session.positionBeats, leng
     expression: { cc1: [], cc11: [] }
   }
   session.clips.push(clip)
+  bumpClipPreview(clip.id)
   selectClip(session.clips.length - 1)
   endEdit()
   markDirty()
@@ -978,6 +994,7 @@ export function resizeClip (clip, startBeat, lengthBeats) {
   if (!clip) return
   clip.startBeat = Math.max(0, startBeat)
   clip.lengthBeats = Math.max(0.25, lengthBeats)
+  bumpClipPreview(clip.id)
   fire('clip.move', {
     clipId: clip.id,
     start: clip.startBeat,
@@ -1154,7 +1171,10 @@ export function openVirtualClip (clip) {
 function refreshVirtualClip () {
   if (!session.virtualClip || !session.virtualClip.virtual) return
   const built = buildCollapsedGroupClip(session.tracks, session.clips, session.virtualClip.groupId)
-  if (built) session.virtualClip = built
+  if (built) {
+    session.virtualClip = built
+    bumpClipPreview(built.id)
+  }
 }
 
 function sourceClipForVirtual (virtual, absBeat) {
@@ -1362,7 +1382,9 @@ export function previewNoteOn (track, pitch, velocity = 0.8) {
 export function previewNoteOff (track, pitch) {
   if (!track) return
   if (isMOrchestraTrack(track)) {
-    mOrchestraCloud.noteOff(pitch, track.id)
+    const previewId = 'preview-' + track.id + '-' + pitch
+    mOrchestraCloud.cancelPending(previewId, track.id)
+    mOrchestraCloud.noteOff(previewId, track.id)
     return
   }
   if (track.source === 'web-sampler') {
@@ -1393,6 +1415,7 @@ export function createNote (clip, pitch, start, duration = 0.25, velocity = 100,
     ...extra
   })
   clip.notes.push(note)
+  bumpClipPreview(clip.id)
   if (isEngineConnected()) {
     fire('note.create', { clipId: clip.id, ...engineNotePayload(note) }).then((reply) => {
       if (reply && reply.noteId) note.id = reply.noteId
@@ -1417,12 +1440,14 @@ export function createNotes (clip, notes) {
       })
     })
   }
+  bumpClipPreview(clip.id)
   return created
 }
 
 export function deleteNote (clip, note) {
   if (!clip || !note) return
   clip.notes = (clip.notes || []).filter((item) => item.id !== note.id)
+  bumpClipPreview(clip.id)
   fire('note.delete', { clipId: clip.id, noteId: note.id })
 }
 
@@ -1444,6 +1469,7 @@ export function deleteNotes (clip, notes) {
   }
   const ids = new Set(notes.map((note) => note.id))
   clip.notes = (clip.notes || []).filter((item) => !ids.has(item.id))
+  bumpClipPreview(clip.id)
   fire('notes.deleteBatch', { clipId: clip.id, noteIds: Array.from(ids) })
 }
 
@@ -1465,6 +1491,7 @@ export function setNote (clip, note, patch) {
   }
   const live = (clip.notes || []).find((item) => item.id === note.id) || note
   Object.assign(live, normalizeNote({ ...live, ...patch, id: live.id }))
+  bumpClipPreview(clip.id)
   queueNotePatch(clip, live)
 }
 
@@ -1490,6 +1517,7 @@ export function flushNotePatches () {
   })
   notePatchQueue.clear()
   byClip.forEach((notes, clipId) => {
+    bumpClipPreview(clipId)
     fire('notes.updateBatch', { clipId, notes })
   })
 }
@@ -2469,16 +2497,16 @@ function allLocalNotesOff () {
 }
 
 function previewMOrchestra (track, pitch, velocity, id) {
-  const key = id || ('m' + pitch + '-' + Math.random().toString(36).slice(2, 7))
+  const logicalId = id || ('preview-' + track.id + '-' + pitch)
   ensureMixerAttached().then(async (graph) => {
     if (!graph) return
     await graph.context.resume()
-    await mOrchestraCloud.noteOn(graph, track, pitch, velocity, key)
-    refreshMixerGraph()
+    const engineKey = await mOrchestraCloud.noteOn(graph, track, pitch, velocity, logicalId)
+    if (engineKey) refreshMixerGraph()
   }).catch((err) => {
     console.warn('[m-orchestra] preview failed:', err)
   })
-  return key
+  return logicalId
 }
 
 function previewWebSampler (track, pitch, velocity, id) {

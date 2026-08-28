@@ -96,7 +96,6 @@ private:
     int scaleRoot = 0;
     int scaleMode = 0;
     bool inspectorOpen = false;
-    bool inspectorAdvanced = false;
     juce::uint32 lastNoteNotifyMs = 0;
     enum class RulerDrag { none, loopStart, loopEnd };
     RulerDrag rulerDrag = RulerDrag::none;

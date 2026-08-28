@@ -505,7 +505,6 @@ public:
         if (hitTestNote (e.position) >= 0)
         {
             owner.inspectorOpen = true;
-            owner.inspectorAdvanced = true;
             owner.resized();
         }
     }
@@ -737,19 +736,12 @@ public:
     explicit NoteInspector (PianoRoll& ownerToUse) : owner (ownerToUse)
     {
         setOpaque (true);
-        DawWidgets::styleFlatButton (advanced);
         DawWidgets::styleFlatButton (mute);
-        advanced.onClick = [this]
-        {
-            owner.inspectorAdvanced = ! owner.inspectorAdvanced;
-            owner.resized();
-        };
         mute.onClick = [this] { owner.muteSelectedNotes(); };
-        addAndMakeVisible (advanced);
         addAndMakeVisible (mute);
     }
 
-    int preferredHeight() const noexcept { return owner.inspectorAdvanced ? 236 : 124; }
+    int preferredHeight() const noexcept { return 124; }
 
     void paint (juce::Graphics& g) override
     {
@@ -788,35 +780,17 @@ public:
         row ("Start", juce::String (note->startBeat, 3));
         row ("Length", juce::String (note->lengthBeats, 3));
         row ("Velocity", juce::String (note->getVelocityByte()));
-
-        if (owner.inspectorAdvanced)
-        {
-            row ("Release", juce::String (note->releaseVelocity));
-            row ("Pan", juce::String (note->pan));
-            row ("Fine", juce::String (note->pitchOffset));
-            row ("Group", juce::String (note->group));
-            row ("Color", juce::String (note->color));
-            row ("Mute", note->muted ? "On" : "Off");
-            row ("Slide", "Unsupported");
-            row ("Porta", "Unsupported");
-            row ("Repeat", repeatLabel (note->repeatMode));
-            row ("Mod X", juce::String (note->modX));
-            row ("Mod Y", juce::String (note->modY));
-        }
     }
 
     void resized() override
     {
         auto r = getLocalBounds().reduced (8);
-        r.removeFromTop (owner.inspectorAdvanced ? 204 : 88);
-        advanced.setButtonText (owner.inspectorAdvanced ? "Less" : "Advanced");
-        advanced.setBounds (r.removeFromTop (18));
-        r.removeFromTop (4);
+        r.removeFromTop (88);
         mute.setBounds (r.removeFromTop (18));
     }
 
     PianoRoll& owner;
-    juce::TextButton advanced { "Advanced" }, mute { "Mute" };
+    juce::TextButton mute { "Mute" };
 };
 
 //==============================================================================
@@ -1280,11 +1254,10 @@ void PianoRoll::showNoteMenu (juce::Point<int> position)
     m.addItem (3, "Mute");
     m.addItem (4, "Delete");
     m.addItem (5, "Repeat");
-    m.addItem (6, "Advanced");
     m.showMenuAsync (juce::PopupMenu::Options().withTargetScreenArea ({ position.x, position.y, 1, 1 }),
                      [this] (int r)
     {
-        if (r == 1) { inspectorOpen = true; inspectorAdvanced = false; resized(); }
+        if (r == 1) { inspectorOpen = true; resized(); }
         if (r == 2) duplicateSelectedNotes();
         if (r == 3) muteSelectedNotes();
         if (r == 4) deleteSelectedNotes();
@@ -1299,7 +1272,6 @@ void PianoRoll::showNoteMenu (juce::Point<int> position)
                 session.notify (DawSession::notesChanged);
             }
         }
-        if (r == 6) { inspectorOpen = true; inspectorAdvanced = true; resized(); }
     });
 }
 

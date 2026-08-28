@@ -1,6 +1,32 @@
+import { TICKS_PER_BEAT } from './timeline.js'
+
 const PREVIEW_COLS = 24
 const PREVIEW_ROWS = 8
 const previewCache = new Map()
+
+function noteStartBeat (note) {
+  if (note.start != null) return Math.max(0, note.start)
+  return Math.max(0, (note.startTick || 0) / TICKS_PER_BEAT)
+}
+
+function noteDurationBeat (note) {
+  if (note.duration != null) return Math.max(0.02, note.duration)
+  return Math.max(0.02, (note.durationTick || 240) / TICKS_PER_BEAT)
+}
+
+function previewCacheKey (clip, notes) {
+  const id = clip && clip.id != null ? clip.id : 0
+  const length = clip && clip.lengthBeats != null ? clip.lengthBeats : 0
+  const loop = clip && clip.loopLengthBeats != null ? clip.loopLengthBeats : 0
+  if (!notes.length) return id + ':0:' + length + ':' + loop
+  const digest = notes.map((note) => [
+    note.pitch,
+    note.startTick != null ? note.startTick : Math.round(noteStartBeat(note) * TICKS_PER_BEAT),
+    note.durationTick != null ? note.durationTick : Math.round(noteDurationBeat(note) * TICKS_PER_BEAT),
+    note.velocity || 0
+  ].join('.')).join('|')
+  return id + ':' + notes.length + ':' + length + ':' + loop + ':' + digest
+}
 
 export function clipSourceLength (clip) {
   if (!clip) return 1
@@ -120,7 +146,7 @@ export function buildCollapsedGroupClip (tracks, clips, groupId) {
 
 export function buildClipPreview (clip) {
   const notes = (clip && clip.notes) || []
-  const key = (clip && clip.id) + ':' + notes.length + ':' + (clip.lengthBeats || 0) + ':' + (clip.loopLengthBeats || 0)
+  const key = previewCacheKey(clip, notes)
   const cached = previewCache.get(key)
   if (cached) return cached
 
@@ -140,8 +166,8 @@ export function buildClipPreview (clip) {
   const span = Math.max(1, hi - lo)
 
   notes.forEach((note) => {
-    const start = Math.max(0, note.start != null ? note.start : ((note.startTick || 0) / 960))
-    const duration = Math.max(0.02, note.duration != null ? note.duration : ((note.durationTick || 240) / 960))
+    const start = noteStartBeat(note)
+    const duration = noteDurationBeat(note)
     const x0 = Math.floor((start / source) * PREVIEW_COLS)
     const x1 = Math.min(PREVIEW_COLS - 1, Math.floor(((start + duration) / source) * PREVIEW_COLS))
     const row = Math.min(PREVIEW_ROWS - 1, Math.floor(((note.pitch - lo) / span) * (PREVIEW_ROWS - 1)))
@@ -154,9 +180,14 @@ export function buildClipPreview (clip) {
 }
 
 export function invalidateClipPreview (clipId) {
+  const prefix = String(clipId) + ':'
   Array.from(previewCache.keys()).forEach((key) => {
-    if (String(key).startsWith(String(clipId) + ':')) previewCache.delete(key)
+    if (String(key).startsWith(prefix)) previewCache.delete(key)
   })
+}
+
+export function clearClipPreviewCache () {
+  previewCache.clear()
 }
 
 export function relativeClipOffsets (clips) {

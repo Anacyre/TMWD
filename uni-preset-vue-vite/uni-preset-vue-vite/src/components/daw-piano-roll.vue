@@ -73,33 +73,13 @@
           :value="selectedNotes[0] ? selectedNotes[0].velocity : 100"
           @input="patchVelocity"
         >
-        <view class="chip" @click="openInspector">Advanced</view>
       </view>
-      <view v-if="inspectorOpen && selectedNotes.length && (!lite || advancedOpen)" class="inspector" :class="{ advanced: advancedOpen }">
+      <view v-if="inspectorOpen && selectedNotes.length && !lite" class="inspector">
         <text class="i-title">Note</text>
         <view class="i-row"><text>Pitch</text><text>{{ pitchLabel }}</text></view>
         <view class="i-row"><text>Start</text><text>{{ startLabel }}</text></view>
         <view class="i-row"><text>Length</text><text>{{ lengthLabel }}</text></view>
         <view class="i-row"><text>Velocity</text><text>{{ velocityLabel }}</text></view>
-        <view class="chip" @click="advancedOpen = !advancedOpen">{{ advancedOpen ? 'Less' : 'Advanced' }}</view>
-        <view v-if="advancedOpen" class="adv">
-          <view class="i-row"><text>Release</text><input class="num" type="number" min="1" max="127" :value="adv.releaseVelocity" @change="patchAdv('releaseVelocity', $event)"></view>
-          <view class="i-row"><text>Pan</text><input class="num" type="number" min="0" max="127" :value="adv.pan" @change="patchAdv('pan', $event)"></view>
-          <view class="i-row"><text>Fine</text><input class="num" type="number" min="-120" max="120" :value="adv.pitchOffset" @change="patchAdv('pitchOffset', $event)"></view>
-          <view class="i-row"><text>Color</text><input class="num" type="number" min="0" max="15" :value="adv.color" @change="patchAdv('color', $event)"></view>
-          <view class="i-row"><text>Group</text><input class="num" type="number" min="0" max="999" :value="adv.group" @change="patchAdv('group', $event)"></view>
-          <view class="i-row"><text>Mute</text><view class="chip" :class="{ on: adv.muted }" @click="toggleMute">{{ adv.muted ? 'On' : 'Off' }}</view></view>
-          <view class="i-row"><text>Slide</text><text>{{ slideLabel }}</text></view>
-          <view class="i-row"><text>Porta</text><text>{{ portaLabel }}</text></view>
-          <view class="i-row">
-            <text>Repeat</text>
-            <select class="sel" :value="adv.repeatMode" @change="patchAdv('repeatMode', $event)">
-              <option v-for="mode in repeatModes" :key="mode.id" :value="mode.id">{{ mode.label }}</option>
-            </select>
-          </view>
-          <view class="i-row"><text>Mod X</text><input class="num" type="number" min="0" max="127" :value="adv.modX" @change="patchAdv('modX', $event)"></view>
-          <view class="i-row"><text>Mod Y</text><input class="num" type="number" min="0" max="127" :value="adv.modY" @change="patchAdv('modY', $event)"></view>
-        </view>
       </view>
       <view v-if="menu" class="menu" :style="{ left: menu.x + 'px', top: menu.y + 'px' }">
         <view class="item" @click="openInspector">Edit</view>
@@ -107,7 +87,6 @@
         <view class="item" @click="toggleMute">Mute</view>
         <view class="item" @click="deleteSelected">Delete</view>
         <view class="item" @click="cycleRepeat">Repeat</view>
-        <view class="item" @click="advancedOpen = true; inspectorOpen = true; menu = null">Advanced</view>
       </view>
     </view>
   </view>
@@ -147,7 +126,6 @@ import {
   REPEAT_MODES,
   PPQ,
   pitchNameFull,
-  defaultNote,
   cloneNote,
   duplicateNotes,
   quantizeNotes,
@@ -194,7 +172,6 @@ const scaleKey = ref('C')
 const scaleName = ref('major')
 const showMore = ref(false)
 const inspectorOpen = ref(false)
-const advancedOpen = ref(false)
 const quantizeStrength = ref(100)
 const selectedIds = reactive(new Set())
 const menu = ref(null)
@@ -202,7 +179,6 @@ const menu = ref(null)
 const snapPresets = SNAP_PRESETS
 const keyNames = KEY_NAMES
 const scaleNames = SCALE_NAMES
-const repeatModes = REPEAT_MODES
 
 const clip = computed(() => getSelectedClip())
 const track = computed(() => getSelectedTrack())
@@ -261,24 +237,12 @@ const legatoVisible = computed(() => {
   return /long/i.test(id)
 })
 const selectedNotes = computed(() => notes.value.filter((note) => selectedIds.has(note.id)))
-const adv = computed(() => selectedNotes.value[0] || defaultNote())
 const pitchLabel = computed(() => selectedNotes.value.length ? pitchNameFull(selectedNotes.value[0].pitch) : '–')
 const startLabel = computed(() => selectedNotes.value.length ? ticksToBeats(selectedNotes.value[0].startTick).toFixed(3) : '–')
 const lengthLabel = computed(() => selectedNotes.value.length ? ticksToBeats(selectedNotes.value[0].durationTick).toFixed(3) : '–')
 const velocityLabel = computed(() => selectedNotes.value.length ? String(midiVelocity(selectedNotes.value[0].velocity)) : '–')
 const lengthHint = computed(() => snapPresets.find((item) => item.id === snapId.value)?.label || '1/16')
 const snapLabel = computed(() => snapPresets.find((item) => item.id === snapId.value)?.label || '1/16')
-const slideLabel = computed(() => instrumentFlag('slide'))
-const portaLabel = computed(() => instrumentFlag('porta'))
-
-function instrumentFlag (name) {
-  const caps = session.catalogue && session.catalogue.instruments
-  const id = track.value && (track.value.definitionId || track.value.instrumentId)
-  const found = (caps || []).find((item) => item.id === id || item.instrumentId === id)
-  const supported = found && (found[name] || (found.capabilities && found.capabilities[name]))
-  if (!supported) return 'Unsupported'
-  return adv.value[name] ? 'On' : 'Off'
-}
 
 const view = defaultView()
 view.snapId = '1/16'
@@ -539,11 +503,11 @@ function onPointerDown (e) {
     else selectedIds.add(hit.note.id)
   }
   inspectorOpen.value = selectedIds.size === 1 && e.pointerType === 'mouse'
-  beginEdit(hit.resize ? 'Resize notes' : 'Move notes')
+  beginEdit(hit.resize ? 'Resize notes' : (e.shiftKey ? 'Velocity' : 'Move notes'))
   setPianoDragActive(clip.value.id)
   startPreview(hit.note.pitch, hit.note.velocity / 127)
   gesture = {
-    type: hit.resize ? 'resize' : 'move',
+    type: hit.resize ? 'resize' : (e.shiftKey ? 'velocity-note' : 'move'),
     originX: p.x,
     originY: p.y,
     originals: captureSelected(),
@@ -580,6 +544,18 @@ function onPointerMove (e) {
   }
   if (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create') {
     clearTimeout(longPressTimer)
+  }
+  if (gesture.type === 'velocity-note') {
+    const delta = Math.round((gesture.originY - p.y) / 2)
+    gesture.originals.forEach((orig) => {
+      const note = notes.value.find((item) => item.id === orig.id)
+      if (note) {
+        const velocity = Math.min(127, Math.max(1, orig.velocity + delta))
+        setNote(clip.value, note, { velocity })
+        startPreview(note.pitch, velocity / 127)
+      }
+    })
+    return
   }
   if (gesture.type === 'expression') {
     applyExpression(p, gesture.erase)
@@ -668,12 +644,12 @@ function onPointerUp (e) {
       lastTap = { at: Date.now(), noteId: id }
     }
   }
-  if (gesture && (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create' || gesture.type === 'velocity')) {
+  if (gesture && (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create' || gesture.type === 'velocity' || gesture.type === 'velocity-note')) {
     flushNotePatches()
     endEdit()
   }
   setPianoDragActive(0)
-  stopPreview()
+  if (!pointers.size) stopPreview()
   rubber = null
   gesture = null
 }
@@ -868,7 +844,8 @@ function ungroupSelected () {
 }
 
 function cycleRepeat () {
-  const next = ((adv.value.repeatMode || 0) + 1) % REPEAT_MODES.length
+  const current = selectedNotes.value[0]?.repeatMode || 0
+  const next = (current + 1) % REPEAT_MODES.length
   beginEdit('Repeat')
   selectedNotes.value.forEach((note) => setNote(clip.value, note, { repeatMode: next }))
   flushNotePatches()
@@ -876,22 +853,17 @@ function cycleRepeat () {
   menu.value = null
 }
 
-function patchAdv (key, event) {
-  const value = event.target.type === 'number' || key === 'repeatMode' ? Number(event.target.value) : event.target.value
-  beginEdit('Note details')
-  selectedNotes.value.forEach((note) => setNote(clip.value, note, { [key]: value }))
-  flushNotePatches()
-  endEdit()
-}
-
 function openInspector () {
-  inspectorOpen.value = true
-  if (lite.value) advancedOpen.value = true
+  if (!lite.value) inspectorOpen.value = true
   menu.value = null
 }
 
 function patchVelocity (event) {
-  patchAdv('velocity', event)
+  const value = Number(event.target.value)
+  beginEdit('Velocity')
+  selectedNotes.value.forEach((note) => setNote(clip.value, note, { velocity: value }))
+  flushNotePatches()
+  endEdit()
 }
 
 function copySelected () {

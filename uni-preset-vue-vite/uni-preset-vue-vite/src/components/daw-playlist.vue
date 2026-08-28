@@ -472,6 +472,7 @@ function clipRepeatLabel (clip) {
 }
 
 function previewOf (clip) {
+  session.clipPreviewRevision
   return buildClipPreview(clip)
 }
 

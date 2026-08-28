@@ -1,12 +1,17 @@
 <template>
   <view v-if="open" class="mask" @click="onMask">
     <view
-      class="sheet"
+      class="sheet lite-plugin-surface"
       :class="{ tall }"
       @click.stop
     >
-      <view class="handle" @pointerdown.stop="onDown" />
-      <text v-if="title" class="title">{{ title }}</text>
+      <view class="head">
+        <view class="handle" @pointerdown.stop="onDown" />
+        <view class="head-row">
+          <text v-if="title" class="title">{{ title }}</text>
+          <view class="close-x" aria-label="Dismiss" @click.stop="emit('close')">×</view>
+        </view>
+      </view>
       <slot />
     </view>
   </view>
@@ -14,6 +19,7 @@
 
 <script setup>
 import { onUnmounted } from 'vue'
+import './dsp/lite-plugin-surface.css'
 
 const props = defineProps({
   open: { type: Boolean, default: false },
@@ -65,32 +71,46 @@ onUnmounted(() => {
   z-index: 60;
   display: flex;
   align-items: flex-end;
-  padding-bottom: env(safe-area-inset-bottom, 0);
+  padding:
+    max(16px, env(safe-area-inset-top, 0px))
+    16px
+    max(16px, env(safe-area-inset-bottom, 0px));
+  box-sizing: border-box;
 }
 .sheet {
   width: 100%;
-  max-height: 78vh;
+  max-height: calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   background: #161616;
-  border-top: 1px solid #2a2a2a;
-  border-radius: 12px 12px 0 0;
+  border: 1px solid #2a2a2a;
+  border-radius: 12px;
   padding: 8px 16px 20px;
   overflow: auto;
   animation: up 180ms ease-out;
+  box-sizing: border-box;
 }
-.sheet.tall { max-height: 88vh; }
+.sheet.tall { max-height: calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+.head {
+  margin-bottom: 8px;
+}
 .handle {
   width: 36px;
   height: 4px;
   border-radius: 2px;
   background: #3a3a3a;
-  margin: 4px auto 12px;
+  margin: 4px auto 10px;
+}
+.head-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .title {
-  display: block;
   color: #e6e6e6;
   font-size: 15px;
   font-weight: 600;
-  margin-bottom: 12px;
+  min-width: 0;
+  flex: 1;
 }
 @keyframes up {
   from { transform: translateY(18px); opacity: 0.6; }

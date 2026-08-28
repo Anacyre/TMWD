@@ -1,4 +1,4 @@
-import { visibleTrackRows, buildClipPreview, clipSourceLength, relativeClipOffsets, buildCollapsedGroupClip } from './playlist-model.js'
+import { visibleTrackRows, buildClipPreview, clipSourceLength, relativeClipOffsets, buildCollapsedGroupClip, invalidateClipPreview } from './playlist-model.js'
 
 function makeTrack (id, name, extra = {}) {
   return { id, name, type: extra.type || 'midi', parentId: extra.parentId || 0, collapsed: !!extra.collapsed }
@@ -36,6 +36,20 @@ const preview = buildClipPreview(clip)
 if (preview.length !== 24) throw new Error('preview columns')
 if (!preview.some((col) => col.some((cell) => cell > 0))) throw new Error('preview empty')
 if (clipSourceLength(clip) !== 8) throw new Error('source length')
+
+const edited = {
+  ...clip,
+  notes: [
+    { pitch: 48, start: 0, duration: 1, velocity: 100 },
+    { pitch: 52, start: 2, duration: 1, velocity: 100 },
+    { pitch: 55, start: 4, duration: 1, velocity: 100 }
+  ]
+}
+const before = buildClipPreview(edited)
+invalidateClipPreview(edited.id)
+const after = buildClipPreview(edited)
+if (before === after) throw new Error('preview should rebuild after invalidation')
+if (!after.some((col, x) => x < 6 && col.some((cell) => cell > 0))) throw new Error('edited preview empty')
 
 const offsets = relativeClipOffsets([
   { startBeat: 1 },

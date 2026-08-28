@@ -17,7 +17,9 @@ let loadPromise = null
 const zipCache = new Map()
 const bufferCache = new Map()
 const voices = new Map()
+const pending = new Map()
 const rrCounters = new Map()
+let noteEpoch = 0
 
 function pb () {
   return playbackFrom(manifest)
@@ -169,6 +171,70 @@ function voiceKey (trackId, pitch, id) {
   return String(trackId || 0) + ':' + pitch + ':' + (id || pitch)
 }
 
+function resolveVoiceKeys (pitchOrKey, trackId) {
+  const keys = new Set()
+  if (typeof pitchOrKey === 'string') {
+    if (voices.has(pitchOrKey)) keys.add(pitchOrKey)
+    if (pending.has(pitchOrKey)) keys.add(pitchOrKey)
+    voices.forEach((_, key) => {
+      const parts = key.split(':')
+      if (parts.length >= 3 && parts.slice(2).join(':') === pitchOrKey) keys.add(key)
+    })
+    pending.forEach((_, key) => {
+      const parts = key.split(':')
+      if (parts.length >= 3 && parts.slice(2).join(':') === pitchOrKey) keys.add(key)
+    })
+  } else {
+    const pitch = pitchOrKey
+    const prefix = String(trackId || 0) + ':' + pitch + ':'
+    voices.forEach((_, key) => {
+      if (key.startsWith(prefix)) keys.add(key)
+    })
+    pending.forEach((_, key) => {
+      if (key.startsWith(prefix)) keys.add(key)
+    })
+  }
+  return Array.from(keys)
+}
+
+function cancelPendingKeys (keys) {
+  keys.forEach((key) => {
+    const entry = pending.get(key)
+    if (entry) entry.cancelled = true
+  })
+}
+
+export function cancelPending (pitchOrKey, trackId) {
+  cancelPendingKeys(resolveVoiceKeys(pitchOrKey, trackId))
+}
+
+function releaseVoice (key) {
+  const voice = voices.get(key)
+  if (!voice) return
+  const now = voice.gain.context.currentTime
+  const rules = pb()
+  const release = releaseSec(voice.artic, rules)
+  voice.gain.gain.cancelScheduledValues(now)
+  voice.gain.gain.setTargetAtTime(0, now, Math.max(0.03, release / 3))
+  if (voice.filter) {
+    voice.filter.frequency.cancelScheduledValues(now)
+    voice.filter.frequency.setTargetAtTime(rules.cutoffMinHz * 0.55, now, Math.max(0.04, release / 3))
+  }
+  const holdMs = Math.round(release * 1000 + 80)
+  setTimeout(() => {
+    voice.sources.forEach((src) => { try { src.stop() } catch (err) { /* ended */ } })
+    ;(voice.lfos || []).forEach((osc) => { try { osc.stop() } catch (err) { /* ended */ } })
+    try { voice.gain.disconnect() } catch (err) { /* already */ }
+    try { voice.filter && voice.filter.disconnect() } catch (err) { /* already */ }
+  }, holdMs)
+  voices.delete(key)
+}
+
+function orchestraDest (graph) {
+  if (!graph) return null
+  return graph.samplerGain || graph.master || graph.context.destination
+}
+
 function makeNoiseBuffer (context) {
   const length = Math.max(1, Math.floor(context.sampleRate * 0.35))
   const buffer = context.createBuffer(1, length, context.sampleRate)
@@ -229,16 +295,25 @@ export function applyControllers (track) {
 
 export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   if (!graph || !track) return null
+  const key = voiceKey(track.id, pitch, id)
+  const epoch = noteEpoch
+  pending.set(key, { cancelled: false, epoch })
   await ensureManifest()
   const spec = findInstrument(track.definitionId)
-  if (!spec) return null
+  if (!spec) {
+    pending.delete(key)
+    return null
+  }
   const artic = articForTrack(track, spec)
   const rules = pb()
   const dynamics = dynamicsForTrack(track)
   const velocityMidi = Math.round(Math.max(0.05, velocity) * 127)
   const rr = nextRr(spec.id, artic, pitch)
   const primary = pickFromManifest(samples(), spec, artic, pitch, velocityMidi, dynamics, rr, manifest)
-  if (!primary) return null
+  if (!primary) {
+    pending.delete(key)
+    return null
+  }
 
   const layer = isSustaining(artic)
     ? pickLayer(samples(), spec, artic, pitch, velocityMidi, dynamics, primary.dynamicLayer, rr + 1, manifest)
@@ -262,14 +337,27 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
       console.warn('[m-orchestra] decode', err)
     }
   }
-  if (!decodedList.length) return null
+  if (!decodedList.length) {
+    pending.delete(key)
+    return null
+  }
+
+  const pend = pending.get(key)
+  if (!pend || pend.cancelled || pend.epoch !== noteEpoch) {
+    pending.delete(key)
+    return null
+  }
+  pending.delete(key)
 
   prefetchSilent(graph.context, spec, artic, pitch, velocityMidi, dynamics)
-  noteOff(id || pitch, track.id)
+  if (voices.has(key)) releaseVoice(key)
+  resolveVoiceKeys(id || pitch, track.id).forEach((existingKey) => {
+    if (existingKey !== key) releaseVoice(existingKey)
+  })
 
-  const dest = graph.samplerGain || graph.master || graph.context.destination
+  const dest = orchestraDest(graph)
   const ctx = graph.context
-  const master = ctx.createGain()
+  const voiceGain = ctx.createGain()
   const filter = ctx.createBiquadFilter()
   filter.type = 'lowpass'
   filter.Q.value = 0.45
@@ -277,17 +365,17 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   const expr = Math.max(0.15, expressionForTrack(track))
   const dyn01 = Math.max(0, Math.min(1, dynamics / 127))
   const dynamicsShaped = Math.pow(dyn01, spec.gamma || 1.35)
-  master.gain.value = (0.28 + 0.72 * dynamicsShaped) * (0.55 + 0.45 * Math.max(0.05, velocity)) * expr * (spec.solo ? 0.9 : 0.55)
+  voiceGain.gain.value = (0.28 + 0.72 * dynamicsShaped) * (0.55 + 0.45 * Math.max(0.05, velocity)) * expr * (spec.solo ? 0.9 : 0.55)
+  voiceGain.connect(filter)
   filter.connect(dest)
-  master.connect(filter)
 
   const layerGainA = ctx.createGain()
   const layerGainB = ctx.createGain()
   const mix = dual ? { a: 0.65, b: 0.35 } : { a: 1, b: 0 }
   layerGainA.gain.value = mix.a
   layerGainB.gain.value = mix.b
-  layerGainA.connect(master)
-  layerGainB.connect(master)
+  layerGainA.connect(voiceGain)
+  layerGainB.connect(voiceGain)
 
   const sources = []
   const lfos = []
@@ -345,16 +433,15 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     ng.gain.value = rules.noiseAmount * dynamicsShaped
     noiseSrc.connect(hp)
     hp.connect(ng)
-    ng.connect(master)
+    ng.connect(voiceGain)
     noiseSrc.start()
     sources.push(noiseSrc)
   }
 
-  const key = voiceKey(track.id, pitch, id)
   voices.set(key, {
     sources,
     lfos,
-    gain: master,
+    gain: voiceGain,
     filter,
     layerGainA,
     layerGainB,
@@ -372,39 +459,14 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
 }
 
 export function noteOff (pitchOrKey, trackId) {
-  const keys = []
-  if (typeof pitchOrKey === 'string' && pitchOrKey.includes(':')) keys.push(pitchOrKey)
-  else {
-    const pitch = pitchOrKey
-    voices.forEach((_, key) => {
-      if (key.startsWith(String(trackId || 0) + ':' + pitch + ':') || key.endsWith(':' + pitch)) keys.push(key)
-    })
-  }
-  keys.forEach((key) => {
-    const voice = voices.get(key)
-    if (!voice) return
-    const now = voice.gain.context.currentTime
-    const rules = pb()
-    const release = releaseSec(voice.artic, rules)
-    voice.gain.gain.cancelScheduledValues(now)
-    voice.gain.gain.setTargetAtTime(0, now, Math.max(0.03, release / 3))
-    if (voice.filter) {
-      voice.filter.frequency.cancelScheduledValues(now)
-      voice.filter.frequency.setTargetAtTime(rules.cutoffMinHz * 0.55, now, Math.max(0.04, release / 3))
-    }
-    const holdMs = Math.round(release * 1000 + 80)
-    setTimeout(() => {
-      voice.sources.forEach((src) => { try { src.stop() } catch (err) { /* ended */ } })
-      ;(voice.lfos || []).forEach((osc) => { try { osc.stop() } catch (err) { /* ended */ } })
-      try { voice.gain.disconnect() } catch (err) { /* already */ }
-      try { voice.filter && voice.filter.disconnect() } catch (err) { /* already */ }
-    }, holdMs)
-    voices.delete(key)
-  })
+  resolveVoiceKeys(pitchOrKey, trackId).forEach((key) => releaseVoice(key))
 }
 
 export function allNotesOff () {
-  Array.from(voices.keys()).forEach((key) => noteOff(key))
+  noteEpoch += 1
+  cancelPendingKeys(Array.from(pending.keys()))
+  pending.clear()
+  Array.from(voices.keys()).forEach((key) => releaseVoice(key))
 }
 
 export async function preloadInstrument (graph, definitionId) {

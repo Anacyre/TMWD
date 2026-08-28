@@ -1,7 +1,12 @@
 <template>
-  <view v-if="session.openPlugin" class="host" @click.self="close" @pointerdown="onHostDown">
-      <view class="sheet" :class="skinClass" @click.stop @pointerdown="onHostDown">
-        <view class="grab">
+  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="close" @pointerdown="onHostDown">
+      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite }]" @click.stop @pointerdown="onHostDown">
+        <view v-if="lite" class="head-lite">
+          <text class="grab-change" @click="changePlugin">Change</text>
+          <text v-if="session.openPlugin" class="grab-remove" @click="remove">Remove</text>
+          <view class="close-x" aria-label="Dismiss" @click="close">×</view>
+        </view>
+        <view v-else class="grab">
           <text class="grab-change" @click="changePlugin">Change</text>
           <text v-if="session.openPlugin" class="grab-remove" @click="remove">Remove</text>
           <text class="grab-close" @click="close">Close</text>
@@ -60,7 +65,9 @@ import PluginBoostX from './plugin-boost-x.vue'
 import PluginDynamicX from './plugin-dynamic-x.vue'
 import PluginLimiterX from './plugin-limiter-x.vue'
 import './dsp-theme.css'
+import './lite-plugin-surface.css'
 
+const lite = computed(() => isLite())
 const liveSpectrum = ref([])
 const liveMeters = ref({})
 const insert = computed(() => resolveOpenInsert(session.webMixer, session.openPlugin, session.tracks))
@@ -126,7 +133,8 @@ function changePlugin () {
 let holdTimer = 0
 function onHostDown (e) {
   const cls = (e.target && (e.target.className || e.target.classList && e.target.classList.value)) || ''
-  if (String(cls).indexOf('grab') >= 0) return
+  const clsStr = String(cls)
+  if (clsStr.indexOf('grab') >= 0 || clsStr.indexOf('head-lite') >= 0 || clsStr.indexOf('close-x') >= 0) return
   clearTimeout(holdTimer)
   holdTimer = setTimeout(() => changePlugin(), 480)
   const up = () => {
@@ -152,6 +160,12 @@ function onChange () { persistWebMixer() }
   padding: max(6px, env(safe-area-inset-top, 0px)) 8px max(8px, env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
 }
+.host.lite {
+  padding:
+    max(16px, env(safe-area-inset-top, 0px))
+    16px
+    max(16px, env(safe-area-inset-bottom, 0px));
+}
 .sheet {
   /* ~3/4 of viewport area: sqrt(0.75) ≈ 0.866 on each axis */
   width: min(86.6vw, calc(100vw - 12px));
@@ -176,6 +190,25 @@ function onChange () { persistWebMixer() }
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
 }
+.host.lite .sheet {
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
+  max-height: 100%;
+}
+.head-lite {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 0 8px 0 12px;
+  flex-shrink: 0;
+  position: relative;
+}
+.head-lite .close-x {
+  margin-left: auto;
+}
 .grab {
   height: 36px;
   display: flex;
@@ -192,6 +225,7 @@ function onChange () { persistWebMixer() }
 .grab-remove, .grab-close, .grab-change { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
 .grab-remove { color: #a87870; }
 .grab-change { color: #c8c8c8; margin-right: auto; }
+.head-lite .grab-change { margin-right: 0; }
 .missing {
   padding: 24px 16px 40px;
   display: flex;

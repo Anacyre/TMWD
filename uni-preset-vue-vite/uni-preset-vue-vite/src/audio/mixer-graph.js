@@ -1,6 +1,7 @@
 import { ensureFxWorklet, createChainNode, pushChain, createAnalyser } from '../dsp/runtime.js'
 import { remoteProcessInserts, samplerProcessInserts } from '../model/web-mixer.js'
 import { dbToGain, dbFromFader, isTrackAudible, isBusAudible, SMOOTH_SEC, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
+import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
 
 function wireDryBypass (graph) {
   try {
@@ -196,10 +197,13 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   const chainOpts = { localPlayback }
   const remoteSends = (webMixer.remote && webMixer.remote.sends) || []
   const samplerTrack = (tracks || []).find((track) => track.source === 'web-sampler' && track.type !== 'master')
+  const orchTrack = (tracks || []).find((track) => isMOrchestraTrack(track) && track.type !== 'master' && track.type !== 'group')
   const samplerLane = samplerTrack && webMixer.tracks
     ? (webMixer.tracks[String(samplerTrack.id)] || webMixer.tracks[samplerTrack.id])
     : null
   const samplerSends = (samplerLane && samplerLane.sends) || remoteSends
+  const samplerAudible = samplerTrack ? isTrackAudible(samplerTrack, tracks) : false
+  const orchAudible = orchTrack ? isTrackAudible(orchTrack, tracks) : false
 
   const remoteAudible = true
   smoothGain(nodes.remoteSendAPost, sendAmount(remoteSends, 'send_a', false, remoteAudible), ctx)
@@ -209,13 +213,13 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   smoothGain(nodes.remoteSendBPre, sendAmount(remoteSends, 'send_b', true, remoteAudible), ctx)
   smoothGain(nodes.remoteSendCPre, sendAmount(remoteSends, 'send_c', true, remoteAudible), ctx)
 
-  const samplerAudible = samplerTrack ? isTrackAudible(samplerTrack, tracks) : true
-  smoothGain(nodes.samplerSendAPost, sendAmount(samplerSends, 'send_a', false, samplerAudible), ctx)
-  smoothGain(nodes.samplerSendBPost, sendAmount(samplerSends, 'send_b', false, samplerAudible), ctx)
-  smoothGain(nodes.samplerSendCPost, sendAmount(samplerSends, 'send_c', false, samplerAudible), ctx)
-  smoothGain(nodes.samplerSendAPre, sendAmount(samplerSends, 'send_a', true, samplerAudible), ctx)
-  smoothGain(nodes.samplerSendBPre, sendAmount(samplerSends, 'send_b', true, samplerAudible), ctx)
-  smoothGain(nodes.samplerSendCPre, sendAmount(samplerSends, 'send_c', true, samplerAudible), ctx)
+  const samplerAudibleForSends = samplerTrack ? samplerAudible : true
+  smoothGain(nodes.samplerSendAPost, sendAmount(samplerSends, 'send_a', false, samplerAudibleForSends), ctx)
+  smoothGain(nodes.samplerSendBPost, sendAmount(samplerSends, 'send_b', false, samplerAudibleForSends), ctx)
+  smoothGain(nodes.samplerSendCPost, sendAmount(samplerSends, 'send_c', false, samplerAudibleForSends), ctx)
+  smoothGain(nodes.samplerSendAPre, sendAmount(samplerSends, 'send_a', true, samplerAudibleForSends), ctx)
+  smoothGain(nodes.samplerSendBPre, sendAmount(samplerSends, 'send_b', true, samplerAudibleForSends), ctx)
+  smoothGain(nodes.samplerSendCPre, sendAmount(samplerSends, 'send_c', true, samplerAudibleForSends), ctx)
 
   const reverb = (webMixer.buses || []).find((bus) => bus.id === BUS_REVERB) || (webMixer.buses || [])[0]
   const delay = (webMixer.buses || []).find((bus) => bus.id === BUS_DELAY) || (webMixer.buses || [])[1]
@@ -230,13 +234,27 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   smoothGain(nodes.busReverbGain, reverbGain, ctx)
   smoothGain(nodes.busDelayGain, delayGain, ctx)
 
+  let samplerBusGain = 1
   if (samplerTrack) {
     const db = samplerTrack.volumeDb != null ? samplerTrack.volumeDb : dbFromFader(samplerTrack.volume)
-    smoothGain(nodes.samplerMix, samplerAudible ? dbToGain(db) : 0, ctx)
+    samplerBusGain = samplerAudible ? dbToGain(db) : 0
+  }
+  if (orchTrack) {
+    const db = orchTrack.volumeDb != null ? orchTrack.volumeDb : dbFromFader(orchTrack.volume)
+    const orchGain = orchAudible ? dbToGain(db) : 0
+    if (orchGain > samplerBusGain) samplerBusGain = orchGain
+    if (!samplerTrack) {
+      const pan = Math.min(1, Math.max(-1, Number(orchTrack.pan) || 0))
+      nodes.samplerPan.pan.setTargetAtTime(pan, ctx.currentTime, SMOOTH_SEC)
+    }
+  }
+  if (!samplerTrack && !orchTrack) samplerBusGain = 1
+  else if (samplerBusGain < 0.001 && (samplerAudible || orchAudible)) samplerBusGain = 1
+  smoothGain(nodes.samplerMix, samplerBusGain, ctx)
+
+  if (samplerTrack) {
     const pan = Math.min(1, Math.max(-1, Number(samplerTrack.pan) || 0))
     nodes.samplerPan.pan.setTargetAtTime(pan, ctx.currentTime, SMOOTH_SEC)
-  } else {
-    smoothGain(nodes.samplerMix, 1, ctx)
   }
 
   const masterMute = webMixer.master && webMixer.master.mute
