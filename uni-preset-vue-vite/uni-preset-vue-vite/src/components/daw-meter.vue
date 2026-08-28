@@ -11,7 +11,7 @@ const props = defineProps({
   level: { type: Number, default: 0 }
 })
 
-const percent = computed(() => Math.min(100, Math.max(0, props.level * 100)))
+const percent = computed(() => Math.min(100, Math.max(0, Math.pow(Math.max(0, props.level), 0.55) * 100)))
 </script>
 
 <style scoped>

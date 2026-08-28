@@ -287,7 +287,7 @@ private:
     bool playing = false;
     bool recording = false;
     bool looping = false;
-    bool metronome = true;
+    bool metronome = false;
     bool snap = true;
 
     double positionBeats = 0.0;

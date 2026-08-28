@@ -128,11 +128,13 @@ export function defaultDurationTicks (view) {
 export function subdivisionTicks (pixelsPerBeat, timeSig) {
   const bar = ticksPerBar(timeSig.numerator, timeSig.denominator)
   const beat = Math.round((PPQ * 4) / Math.max(1, timeSig.denominator))
-  const pxPerTick = pixelsPerBeat / PPQ
-  let sub = beat
-  if (pxPerTick * (beat / 2) > 8) sub = beat / 2
-  if (pxPerTick * (beat / 4) > 8) sub = beat / 4
-  if (pxPerTick * (beat / 8) > 10) sub = beat / 8
+  const pxPerBeat = Math.max(1, pixelsPerBeat)
+  let sub = bar
+  if (pxPerBeat >= 8) sub = beat
+  if (pxPerBeat >= 22) sub = beat / 2
+  if (pxPerBeat >= 40) sub = beat / 4
+  if (pxPerBeat >= 72) sub = beat / 8
+  if (pxPerBeat >= 120) sub = beat / 16
   return { bar, beat, sub: Math.max(1, Math.round(sub)) }
 }
 

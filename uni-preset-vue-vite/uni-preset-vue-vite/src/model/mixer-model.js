@@ -143,9 +143,13 @@ export function isTrackAudible (track, tracks) {
   if (track.mute) return false
   if (track.type === 'master') return !track.mute
   const list = tracks || []
+  const parent = list.find((item) => item && item.id === track.parentId)
+  if (parent && parent.mute) return false
   const anySolo = list.some((item) => item && item.solo && item.type !== 'master' && !item.mute)
-  if (anySolo && !track.solo) return false
-  return true
+  if (!anySolo) return true
+  if (track.solo) return true
+  if (parent && parent.solo) return true
+  return false
 }
 
 export function isBusAudible (bus, buses) {

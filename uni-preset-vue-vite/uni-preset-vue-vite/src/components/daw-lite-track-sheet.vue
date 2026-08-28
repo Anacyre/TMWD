@@ -6,6 +6,7 @@
     @close="closeLiteSheet"
   >
     <view v-if="tab === 'sampler'" class="os noscroll">
+      <view class="swap" @click.stop="changeInstrument">Change plugin</view>
       <daw-m-orchestra v-if="mOrchestra" />
       <daw-orchestra-sampler v-else />
     </view>
@@ -17,6 +18,7 @@
           :key="'s' + index"
           class="fx-row"
           @click.stop="onSlot(index, slot)"
+          @pointerdown.stop="onFxHold(index, slot, $event)"
         >
           <text class="fx-name">{{ slotLabel(slot) }}</text>
           <text class="fx-go">{{ slot ? 'Open' : '+' }}</text>
@@ -52,7 +54,9 @@ import {
   closeLiteSheet,
   getSelectedTrack,
   addInsert,
+  replaceInsert,
   openPlugin,
+  openPluginPicker,
   listPlugins
 } from '../store/session.js'
 import { laneInserts, MIXER_INSERT_SLOTS } from '../model/web-mixer.js'
@@ -111,11 +115,35 @@ function onSlot (index, slot) {
   openPlugin(lane.value, index)
 }
 
+function onFxHold (index, slot, e) {
+  if (!slot) return
+  const timer = setTimeout(() => {
+    picker.value = true
+    session.liteSheet = { ...(session.liteSheet || {}), picker: true, replaceIndex: index, tab: 'fx' }
+  }, 450)
+  const clear = () => {
+    clearTimeout(timer)
+    window.removeEventListener('pointerup', clear)
+    window.removeEventListener('pointermove', clear)
+  }
+  window.addEventListener('pointerup', clear)
+  window.addEventListener('pointermove', clear)
+}
+
 function choose (pluginId) {
   if (!pluginId) return
   picker.value = false
-  addInsert(lane.value, pluginId)
+  const replaceIndex = session.liteSheet && session.liteSheet.replaceIndex
+  if (replaceIndex != null && replaceIndex >= 0) replaceInsert(lane.value, replaceIndex, pluginId)
+  else addInsert(lane.value, pluginId)
+  if (session.liteSheet) session.liteSheet.replaceIndex = null
   closeLiteSheet()
+}
+
+function changeInstrument () {
+  const index = session.tracks.indexOf(track.value)
+  closeLiteSheet()
+  if (index >= 0) openPluginPicker(index)
 }
 </script>
 
@@ -134,4 +162,15 @@ function choose (pluginId) {
 .fx-go { color: #8d8d8d; font-size: 18px; }
 .picks { margin-top: 0; }
 .os { min-height: 320px; }
+.swap {
+  min-height: 40px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: #2a2a2a;
+  color: #e6e6e6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+}
 </style>

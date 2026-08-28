@@ -111,7 +111,7 @@ export const session = reactive({
   playing: false,
   recording: false,
   looping: false,
-  metronome: true,
+  metronome: false,
   snap: true,
   snapGridBeats: 0.25,
   bpm: starterDemo.bpm,
@@ -353,6 +353,8 @@ function applyProject (project) {
   if (project.webMixer) {
     applyWebMixer(project.webMixer)
   }
+  if (project.pixelsPerBeat) session.pixelsPerBeat = project.pixelsPerBeat
+  if (project.trackHeight) session.trackHeight = project.trackHeight
   syncNativeInsertsToWebMixer(session.webMixer, session.tracks)
   refreshMixerGraph()
 }
@@ -362,7 +364,6 @@ function mixerGraphOptions () {
 }
 
 function refreshMixerGraph () {
-  syncNativeInsertsToWebMixer(session.webMixer, session.tracks)
   if (audioGraph) syncMixerGraph(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
 }
 
@@ -573,7 +574,7 @@ export function setTrackParameter (track, parameter, value) {
 }
 
 export function setPixelsPerBeat (ppb) {
-  session.pixelsPerBeat = Math.min(180, Math.max(12, ppb))
+  session.pixelsPerBeat = Math.min(280, Math.max(8, ppb))
 }
 
 let rafId = 0
@@ -715,7 +716,7 @@ export function setLoopRange (startBeats, endBeats) {
 }
 
 export function setTrackHeight (value) {
-  session.trackHeight = Math.min(132, Math.max(44, value))
+  session.trackHeight = Math.min(160, Math.max(36, value))
 }
 
 export function setEditorTab (tab) {
@@ -733,7 +734,10 @@ export function openInstrumentPicker (trackIndex) {
   openPluginPicker (trackIndex)
 }
 
-export function openPluginPicker (trackIndex) {
+export function openPluginPicker (trackOrIndex) {
+  const trackIndex = typeof trackOrIndex === 'number'
+    ? trackOrIndex
+    : session.tracks.indexOf(trackOrIndex)
   const track = session.tracks[trackIndex]
   if (!track || track.type === 'master') return
   session.selectedTrack = trackIndex
@@ -2025,13 +2029,7 @@ async function autosaveProject () {
       const reply = await fire('project.export')
       if (reply && reply.json) localStorage.setItem('dawweb.autosave', reply.json)
     } else {
-      localStorage.setItem('dawweb.autosave', JSON.stringify({
-        name: session.projectName,
-        bpm: session.bpm,
-        tracks: session.tracks,
-        clips: session.clips,
-        markers: session.markers
-      }))
+      localStorage.setItem('dawweb.autosave', JSON.stringify(serializeProject()))
     }
     session.unsaved = false
     session.saveStatus = 'Saved'
@@ -2091,27 +2089,74 @@ function downloadText (filename, text) {
   URL.revokeObjectURL(url)
 }
 
-export async function exportProject () {
-  if (isEngineConnected()) {
-    const reply = await fire('project.export')
-    if (reply && reply.json) {
-      downloadText((reply.name || session.projectName || 'project') + '.dawweb', reply.json)
-      rememberRecentProject()
-      showToast('Project exported')
-      return
-    }
+export function serializeProject () {
+  return {
+    version: 1,
+    name: session.projectName,
+    bpm: session.bpm,
+    timeSigNumerator: session.timeSigNum,
+    timeSigDenominator: session.timeSigDen,
+    positionBeats: session.positionBeats,
+    looping: session.looping,
+    loopStart: session.loopStart,
+    loopEnd: session.loopEnd,
+    metronome: session.metronome,
+    tracks: session.tracks,
+    clips: session.clips,
+    markers: session.markers,
+    webMixer: session.webMixer,
+    pixelsPerBeat: session.pixelsPerBeat,
+    trackHeight: session.trackHeight
   }
-  showToast('Connect the engine to export a project')
+}
+
+export async function saveProjectLocal () {
+  session.saveStatus = 'Saving…'
+  try {
+    const data = serializeProject()
+    const json = JSON.stringify(data)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem('dawweb.autosave', json)
+      localStorage.setItem('dawweb.project.last', json)
+    }
+    if (isEngineConnected()) {
+      await fire('project.save', { json }).catch(() => {})
+    }
+    downloadText((session.projectName || 'project') + '.dawweb', json)
+    session.unsaved = false
+    session.saveStatus = 'Saved'
+    rememberRecentProject()
+    showToast('Project saved')
+    setTimeout(() => {
+      if (session.saveStatus === 'Saved') session.saveStatus = ''
+    }, 1400)
+  } catch (err) {
+    session.saveStatus = ''
+    showToast(err.message || 'Save failed')
+  }
+}
+
+export async function exportProject () {
+  await saveProjectLocal()
 }
 
 export async function importProjectJson (json) {
   if (!json) return
-  if (isEngineConnected()) {
-    const reply = await fire('project.import', { json })
-    if (reply) showToast('Project loaded')
-    return
+  let data = json
+  if (typeof json === 'string') {
+    try { data = JSON.parse(json) } catch (err) {
+      showToast('Invalid project file')
+      return
+    }
   }
-  showToast('Connect the engine to open a project')
+  if (isEngineConnected()) {
+    const reply = await fire('project.import', { json: typeof json === 'string' ? json : JSON.stringify(data) })
+    if (reply) showToast('Project loaded')
+  }
+  applyProject(data)
+  if (data.webMixer) applyWebMixer(data.webMixer)
+  session.unsaved = false
+  showToast('Project loaded')
 }
 
 let audioGraph = null
@@ -2197,7 +2242,6 @@ async function doEnsureMixerAttached () {
   const graph = ensureGraph()
   if (!graph) return null
   if (graph.context.state === 'suspended') await graph.context.resume()
-  syncNativeInsertsToWebMixer(session.webMixer, session.tracks)
   try {
     await attachMixerGraph(graph, session.webMixer, (lane, meters) => {
       session.fxMeters[lane] = meters
@@ -2558,7 +2602,10 @@ function tickBrowserMeters () {
   browserMeterRaf = 0
   const graph = audioGraph
   const nodes = graph && graph.mixerNodes
-  if (!nodes) return
+  if (!nodes) {
+    browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
+    return
+  }
 
   const local = !session.remoteAudioOn
   const samplerPeak = Math.max(fxLanePeak('sampler'), peakFromAnalyser(nodes.analyserSampler))
@@ -2581,7 +2628,7 @@ function tickBrowserMeters () {
     }
   })
 
-  if (graph.mixerNodes && (local || session.playing || samplerPeak > 0.001 || remotePeak > 0.001)) {
+  if (graph.mixerNodes) {
     browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
   }
 }
@@ -2638,6 +2685,24 @@ function syncTrackInsertMeta (lane) {
       instrumentId: insert.pluginId,
       bypassed: insert.enabled === false
     }
+  })
+}
+
+export function replaceInsert (lane, index, pluginId) {
+  if (!pluginId) return
+  const extra = {}
+  if (pluginId === 'reverb-x' && lane.type === 'bus') extra.state = { returnOnly: true }
+  const list = laneInserts(session.webMixer, lane).slice()
+  while (list.length < MIXER_INSERT_SLOTS) list.push(null)
+  list[index] = createInsert(pluginId, plugins, extra)
+  setLaneInserts(session.webMixer, lane, list)
+  syncTrackInsertMeta(lane)
+  persistWebMixer()
+  openPlugin(lane, index)
+  unlockAudio().then(() => ensureMixerAttached()).then((graph) => {
+    if (graph && graph.mixerNodes) refreshMixerGraph()
+  }).catch((err) => {
+    showToast(err.message || 'Browser FX audio failed to start')
   })
 }
 

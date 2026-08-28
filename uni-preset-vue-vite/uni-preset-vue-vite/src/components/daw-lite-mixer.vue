@@ -23,7 +23,7 @@
             <view class="accent" :style="{ background: track.colour || '#3a3a3a' }" />
             <text class="name">{{ track.name }}</text>
             <view class="fader-row">
-              <daw-meter class="meter" :level="track.meterLevel || 0" />
+              <daw-meter class="meter" :level="meterOf(track)" />
               <daw-fader
                 class="vol"
                 orientation="vertical"
@@ -69,7 +69,7 @@
         <view class="accent" :style="{ background: master.colour || '#3a3a3a' }" />
         <text class="name">{{ master.name }}</text>
         <view class="fader-row">
-          <daw-meter class="meter" :level="master.meterLevel || 0" />
+          <daw-meter class="meter" :level="meterOf(master)" />
           <daw-fader
             class="vol"
             orientation="vertical"
@@ -130,6 +130,18 @@ function stripClass (track) {
     dim: !isTrackAudible(trackIndex(track)),
     group: track.type === 'group'
   }
+}
+
+function meterOf (track) {
+  const posted = session.fxMeters || {}
+  if (!track) return 0
+  if (track.type === 'master') {
+    return Math.max(track.meterLevel || 0, (posted.master && (posted.master.outPeak || posted.master.inPeak)) || 0)
+  }
+  const local = !session.remoteAudioOn
+  const sampler = Math.max((posted.sampler && (posted.sampler.outPeak || posted.sampler.inPeak)) || 0)
+  const remote = Math.max((posted.remote && (posted.remote.outPeak || posted.remote.inPeak)) || 0)
+  return Math.max(track.meterLevel || 0, local ? sampler : (track.source === 'web-sampler' ? sampler : remote))
 }
 
 function volumeLabel (track) {

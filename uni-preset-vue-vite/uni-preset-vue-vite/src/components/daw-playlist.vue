@@ -95,6 +95,8 @@
         scroll-y
         :enable-flex="true"
         :show-scrollbar="true"
+        @touchstart="onTouchStart"
+        @touchmove="onTouchMove"
         @scroll="onVScroll"
       >
         <view class="vbody" :style="{ height: tracksHeight + 'px' }">
@@ -990,27 +992,37 @@ function onWheel (e) {
 
 let pinchStart = 0
 let pinchPpb = 21
+let pinchHeight = 56
+let pinchDx = 1
+let pinchDy = 1
 function onTouchStart (e) {
   const touches = e.touches || (e.detail && e.detail.touches)
   if (touches && touches.length === 2) {
-    const dx = touches[0].clientX - touches[1].clientX
-    const dy = touches[0].clientY - touches[1].clientY
-    pinchStart = Math.hypot(dx, dy)
+    const dx = Math.abs(touches[0].clientX - touches[1].clientX)
+    const dy = Math.abs(touches[0].clientY - touches[1].clientY)
+    pinchStart = Math.hypot(dx, dy) || 1
+    pinchDx = Math.max(8, dx)
+    pinchDy = Math.max(8, dy)
     pinchPpb = session.pixelsPerBeat
+    pinchHeight = session.trackHeight
   }
 }
 function onTouchMove (e) {
   const touches = e.touches || (e.detail && e.detail.touches)
   if (!touches || touches.length !== 2 || !pinchStart) return
   if (e.preventDefault) e.preventDefault()
-  const dx = touches[0].clientX - touches[1].clientX
-  const dy = touches[0].clientY - touches[1].clientY
+  const dx = Math.abs(touches[0].clientX - touches[1].clientX)
+  const dy = Math.abs(touches[0].clientY - touches[1].clientY)
   const dist = Math.hypot(dx, dy)
   const midX = (touches[0].clientX + touches[1].clientX) / 2
   const el = lanesEl.value && (lanesEl.value.$el || lanesEl.value)
   const rect = el && el.getBoundingClientRect ? el.getBoundingClientRect() : { left: 0 }
   const beat = (midX - rect.left + scrollX.value) / session.pixelsPerBeat
-  setPixelsPerBeat(pinchPpb * (dist / pinchStart))
+  const horiz = dx >= dy * 0.72
+  const vert = dy >= dx * 0.72
+  if (horiz) setPixelsPerBeat(pinchPpb * (Math.max(8, dx) / pinchDx))
+  else if (!vert) setPixelsPerBeat(pinchPpb * (dist / pinchStart))
+  if (vert && lite.value) setTrackHeight(pinchHeight * (Math.max(8, dy) / pinchDy))
   if (el && el.scrollLeft != null) el.scrollLeft = Math.max(0, beat * session.pixelsPerBeat - (midX - rect.left))
 }
 

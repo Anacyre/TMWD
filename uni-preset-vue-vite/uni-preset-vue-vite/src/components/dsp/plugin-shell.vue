@@ -43,6 +43,7 @@
     </view>
 
     <view v-if="menu" class="drop menu-drop" @click.stop>
+      <view class="drop-item" @click="emitChange">Change plugin</view>
       <view class="drop-item" @click="doReset">Reset</view>
     </view>
   </view>
@@ -50,6 +51,8 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { session, closePlugin, openLiteSheet, isLite } from '../../store/session.js'
+import { laneFromOpen } from '../../model/web-mixer.js'
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -57,7 +60,7 @@ const props = defineProps({
   items: { type: Array, default: () => [] },
   enabled: { type: Boolean, default: true }
 })
-const emit = defineEmits(['update:modelValue', 'update:enabled', 'reset'])
+const emit = defineEmits(['update:modelValue', 'update:enabled', 'reset', 'change-plugin'])
 const open = ref(false)
 const menu = ref(false)
 const currentLabel = computed(() => {
@@ -79,6 +82,24 @@ function step (dir) {
 function doReset () {
   menu.value = false
   emit('reset')
+}
+function emitChange () {
+  menu.value = false
+  emit('change-plugin')
+  const open = session.openPlugin
+  if (!open || !isLite()) return
+  const lane = laneFromOpen(open)
+  const trackIndex = lane && lane.type === 'track'
+    ? session.tracks.findIndex((track) => String(track.id) === String(lane.id))
+    : session.tracks.findIndex((track) => track.type === 'master')
+  closePlugin()
+  openLiteSheet({
+    kind: 'track',
+    tab: 'fx',
+    picker: true,
+    replaceIndex: open.index,
+    trackIndex: trackIndex >= 0 ? trackIndex : session.selectedTrack
+  })
 }
 </script>
 

@@ -65,8 +65,8 @@ export function drawPianoRoll (ctx, state) {
   const velY = gridY + gridH
 
   ctx.clearRect(0, 0, width, height)
-  ctx.fillStyle = '#101010'
-  ctx.fillRect(0, 0, width, height)
+    ctx.fillStyle = '#141414'
+    ctx.fillRect(0, 0, width, height)
 
   ctx.save()
   ctx.beginPath()
@@ -218,18 +218,18 @@ function drawGrid (ctx, width, height, view, timeSignatures, timeSig, scaleKey, 
     const pitch = 127 - i
     const y = i * view.pixelsPerSemitone - view.scrollY
     const inScale = !scaleGuide || isScalePitch(pitch, scaleKey, scaleName)
-    if (pitch % 12 === 0) ctx.fillStyle = inScale ? '#2a3140' : '#161616'
-    else if (isBlackKey(pitch)) ctx.fillStyle = inScale ? '#1a2433' : '#0c0c0c'
-    else ctx.fillStyle = inScale ? '#243044' : '#121212'
+    if (pitch % 12 === 0) ctx.fillStyle = inScale ? '#1c2430' : '#181818'
+    else if (isBlackKey(pitch)) ctx.fillStyle = inScale ? '#151c26' : '#101010'
+    else ctx.fillStyle = inScale ? '#1a222c' : '#161616'
     ctx.fillRect(0, y, width, view.pixelsPerSemitone)
-    ctx.fillStyle = '#0a0a0a'
+    ctx.fillStyle = '#202020'
     ctx.fillRect(0, y, width, 1)
   }
   const startTick = Math.max(0, Math.floor((view.scrollX / view.pixelsPerBeat) * PPQ))
   const endTick = startTick + Math.ceil((width / view.pixelsPerBeat) * PPQ)
   iterateGridLines(startTick, endTick, view.pixelsPerBeat, timeSignatures, timeSig, (tick, kind) => {
     const x = tickToX(tick, view)
-    ctx.fillStyle = kind === 'bar' ? '#2c2c2c' : (kind === 'beat' ? '#1c1c1c' : '#161616')
+    ctx.fillStyle = kind === 'bar' ? '#2c2c2c' : (kind === 'beat' ? '#222222' : '#1a1a1a')
     ctx.fillRect(x, 0, 1, height)
   })
 }
@@ -256,28 +256,20 @@ function drawNotes (ctx, notes, view, selectedIds, clip) {
     const vel = midiVelocity(note.velocity) / 127
     const selected = selectedIds && selectedIds.has && selectedIds.has(note.id)
     ctx.globalAlpha = note.muted ? 0.32 : 1
-    ctx.fillStyle = shade(base, 0.55 + vel * 0.4)
-    fillRound(ctx, r.x, r.y, r.w, r.h, 2)
-    if (note.color) {
-      ctx.fillStyle = COLOR_META[note.color % COLOR_META.length]
-      ctx.fillRect(r.x, r.y, 2, r.h)
-    }
-    if (note.slide || note.porta) {
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'
-      ctx.fillRect(r.x + 4, r.y + r.h / 2 - 0.5, Math.max(6, r.w - 8), 1)
-    }
-    ctx.strokeStyle = selected ? 'rgba(255,255,255,0.7)' : 'rgba(0,0,0,0.45)'
-    ctx.lineWidth = selected ? 1.4 : 1
+    ctx.fillStyle = shade(base, 0.42 + vel * 0.38)
+    fillRound(ctx, r.x, r.y, r.w, r.h, 3)
+    ctx.strokeStyle = selected ? '#e8e8e8' : 'rgba(255,255,255,0.16)'
+    ctx.lineWidth = selected ? 1.5 : 1
     ctx.beginPath()
-    ctx.moveTo(r.x + 2, r.y)
-    ctx.arcTo(r.x + r.w, r.y, r.x + r.w, r.y + r.h, 2)
-    ctx.arcTo(r.x + r.w, r.y + r.h, r.x, r.y + r.h, 2)
-    ctx.arcTo(r.x, r.y + r.h, r.x, r.y, 2)
-    ctx.arcTo(r.x, r.y, r.x + r.w, r.y, 2)
+    ctx.moveTo(r.x + 3, r.y)
+    ctx.arcTo(r.x + r.w, r.y, r.x + r.w, r.y + r.h, 3)
+    ctx.arcTo(r.x + r.w, r.y + r.h, r.x, r.y + r.h, 3)
+    ctx.arcTo(r.x, r.y + r.h, r.x, r.y, 3)
+    ctx.arcTo(r.x, r.y, r.x + r.w, r.y, 3)
     ctx.stroke()
-    if (r.w > 16) {
-      ctx.fillStyle = 'rgba(255,255,255,0.18)'
-      ctx.fillRect(r.right - 4, r.y + 2, 2, r.h - 4)
+    if (r.w > 14) {
+      ctx.fillStyle = 'rgba(255,255,255,0.22)'
+      ctx.fillRect(r.right - 5, r.y + 3, 2, Math.max(2, r.h - 6))
     }
     ctx.globalAlpha = 1
   })

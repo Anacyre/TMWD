@@ -1,7 +1,8 @@
 <template>
-  <view v-if="session.openPlugin" class="host" @click.self="close">
-      <view class="sheet" :class="skinClass" @click.stop>
+  <view v-if="session.openPlugin" class="host" @click.self="close" @pointerdown="onHostDown">
+      <view class="sheet" :class="skinClass" @click.stop @pointerdown="onHostDown">
         <view class="grab">
+          <text class="grab-change" @click="changePlugin">Change</text>
           <text v-if="session.openPlugin" class="grab-remove" @click="remove">Remove</text>
           <text class="grab-close" @click="close">Close</text>
         </view>
@@ -10,6 +11,7 @@
           :insert="insert"
           :meters="meters"
           @change="onChange"
+          @change-plugin="changePlugin"
         />
         <plugin-equalizer-x
           v-else-if="insert && insert.pluginId === 'equalizer-x'"
@@ -17,6 +19,7 @@
           :spectrum="spectrum"
           :meters="meters"
           @change="onChange"
+          @change-plugin="changePlugin"
         />
         <plugin-boost-x v-else-if="insert && insert.pluginId === 'boost-x'" :insert="insert" :meters="meters" @change="onChange" />
         <plugin-dynamic-x
@@ -25,12 +28,14 @@
           :meters="meters"
           :spectrum="spectrum"
           @change="onChange"
+          @change-plugin="changePlugin"
         />
         <plugin-limiter-x
           v-else-if="insert && insert.pluginId === 'limiter-x'"
           :insert="insert"
           :meters="meters"
           @change="onChange"
+          @change-plugin="changePlugin"
         />
         <view v-else-if="insert" class="missing">
           <text class="missing-title">Unsupported plugin</text>
@@ -46,7 +51,7 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { session, closePlugin, persistWebMixer, getFxAnalyser, removeInsert } from '../../store/session.js'
+import { session, closePlugin, persistWebMixer, getFxAnalyser, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
 import { resolveOpenInsert, fxMeterLaneKey, laneFromOpen } from '../../model/web-mixer.js'
 import { pickPluginSpectrum, metersForInsert } from '../../dsp/runtime.js'
 import PluginReverbX from './plugin-reverb-x.vue'
@@ -100,6 +105,38 @@ function remove () {
   removeInsert(laneFromOpen(open), open.index)
   closePlugin()
 }
+function changePlugin () {
+  const open = session.openPlugin
+  if (!open) return
+  const lane = laneFromOpen(open)
+  const trackIndex = lane && lane.type === 'track'
+    ? session.tracks.findIndex((track) => String(track.id) === String(lane.id))
+    : session.tracks.findIndex((track) => track.type === 'master')
+  closePlugin()
+  if (isLite()) {
+    openLiteSheet({
+      kind: 'track',
+      tab: 'fx',
+      picker: true,
+      replaceIndex: open.index,
+      trackIndex: trackIndex >= 0 ? trackIndex : session.selectedTrack
+    })
+  }
+}
+let holdTimer = 0
+function onHostDown (e) {
+  const cls = (e.target && (e.target.className || e.target.classList && e.target.classList.value)) || ''
+  if (String(cls).indexOf('grab') >= 0) return
+  clearTimeout(holdTimer)
+  holdTimer = setTimeout(() => changePlugin(), 480)
+  const up = () => {
+    clearTimeout(holdTimer)
+    window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointermove', up)
+  }
+  window.addEventListener('pointerup', up)
+  window.addEventListener('pointermove', up)
+}
 function onChange () { persistWebMixer() }
 </script>
 
@@ -152,8 +189,9 @@ function onChange () { persistWebMixer() }
   font-size: 10px;
   flex-shrink: 0;
 }
-.grab-remove, .grab-close { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
+.grab-remove, .grab-close, .grab-change { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
 .grab-remove { color: #a87870; }
+.grab-change { color: #c8c8c8; margin-right: auto; }
 .missing {
   padding: 24px 16px 40px;
   display: flex;

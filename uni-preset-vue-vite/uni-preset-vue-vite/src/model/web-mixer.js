@@ -212,11 +212,14 @@ function syncLaneFromNativeSlots (webSlots, nativeSlots, lane) {
     const native = nativeSlots && nativeSlots[i]
     const web = slots[i]
     if (web && web.pluginId) {
-      if (!nativeSlotEmpty(native)) web.enabled = native.bypassed !== true
       continue
     }
-    if (!nativeSlotEmpty(native)) slots[i] = insertFromNativeSlot(native, lane)
-    else slots[i] = null
+    if (!nativeSlotEmpty(native)) {
+      const mapped = insertFromNativeSlot(native, lane)
+      if (mapped) slots[i] = mapped
+    } else {
+      slots[i] = web || null
+    }
   }
   return slots
 }

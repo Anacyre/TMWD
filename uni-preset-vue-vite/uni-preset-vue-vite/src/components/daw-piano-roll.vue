@@ -11,7 +11,7 @@
       <view v-if="!lite" class="chip" :class="{ on: tool === 'draw' }" @click="tool = 'draw'">Draw</view>
       <view v-if="!lite" class="chip" :class="{ on: tool === 'select' }" @click="tool = 'select'">Select</view>
       <view v-if="!lite" class="chip" :class="{ on: tool === 'erase' }" @click="tool = 'erase'">Erase</view>
-      <view class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Grid {{ snapLabel }}</view>
+      <view v-if="!lite" class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Snap {{ snapLabel }}</view>
       <view v-if="!lite" class="chip" @click="quantizeSelected">Quantize</view>
       <view class="chip" @click="undoEdit">Undo</view>
       <view class="chip" @click="redoEdit">Redo</view>

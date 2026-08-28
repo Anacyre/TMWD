@@ -6,6 +6,7 @@
         <text class="sub">Cloud orchestral plugin</text>
       </view>
       <text class="status" :class="{ ok: isReady, err: isError }">{{ statusText }}</text>
+      <view class="swap" @click.stop="changePlugin">Change</view>
     </view>
 
     <view class="body">
@@ -111,7 +112,8 @@ import {
   setTechnique,
   setController,
   previewNoteOn,
-  previewNoteOff
+  previewNoteOff,
+  openPluginPicker
 } from '../store/session.js'
 
 const familyId = ref('strings')
@@ -259,6 +261,11 @@ function allOff () {
     if (held[pitch]) noteOff(Number(pitch))
   })
 }
+
+function changePlugin () {
+  if (!track.value) return
+  openPluginPicker(track.value)
+}
 </script>
 
 <style scoped>
@@ -290,6 +297,13 @@ function allOff () {
 .status { font-size: 11px; color: #8d8d8d; }
 .status.ok { color: #9db89a; }
 .status.err { color: #d08a8a; }
+.swap {
+  font-size: 11px;
+  color: #cfcfcf;
+  padding: 4px 8px;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
 .body { flex: 1; display: flex; min-height: 0; }
 .families {
   width: 76px;
