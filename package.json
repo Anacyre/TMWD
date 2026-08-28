@@ -1,0 +1,15 @@
+{
+  "name": "dawweb",
+  "private": true,
+  "scripts": {
+    "build:web": "npm ci --prefix uni-preset-vue-vite/uni-preset-vue-vite && npm run build:h5 --prefix uni-preset-vue-vite/uni-preset-vue-vite",
+    "build": "npm run build:web",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.127.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
