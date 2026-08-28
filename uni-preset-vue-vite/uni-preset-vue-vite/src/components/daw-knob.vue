@@ -2,7 +2,8 @@
   <view
     class="knob"
     :title="title"
-    @pointerdown.stop.prevent="onDown"
+    @mousedown.stop.prevent="begin"
+    @touchstart.stop.prevent="begin"
     @dblclick.stop="reset"
   >
     <view class="disc">
@@ -20,30 +21,42 @@ const props = defineProps({
   max: { type: Number, default: 1 },
   title: { type: String, default: 'Pan' }
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
 const angle = computed(() => {
   const t = (props.modelValue - props.min) / (props.max - props.min || 1)
   return -135 + t * 270
 })
 
-function onDown (e) {
-  const startY = e.clientY
+function set (next) {
+  emit('update:modelValue', Math.min(props.max, Math.max(props.min, next)))
+}
+
+function begin (e) {
+  emit('drag-start')
+  const isTouch = !!e.touches
+  const startY = isTouch ? e.touches[0].clientY : e.clientY
   const startVal = props.modelValue
   const move = (ev) => {
-    const next = startVal - (ev.clientY - startY) * 0.01
-    emit('update:modelValue', Math.min(props.max, Math.max(props.min, next)))
+    if (ev.cancelable) ev.preventDefault()
+    const y = ev.touches ? ev.touches[0].clientY : ev.clientY
+    set(startVal - (y - startY) * 0.01)
   }
-  const up = () => {
-    window.removeEventListener('pointermove', move)
-    window.removeEventListener('pointerup', up)
+  const end = () => {
+    window.removeEventListener('mousemove', move)
+    window.removeEventListener('mouseup', end)
+    window.removeEventListener('touchmove', move)
+    window.removeEventListener('touchend', end)
+    emit('drag-end')
   }
-  window.addEventListener('pointermove', move)
-  window.addEventListener('pointerup', up)
+  window.addEventListener('mousemove', move)
+  window.addEventListener('mouseup', end)
+  window.addEventListener('touchmove', move, { passive: false })
+  window.addEventListener('touchend', end)
 }
 
 function reset () {
-  emit('update:modelValue', 0)
+  set(0)
 }
 </script>
 
@@ -53,7 +66,8 @@ function reset () {
   height: 26px;
   flex-shrink: 0;
   cursor: ns-resize;
-  touch-action: pan-x;
+  touch-action: none;
+  user-select: none;
 }
 .disc {
   width: 100%;

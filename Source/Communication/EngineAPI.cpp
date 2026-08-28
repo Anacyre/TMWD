@@ -82,25 +82,27 @@ namespace
         int voice;
         double entryBeat;
         double exitBeat;
+        const char* instrumentId;
+        const char* techniqueId;
     };
 
     const DemoTrackSpec demoTracks[]
     {
-        { "Violin I",   "Strings",    0xffd9a04a, 74, 0.80f, -0.55f, DemoRole::pad,        2,  0.0, 64.0 },
-        { "Violin II",  "Strings",    0xffd18f45, 69, 0.78f, -0.30f, DemoRole::pad,        1,  0.0, 64.0 },
-        { "Viola",      "Strings",    0xffc47f3f, 62, 0.76f,  0.18f, DemoRole::pad,        0,  0.0, 64.0 },
-        { "Cello",      "Strings",    0xffb87038, 50, 0.78f,  0.42f, DemoRole::bass,       0,  8.0, 64.0 },
-        { "Bass",       "Strings",    0xffa66232, 38, 0.74f,  0.60f, DemoRole::bass,       0,  8.0, 64.0 },
-        { "Flute",      "Woodwinds",  0xff6dbf8a, 81, 0.68f, -0.22f, DemoRole::moving,     2, 16.0, 64.0 },
-        { "Oboe",       "Woodwinds",  0xff5faf7d, 74, 0.66f, -0.08f, DemoRole::moving,     1, 16.0, 48.0 },
-        { "Clarinet",   "Woodwinds",  0xff53a071, 69, 0.68f,  0.08f, DemoRole::moving,     0, 24.0, 64.0 },
-        { "Bassoon",    "Woodwinds",  0xff479065, 50, 0.66f,  0.22f, DemoRole::pad,        1, 32.0, 64.0 },
-        { "Horn",       "Brass",      0xff4a90d9, 57, 0.70f, -0.35f, DemoRole::brass,      0, 32.0, 64.0 },
-        { "Trumpet",    "Brass",      0xff4283c4, 69, 0.66f,  0.14f, DemoRole::brass,      2, 48.0, 64.0 },
-        { "Trombone",   "Brass",      0xff3a76b0, 52, 0.68f,  0.30f, DemoRole::brass,      1, 48.0, 64.0 },
-        { "Tuba",       "Brass",      0xff33699c, 38, 0.66f,  0.45f, DemoRole::bass,       0, 48.0, 64.0 },
-        { "Timpani",    "Percussion", 0xffc46bb3, 38, 0.72f,  0.00f, DemoRole::percussion, 0,  0.0, 64.0 },
-        { "Percussion", "Percussion", 0xffab5c9e, 60, 0.62f,  0.10f, DemoRole::percussion, 0, 32.0, 64.0 }
+        { "Violin I",   "Strings",    0xffd9a04a, 74, 0.80f, -0.55f, DemoRole::pad,        2,  0.0, 64.0, "m_orch_violin_1",  "m_orch_long" },
+        { "Violin II",  "Strings",    0xffd18f45, 69, 0.78f, -0.30f, DemoRole::pad,        1,  0.0, 64.0, "m_orch_violin_2",  "m_orch_long" },
+        { "Viola",      "Strings",    0xffc47f3f, 62, 0.76f,  0.18f, DemoRole::pad,        0,  0.0, 64.0, "m_orch_viola",     "m_orch_long" },
+        { "Cello",      "Strings",    0xffb87038, 50, 0.78f,  0.42f, DemoRole::bass,       0,  8.0, 64.0, "m_orch_cello",     "m_orch_long" },
+        { "Bass",       "Strings",    0xffa66232, 38, 0.74f,  0.60f, DemoRole::bass,       0,  8.0, 64.0, "m_orch_bass",      "m_orch_long" },
+        { "Flute",      "Woodwinds",  0xff6dbf8a, 81, 0.68f, -0.22f, DemoRole::moving,     2, 16.0, 64.0, "m_orch_flute",     "m_orch_long" },
+        { "Oboe",       "Woodwinds",  0xff5faf7d, 74, 0.66f, -0.08f, DemoRole::moving,     1, 16.0, 48.0, "m_orch_oboe",      "m_orch_long" },
+        { "Clarinet",   "Woodwinds",  0xff53a071, 69, 0.68f,  0.08f, DemoRole::moving,     0, 24.0, 64.0, "m_orch_clarinet",  "m_orch_long" },
+        { "Bassoon",    "Woodwinds",  0xff479065, 50, 0.66f,  0.22f, DemoRole::pad,        1, 32.0, 64.0, "m_orch_bassoon",   "m_orch_long" },
+        { "Horn",       "Brass",      0xff4a90d9, 57, 0.70f, -0.35f, DemoRole::brass,      0, 32.0, 64.0, "m_orch_horn",      "m_orch_long" },
+        { "Trumpet",    "Brass",      0xff4283c4, 69, 0.66f,  0.14f, DemoRole::brass,      2, 48.0, 64.0, "m_orch_trumpet",   "m_orch_long" },
+        { "Trombone",   "Brass",      0xff3a76b0, 52, 0.68f,  0.30f, DemoRole::brass,      1, 48.0, 64.0, "m_orch_trombone",  "m_orch_long" },
+        { "Tuba",       "Brass",      0xff33699c, 38, 0.66f,  0.45f, DemoRole::bass,       0, 48.0, 64.0, "m_orch_tuba",      "m_orch_long" },
+        { "Timpani",    "Percussion", 0xffc46bb3, 38, 0.72f,  0.00f, DemoRole::percussion, 0,  0.0, 64.0, "m_orch_bass_drum", "m_orch_hit"  },
+        { "Percussion", "Percussion", 0xffab5c9e, 60, 0.62f,  0.10f, DemoRole::percussion, 0, 32.0, 64.0, "m_orch_snare",     "m_orch_hit"  }
     };
 
     int nearestPitch (int pitchClass, int reference)
@@ -3932,7 +3934,6 @@ void EngineAPI::loadDemoOrchestra()
     if (auto* master = project.getTrack (0))
         master->inserts = { PluginSlot {}, PluginSlot {}, PluginSlot {}, PluginSlot {}, PluginSlot {} };
 
-    const auto synthName = instruments.getDisplayName (InstrumentRegistry::testSynthId);
     juce::String currentSection;
     TrackId sectionParent = 0;
 
@@ -3960,18 +3961,14 @@ void EngineAPI::loadDemoOrchestra()
         track->section = spec.section;
         track->volume = spec.volume;
         track->pan = spec.pan;
-        track->instrument = "Test Synth";
-        track->instrumentDefinitionId = InstrumentRegistry::testSynthId;
-        track->instrumentSlot.instrumentId = InstrumentRegistry::testSynthId;
-        track->instrumentSlot.name = synthName;
-        track->instrumentSource = ProjectSchema::sourceRemoteVst;
-        track->instrumentLoadState = InstrumentLoadState::Unloaded;
-        track->instrumentLoadMessage = "Assigned";
         track->inserts = { PluginSlot {}, PluginSlot {}, PluginSlot {}, PluginSlot {}, PluginSlot {} };
         track->automation.parameterName = "Volume";
         track->automation.points = { { 0.0, spec.volume }, { 16.0, spec.volume },
                                      { 24.0, juce::jlimit (0.0f, 1.0f, spec.volume + 0.12f) },
                                      { 32.0, spec.volume } };
+
+        loadTrackInstrument (index, spec.instrumentId, false);
+        setTrackTechnique (index, spec.techniqueId);
 
         for (double sectionStart = 0.0; sectionStart < demoLengthBeats; sectionStart += 32.0)
         {

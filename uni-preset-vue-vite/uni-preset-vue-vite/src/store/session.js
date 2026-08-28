@@ -321,7 +321,19 @@ function applyProject (project) {
   if (project.canRedo != null) session.canRedo = !!project.canRedo
   if (project.tracks) {
     const selectedId = (session.tracks[session.selectedTrack] || {}).id
-    session.tracks = project.tracks.map(mapTrack)
+    const prevById = new Map(session.tracks.map((track) => [track.id, track]))
+    session.tracks = project.tracks.map(mapTrack).map((track) => {
+      const locks = mixDragLocks.get(track.id)
+      if (!locks || !locks.size) return track
+      const prev = prevById.get(track.id)
+      if (!prev) return track
+      if (locks.has('volume')) {
+        track.volume = prev.volume
+        track.volumeDb = prev.volumeDb
+      }
+      if (locks.has('pan')) track.pan = prev.pan
+      return track
+    })
     const master = session.tracks.find((track) => track.type === 'master')
     if (master) session.masterGain = master.volume
     const nextSelected = session.tracks.findIndex((track) => track.id === selectedId)
@@ -535,6 +547,23 @@ export function setMasterGain (gain) {
 
 const mixQueue = new Map()
 let mixFlushTimer = 0
+const mixDragLocks = new Map()
+
+export function beginMixDrag (track, parameter) {
+  if (!track || !parameter) return
+  const set = mixDragLocks.get(track.id) || new Set()
+  set.add(parameter)
+  mixDragLocks.set(track.id, set)
+}
+
+export function endMixDrag (track, parameter) {
+  if (!track || !parameter) return
+  const set = mixDragLocks.get(track.id)
+  if (!set) return
+  set.delete(parameter)
+  if (!set.size) mixDragLocks.delete(track.id)
+  flushTrackMix()
+}
 
 function queueMixCommand (type, payload) {
   mixQueue.set(type + JSON.stringify(payload.trackId || '') + (payload.parameter || ''), { type, payload })
@@ -1012,6 +1041,9 @@ export async function loadDemoProject () {
   session.selectedTrack = 1
   session.selectedClip = 0
   session.positionBeats = 0
+  demo.tracks.forEach((track) => {
+    if (track.source === 'm-orchestra') loadCloudOrchestra(track, track.definitionId)
+  })
 }
 
 export function isSupportedFile (name = '') {
@@ -2282,6 +2314,11 @@ async function doEnsureMixerAttached () {
       showToast('Browser FX unavailable — dry mix')
     }
   }
+  session.tracks.forEach((track) => {
+    if (track.source === 'm-orchestra' && track.definitionId) {
+      mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
+    }
+  })
   return graph
 }
 

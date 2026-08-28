@@ -53,6 +53,8 @@
                 :max="1"
                 title="Pan"
                 @update:model-value="onPan(track, $event)"
+                @drag-start="beginMixDrag(track, 'pan')"
+                @drag-end="endMixDrag(track, 'pan')"
               />
               <text class="pan-lab">{{ formatPan(track.pan) }}</text>
             </view>
@@ -76,6 +78,8 @@
                 orientation="vertical"
                 :model-value="track.volume"
                 @update:model-value="onVolume(track, $event)"
+                @drag-start="beginMixDrag(track, 'volume')"
+                @drag-end="endMixDrag(track, 'volume')"
               />
               <view class="meter">
                 <view class="meter-fill" :style="meterStyle(trackMeter(track))" />
@@ -215,6 +219,8 @@
             orientation="vertical"
             :model-value="master.volume"
             @update:model-value="onVolume(master, $event)"
+            @drag-start="beginMixDrag(master, 'volume')"
+            @drag-end="endMixDrag(master, 'volume')"
           />
           <view class="meter stereo">
             <view class="meter-fill" :style="meterStyle(master.meterLevel || fxPeak('master'))" />
@@ -273,6 +279,8 @@ import {
   listPlugins,
   isTrackAudible,
   flushTrackMix,
+  beginMixDrag,
+  endMixDrag,
   reorderInserts,
   removeInsert,
   showToast
@@ -425,10 +433,12 @@ function removeCurrent () {
 
 function onVolume (track, value) {
   setTrackParameter(track, 'volume', value)
+  flushTrackMix()
 }
 
 function onPan (track, value) {
   setTrackParameter(track, 'pan', value)
+  flushTrackMix()
 }
 
 function setBusVolume (bus, value) {

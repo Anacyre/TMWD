@@ -1,4 +1,5 @@
 import { defaultSends } from './mixer.js'
+import { mOrchestraInstrument } from './m-orchestra-ui.js'
 
 const CHORD_LENGTH = 8
 const DEMO_LENGTH = 64
@@ -15,21 +16,21 @@ const progression = [
 ]
 
 const demoTracks = [
-  { name: 'Violin I', section: 'Strings', colour: '#d9a04a', basePitch: 74, volume: 0.80, pan: -0.55, role: 'pad', voice: 2, entryBeat: 0, exitBeat: 64 },
-  { name: 'Violin II', section: 'Strings', colour: '#d18f45', basePitch: 69, volume: 0.78, pan: -0.30, role: 'pad', voice: 1, entryBeat: 0, exitBeat: 64 },
-  { name: 'Viola', section: 'Strings', colour: '#c47f3f', basePitch: 62, volume: 0.76, pan: 0.18, role: 'pad', voice: 0, entryBeat: 0, exitBeat: 64 },
-  { name: 'Cello', section: 'Strings', colour: '#b87038', basePitch: 50, volume: 0.78, pan: 0.42, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64 },
-  { name: 'Bass', section: 'Strings', colour: '#a66232', basePitch: 38, volume: 0.74, pan: 0.60, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64 },
-  { name: 'Flute', section: 'Woodwinds', colour: '#6dbf8a', basePitch: 81, volume: 0.68, pan: -0.22, role: 'moving', voice: 2, entryBeat: 16, exitBeat: 64 },
-  { name: 'Oboe', section: 'Woodwinds', colour: '#5faf7d', basePitch: 74, volume: 0.66, pan: -0.08, role: 'moving', voice: 1, entryBeat: 16, exitBeat: 48 },
-  { name: 'Clarinet', section: 'Woodwinds', colour: '#53a071', basePitch: 69, volume: 0.68, pan: 0.08, role: 'moving', voice: 0, entryBeat: 24, exitBeat: 64 },
-  { name: 'Bassoon', section: 'Woodwinds', colour: '#479065', basePitch: 50, volume: 0.66, pan: 0.22, role: 'pad', voice: 1, entryBeat: 32, exitBeat: 64 },
-  { name: 'Horn', section: 'Brass', colour: '#4a90d9', basePitch: 57, volume: 0.70, pan: -0.35, role: 'brass', voice: 0, entryBeat: 32, exitBeat: 64 },
-  { name: 'Trumpet', section: 'Brass', colour: '#4283c4', basePitch: 69, volume: 0.66, pan: 0.14, role: 'brass', voice: 2, entryBeat: 48, exitBeat: 64 },
-  { name: 'Trombone', section: 'Brass', colour: '#3a76b0', basePitch: 52, volume: 0.68, pan: 0.30, role: 'brass', voice: 1, entryBeat: 48, exitBeat: 64 },
-  { name: 'Tuba', section: 'Brass', colour: '#33699c', basePitch: 38, volume: 0.66, pan: 0.45, role: 'bass', voice: 0, entryBeat: 48, exitBeat: 64 },
-  { name: 'Timpani', section: 'Percussion', colour: '#c46bb3', basePitch: 38, volume: 0.72, pan: 0.00, role: 'percussion', voice: 0, entryBeat: 0, exitBeat: 64 },
-  { name: 'Percussion', section: 'Percussion', colour: '#ab5c9e', basePitch: 60, volume: 0.62, pan: 0.10, role: 'percussion', voice: 0, entryBeat: 32, exitBeat: 64 }
+  { name: 'Violin I', section: 'Strings', colour: '#d9a04a', basePitch: 74, volume: 0.80, pan: -0.55, role: 'pad', voice: 2, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_violin_1', techniqueId: 'm_orch_long' },
+  { name: 'Violin II', section: 'Strings', colour: '#d18f45', basePitch: 69, volume: 0.78, pan: -0.30, role: 'pad', voice: 1, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_violin_2', techniqueId: 'm_orch_long' },
+  { name: 'Viola', section: 'Strings', colour: '#c47f3f', basePitch: 62, volume: 0.76, pan: 0.18, role: 'pad', voice: 0, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_viola', techniqueId: 'm_orch_long' },
+  { name: 'Cello', section: 'Strings', colour: '#b87038', basePitch: 50, volume: 0.78, pan: 0.42, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64, instrumentId: 'm_orch_cello', techniqueId: 'm_orch_long' },
+  { name: 'Bass', section: 'Strings', colour: '#a66232', basePitch: 38, volume: 0.74, pan: 0.60, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64, instrumentId: 'm_orch_bass', techniqueId: 'm_orch_long' },
+  { name: 'Flute', section: 'Woodwinds', colour: '#6dbf8a', basePitch: 81, volume: 0.68, pan: -0.22, role: 'moving', voice: 2, entryBeat: 16, exitBeat: 64, instrumentId: 'm_orch_flute', techniqueId: 'm_orch_long' },
+  { name: 'Oboe', section: 'Woodwinds', colour: '#5faf7d', basePitch: 74, volume: 0.66, pan: -0.08, role: 'moving', voice: 1, entryBeat: 16, exitBeat: 48, instrumentId: 'm_orch_oboe', techniqueId: 'm_orch_long' },
+  { name: 'Clarinet', section: 'Woodwinds', colour: '#53a071', basePitch: 69, volume: 0.68, pan: 0.08, role: 'moving', voice: 0, entryBeat: 24, exitBeat: 64, instrumentId: 'm_orch_clarinet', techniqueId: 'm_orch_long' },
+  { name: 'Bassoon', section: 'Woodwinds', colour: '#479065', basePitch: 50, volume: 0.66, pan: 0.22, role: 'pad', voice: 1, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_bassoon', techniqueId: 'm_orch_long' },
+  { name: 'Horn', section: 'Brass', colour: '#4a90d9', basePitch: 57, volume: 0.70, pan: -0.35, role: 'brass', voice: 0, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_horn', techniqueId: 'm_orch_long' },
+  { name: 'Trumpet', section: 'Brass', colour: '#4283c4', basePitch: 69, volume: 0.66, pan: 0.14, role: 'brass', voice: 2, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_trumpet', techniqueId: 'm_orch_long' },
+  { name: 'Trombone', section: 'Brass', colour: '#3a76b0', basePitch: 52, volume: 0.68, pan: 0.30, role: 'brass', voice: 1, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_trombone', techniqueId: 'm_orch_long' },
+  { name: 'Tuba', section: 'Brass', colour: '#33699c', basePitch: 38, volume: 0.66, pan: 0.45, role: 'bass', voice: 0, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_tuba', techniqueId: 'm_orch_long' },
+  { name: 'Timpani', section: 'Percussion', colour: '#c46bb3', basePitch: 38, volume: 0.72, pan: 0.00, role: 'percussion', voice: 0, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_bass_drum', techniqueId: 'm_orch_hit' },
+  { name: 'Percussion', section: 'Percussion', colour: '#ab5c9e', basePitch: 60, volume: 0.62, pan: 0.10, role: 'percussion', voice: 0, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_snare', techniqueId: 'm_orch_hit' }
 ]
 
 function nearestPitch (pitchClass, reference) {
@@ -153,6 +154,7 @@ export function createDemoProject () {
 
     const trackIndex = tracks.length
     const id = nextTrackId++
+    const orchItem = mOrchestraInstrument(spec.instrumentId)
     tracks.push({
       id,
       parentId: sectionParent,
@@ -165,17 +167,19 @@ export function createDemoProject () {
       mute: false,
       solo: false,
       recordArm: false,
-      instrument: 'Test Synth',
-      instrumentId: 'test_synth',
-      definitionId: 'test_synth',
-      techniqueId: '',
+      instrument: (orchItem && orchItem.name) || 'M Orchestra',
+      instrumentId: spec.instrumentId,
+      definitionId: spec.instrumentId,
+      techniqueId: spec.techniqueId,
       section: spec.section,
       loadState: 'Ready',
-      loadMessage: 'Ready',
-      controllerValues: {},
+      loadMessage: 'Cloud M Orchestra',
+      instrumentLoadState: 'ready',
+      instrumentLoadMessage: 'Cloud library',
+      controllerValues: { dynamics: 100, expression: 100, vibrato: 40 },
       inserts: emptyInserts(),
       sends: defaultSends(),
-      source: 'remote-vst',
+      source: 'm-orchestra',
       meterLevel: 0
     })
 

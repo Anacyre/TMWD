@@ -29,6 +29,8 @@
                 orientation="vertical"
                 :model-value="track.volume"
                 @update:model-value="onVolume(track, $event)"
+                @drag-start="beginMixDrag(track, 'volume')"
+                @drag-end="endMixDrag(track, 'volume')"
               />
             </view>
             <text class="db">{{ volumeLabel(track) }}</text>
@@ -40,6 +42,8 @@
                 :max="1"
                 title="Pan"
                 @update:model-value="onPan(track, $event)"
+                @drag-start="beginMixDrag(track, 'pan')"
+                @drag-end="endMixDrag(track, 'pan')"
               />
               <text class="pan-lab">{{ formatPan(track.pan) }}</text>
             </view>
@@ -104,6 +108,8 @@ import {
   selectTrack,
   setTrackParameter,
   flushTrackMix,
+  beginMixDrag,
+  endMixDrag,
   isTrackAudible,
   openLiteSheet,
   ensureMixerAttached

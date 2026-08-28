@@ -2,8 +2,8 @@
   <view
     class="fader"
     :class="orientation"
-    @mousedown.stop="onDown"
-    @touchstart.stop="onTouchStart"
+    @mousedown.stop.prevent="onDown"
+    @touchstart.stop.prevent="onTouchStart"
   >
     <view class="track">
       <view class="fill" :style="fillStyle" />
@@ -21,7 +21,7 @@ const props = defineProps({
   max: { type: Number, default: 1 },
   orientation: { type: String, default: 'horizontal' }
 })
-const emit = defineEmits(['update:modelValue'])
+const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
 const percent = computed(() => {
   const span = props.max - props.min || 1
@@ -52,6 +52,7 @@ function setFromEvent (clientX, clientY, el) {
 }
 
 function bindMove (target) {
+  emit('drag-start')
   const move = (ev) => {
     const pt = ev.touches ? ev.touches[0] : ev
     if (ev.cancelable) ev.preventDefault()
@@ -62,6 +63,7 @@ function bindMove (target) {
     window.removeEventListener('mouseup', up)
     window.removeEventListener('touchmove', move)
     window.removeEventListener('touchend', up)
+    emit('drag-end')
   }
   window.addEventListener('mousemove', move)
   window.addEventListener('mouseup', up)
@@ -76,33 +78,8 @@ function onDown (e) {
 
 function onTouchStart (e) {
   const t = e.changedTouches[0]
-  const el = e.currentTarget
-  const startX = t.clientX
-  const startY = t.clientY
-  let captured = false
-  const move = (ev) => {
-    const pt = ev.touches && ev.touches[0]
-    if (!pt) return
-    if (!captured) {
-      const dx = Math.abs(pt.clientX - startX)
-      const dy = Math.abs(pt.clientY - startY)
-      if (dx < 8 && dy < 8) return
-      if (props.orientation === 'vertical' ? dx > dy : dy > dx) {
-        window.removeEventListener('touchmove', move)
-        window.removeEventListener('touchend', up)
-        return
-      }
-      captured = true
-    }
-    if (ev.cancelable) ev.preventDefault()
-    setFromEvent(pt.clientX, pt.clientY, el)
-  }
-  const up = () => {
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', up)
-  }
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', up)
+  setFromEvent(t.clientX, t.clientY, e.currentTarget)
+  bindMove(e.currentTarget)
 }
 </script>
 
@@ -115,7 +92,8 @@ function onTouchStart (e) {
   flex: 1;
   min-width: 40px;
   position: relative;
-  touch-action: pan-x;
+  touch-action: none;
+  user-select: none;
 }
 .fader.vertical {
   height: 100%;
@@ -124,7 +102,7 @@ function onTouchStart (e) {
   flex: none;
   align-items: stretch;
   justify-content: center;
-  touch-action: pan-x;
+  touch-action: none;
 }
 .track {
   width: 100%;
