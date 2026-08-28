@@ -86,57 +86,273 @@ export function pickNeighbor (samples, spec, artic, midiNote, velocity, dynamics
   return pickRoundRobin(list, rrIndex)
 }
 
-export function findLoopPoints (channelData, sampleRate, pb) {
-  const n = channelData.length
-  const minLoop = pb.minLoopSamples || 2048
-  if (n < minLoop * 2) return { loop: false, loopStart: 0, loopEnd: 0 }
-  const searchStart = Math.floor(n * (pb.loopSearchStart || 0.35))
-  const searchEnd = Math.floor(n * (pb.loopSearchEnd || 0.85))
-  const window = Math.max(256, Math.min(searchEnd - searchStart, Math.floor((pb.loopWindowSec || 0.3) * sampleRate)))
-  if (window < minLoop || searchEnd - searchStart < window) return { loop: false, loopStart: 0, loopEnd: 0 }
-  const hop = Math.max(32, Math.floor(window / 8))
-  let bestEnergy = Infinity
-  let bestStart = searchStart
-  for (let i = searchStart; i + window < searchEnd; i += hop) {
-    let energy = 0
-    for (let s = 0; s < window; s += 4) {
-      const v = channelData[i + s]
-      energy += v * v
+function estimatePeriod (mono, center, sr) {
+  const win = Math.floor(0.10 * sr)
+  const minT = Math.max(8, Math.floor(sr / 1400))
+  const maxT = Math.min(Math.floor(sr / 45), mono.length - center - win - 2)
+  if (maxT <= minT || center < 0) return 0
+  let bestT = 0
+  let bestC = 0
+  for (let t = minT; t <= maxT; t++) {
+    let dot = 0
+    let na = 0
+    let nb = 0
+    for (let i = 0; i < win; i += 2) {
+      const a = mono[center + i]
+      const b = mono[center + i + t]
+      dot += a * b
+      na += a * a
+      nb += b * b
     }
-    if (energy < bestEnergy) {
-      bestEnergy = energy
-      bestStart = i
+    const corr = (na < 1e-12 || nb < 1e-12) ? 0 : dot / Math.sqrt(na * nb)
+    if (corr > bestC) {
+      bestC = corr
+      bestT = t
     }
   }
-  const zcSpan = Math.floor(0.02 * sampleRate)
-  const findZc = (pos) => {
-    for (let i = 0; i < zcSpan; i++) {
-      const a = pos + i
-      const b = a + 1
-      if (b >= n) break
-      if (channelData[a] <= 0 && channelData[b] >= 0) return b
+  return bestC >= 0.45 ? bestT : 0
+}
+
+function mixMono (audioBuffer) {
+  const n = audioBuffer.length
+  const chans = audioBuffer.numberOfChannels
+  const mono = new Float32Array(n)
+  for (let c = 0; c < chans; c++) {
+    const data = audioBuffer.getChannelData(c)
+    for (let i = 0; i < n; i++) mono[i] += data[i]
+  }
+  if (chans > 1) {
+    const inv = 1 / chans
+    for (let i = 0; i < n; i++) mono[i] *= inv
+  }
+  return mono
+}
+
+function correlate (mono, aStart, bStart, count) {
+  if (count <= 8) return 0
+  let dot = 0
+  let na = 0
+  let nb = 0
+  for (let i = 0; i < count; i += 2) {
+    const a = mono[aStart + i]
+    const b = mono[bStart + i]
+    dot += a * b
+    na += a * a
+    nb += b * b
+  }
+  return (na < 1e-12 || nb < 1e-12) ? 0 : dot / Math.sqrt(na * nb)
+}
+
+function estimateVibratoPeriod (mono, from, to, sr) {
+  const smooth = Math.max(4, Math.floor(sr * 0.010))
+  const minT = Math.max(8, Math.floor(sr * 0.12))
+  const maxT = Math.min(Math.floor(sr * 0.34), Math.floor((to - from) / 3))
+  if (maxT <= minT) return 0
+  const env = []
+  for (let i = from; i + smooth < to; i += smooth) {
+    let sum = 0
+    for (let j = 0; j < smooth; j++) sum += Math.abs(mono[i + j])
+    env.push(sum / smooth)
+  }
+  if (env.length < maxT / smooth + 8) return 0
+  let bestT = 0
+  let bestC = 0
+  const win = Math.min(Math.floor(env.length / 2), Math.floor(0.22 * sr / smooth))
+  for (let t = Math.floor(minT / smooth); t <= Math.floor(maxT / smooth); t++) {
+    if (t <= 0 || win + t >= env.length) continue
+    let dot = 0
+    let na = 0
+    let nb = 0
+    for (let i = 0; i < win; i++) {
+      const a = env[i]
+      const b = env[i + t]
+      dot += a * b
+      na += a * a
+      nb += b * b
     }
-    return pos
+    const corr = (na < 1e-12 || nb < 1e-12) ? 0 : dot / Math.sqrt(na * nb)
+    if (corr > bestC) {
+      bestC = corr
+      bestT = t * smooth
+    }
   }
-  let loopStart = findZc(bestStart)
-  let loopEnd = findZc(Math.min(n - 2, bestStart + window))
-  if (loopEnd <= loopStart + minLoop) loopEnd = Math.min(n - 2, loopStart + window)
-  let xfade = Math.max(64, Math.floor((pb.minCrossfadeMs || 80) * 0.001 * sampleRate))
-  xfade = Math.min(xfade, Math.floor((loopEnd - loopStart) / 4))
-  let rms = 0
-  let count = 0
-  for (let i = loopStart; i < loopEnd; i += 8) {
-    rms += channelData[i] * channelData[i]
-    count++
+  return bestC >= 0.35 ? bestT : 0
+}
+
+function alignToPeriod (pos, period, minPos, maxPos) {
+  if (period <= 0) return pos
+  const cycles = Math.round((pos - minPos) / period)
+  const aligned = minPos + cycles * period
+  return Math.max(minPos, Math.min(maxPos, aligned))
+}
+
+function loopScore (mono, start, end, xfade) {
+  if (end - start <= xfade * 2 + 64) return -1
+  const boundary = correlate(mono, start, end - xfade, xfade)
+  const bodyWin = Math.min(xfade * 2, Math.floor((end - start - xfade * 2) / 2))
+  const body = bodyWin >= 64 ? correlate(mono, start + xfade, end - xfade - bodyWin, bodyWin) : boundary
+  let dot = 0
+  let na = 0
+  let nb = 0
+  const slopeN = Math.min(128, xfade)
+  for (let i = 1; i < slopeN; i += 2) {
+    const a = mono[start + i] - mono[start + i - 1]
+    const b = mono[end - xfade + i] - mono[end - xfade + i - 1]
+    dot += a * b
+    na += a * a
+    nb += b * b
   }
-  rms = Math.sqrt(rms / Math.max(1, count))
-  if (loopEnd - loopStart < minLoop || rms > (pb.maxLoopRms || 0.55)) {
-    return { loop: false, loopStart: 0, loopEnd: 0 }
+  const slope = (na < 1e-12 || nb < 1e-12) ? 0 : dot / Math.sqrt(na * nb)
+  let rmsA = 0
+  let rmsB = 0
+  let rmsCount = 0
+  for (let i = 0; i < xfade; i += 4) {
+    const a = mono[start + i]
+    const b = mono[end - xfade + i]
+    rmsA += a * a
+    rmsB += b * b
+    rmsCount++
   }
+  rmsA = Math.sqrt(rmsA / Math.max(1, rmsCount))
+  rmsB = Math.sqrt(rmsB / Math.max(1, rmsCount))
+  const rmsDelta = Math.abs(rmsA - rmsB) / Math.max(rmsA, rmsB, 1e-6)
+  return boundary * 0.42 + body * 0.38 + slope * 0.12 - rmsDelta * 0.35
+}
+
+function risingZero (mono, pos, span) {
+  const n = mono.length
+  let best = pos
+  let bestDist = span + 1
+  for (let i = -span; i <= span; i++) {
+    const a = pos + i
+    const b = a + 1
+    if (a < 1 || b >= n) continue
+    if (mono[a] <= 0 && mono[b] > 0 && Math.abs(i) < bestDist) {
+      best = b
+      bestDist = Math.abs(i)
+    }
+  }
+  return best
+}
+
+function bakeEqualPower (audioBuffer, start, end, xfade) {
+  const chans = audioBuffer.numberOfChannels
+  for (let c = 0; c < chans; c++) {
+    const data = audioBuffer.getChannelData(c)
+    for (let i = 0; i < xfade; i++) {
+      const t = xfade <= 1 ? 1 : i / (xfade - 1)
+      const fadeOut = Math.cos(t * Math.PI * 0.5)
+      const fadeIn = Math.sin(t * Math.PI * 0.5)
+      const dst = end - xfade + i
+      data[dst] = data[dst] * fadeOut + data[start + i] * fadeIn
+    }
+  }
+}
+
+/** Find a long, correlated sustain loop and bake an equal-power crossfade into the buffer. */
+export function prepareLoop (audioBuffer, pb) {
+  const sr = audioBuffer.sampleRate
+  const n = audioBuffer.length
+  const minLoopSec = pb.minLoopSec || 1.45
+  const maxLoopSec = pb.maxLoopSec || 3.5
+  const xfade = Math.max(256, Math.floor((pb.minCrossfadeMs || 320) * 0.001 * sr))
+  const minLoop = Math.max(pb.minLoopSamples || 8192, Math.floor((pb.minLoopSec || 1.45) * sr))
+  if (n < minLoop + xfade * 2 + Math.floor(0.35 * sr)) {
+    return { loop: false, loopStart: 0, loopEnd: 0, wrapStart: 0 }
+  }
+
+  const searchStart = Math.floor(n * (pb.loopSearchStart || 0.28))
+  const searchEnd = Math.floor(n * (pb.loopSearchEnd || 0.90))
+  const avail = searchEnd - searchStart
+  if (avail < minLoop + xfade) return { loop: false, loopStart: 0, loopEnd: 0, wrapStart: 0 }
+
+  const mono = mixMono(audioBuffer)
+  const period = estimatePeriod(mono, searchStart + Math.floor(avail * 0.25), sr)
+  const vibPeriod = estimateVibratoPeriod(mono, searchStart, searchEnd, sr)
+  const alignPeriod = period > 0 && vibPeriod > 0 ? Math.max(period, vibPeriod) : Math.max(period, vibPeriod)
+  const lengths = []
+  const targetBodies = [pb.loopWindowSec || 2.4, 1.8, 2.2, 2.6, 3.0, 3.4]
+  for (const sec of targetBodies) {
+    let len = Math.floor(sec * sr)
+    if (alignPeriod > 0) {
+      const body = Math.max(alignPeriod, Math.round((sec * sr - xfade) / alignPeriod) * alignPeriod)
+      len = body + xfade
+    }
+    if (len >= minLoop && len <= Math.floor(maxLoopSec * sr) && len + xfade < avail) {
+      if (!lengths.some((value) => Math.abs(value - len) < Math.max(32, alignPeriod / 2 || 64))) lengths.push(len)
+    }
+  }
+  if (!lengths.length) {
+    const len = Math.min(Math.floor(maxLoopSec * sr), avail - xfade)
+    if (len >= minLoop) lengths.push(len)
+  }
+  if (!lengths.length) return { loop: false, loopStart: 0, loopEnd: 0, wrapStart: 0 }
+
+  let best = { score: -1e9, start: 0, end: 0 }
+  const hop = alignPeriod > 0 ? Math.max(8, Math.floor(alignPeriod / 8)) : Math.max(64, Math.floor(sr * 0.004))
+  const searchRadius = alignPeriod > 0
+    ? Math.max(alignPeriod * 3, Math.floor(sr * 0.05))
+    : Math.floor(sr * 0.14)
+
+  for (const len of lengths) {
+    const start0 = searchEnd - len
+    if (start0 < searchStart) continue
+    let local = { score: -1e9, start: start0, end: start0 + len }
+    const from = Math.max(searchStart, start0 - searchRadius)
+    const to = Math.min(searchEnd - minLoop, start0 + searchRadius)
+    for (let start = from; start <= to; start += hop) {
+      const end = start + len
+      if (end + xfade >= n || end > searchEnd + Math.floor(sr * 0.02)) continue
+      const score = loopScore(mono, start, end, xfade) + 0.04 * (len / sr)
+      if (score > local.score) local = { score, start, end }
+    }
+    const refineFrom = Math.max(searchStart, local.start - Math.max(128, alignPeriod))
+    const refineTo = Math.min(n - len - xfade - 2, local.start + Math.max(128, alignPeriod))
+    for (let start = refineFrom; start <= refineTo; start++) {
+      const end = start + len
+      if (end + xfade >= n) continue
+      const score = loopScore(mono, start, end, xfade) + 0.04 * (len / sr)
+      if (score > local.score) local = { score, start, end }
+    }
+    if (local.score > best.score) best = local
+  }
+
+  const minCorr = pb.minLoopCorrelation != null ? pb.minLoopCorrelation : 0.38
+  if (best.score < minCorr) return { loop: false, loopStart: 0, loopEnd: 0, wrapStart: 0 }
+
+  let snappedStart = risingZero(mono, best.start, Math.floor(0.012 * sr))
+  if (alignPeriod > 0) {
+    snappedStart = alignToPeriod(
+      snappedStart,
+      alignPeriod,
+      Math.max(searchStart, best.start - alignPeriod),
+      Math.min(searchEnd - (best.end - best.start) - xfade, best.start + alignPeriod)
+    )
+  }
+  const snappedEnd = snappedStart + (best.end - best.start)
+  if (snappedEnd < n - 2 && loopScore(mono, snappedStart, snappedEnd, xfade) >= best.score - 0.05) {
+    best.start = snappedStart
+    best.end = snappedEnd
+  }
+
+  bakeEqualPower(audioBuffer, best.start, best.end, xfade)
+  const wrapStart = (best.start + xfade) / sr
   return {
     loop: true,
-    loopStart: loopStart / sampleRate,
-    loopEnd: loopEnd / sampleRate,
-    crossfade: xfade / sampleRate
+    loopStart: wrapStart,
+    loopEnd: best.end / sr,
+    wrapStart,
+    crossfade: xfade / sr
   }
+}
+
+export function findLoopPoints (channelData, sampleRate, pb) {
+  const n = channelData.length
+  const fake = {
+    length: n,
+    sampleRate,
+    numberOfChannels: 1,
+    getChannelData: () => channelData
+  }
+  return prepareLoop(fake, pb)
 }

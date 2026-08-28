@@ -82,12 +82,15 @@ namespace
 
         rules.maxStretchSemitones = juce::jlimit (1, 12, readInt (object, "maxStretchSemitones", rules.maxStretchSemitones));
         rules.dynamicsVelocityMix = juce::jlimit (0.0f, 1.0f, readFloat (object, "dynamicsVelocityMix", rules.dynamicsVelocityMix));
-        rules.minCrossfadeMs = juce::jlimit (8, 400, readInt (object, "minCrossfadeMs", rules.minCrossfadeMs));
+        rules.minCrossfadeMs = juce::jlimit (40, 800, readInt (object, "minCrossfadeMs", rules.minCrossfadeMs));
         rules.loopSearchStart = juce::jlimit (0.05f, 0.7f, readFloat (object, "loopSearchStart", rules.loopSearchStart));
         rules.loopSearchEnd = juce::jlimit (0.4f, 0.98f, readFloat (object, "loopSearchEnd", rules.loopSearchEnd));
-        rules.loopWindowSec = juce::jlimit (0.08f, 1.2f, readFloat (object, "loopWindowSec", rules.loopWindowSec));
+        rules.loopWindowSec = juce::jlimit (0.4f, 4.0f, readFloat (object, "loopWindowSec", rules.loopWindowSec));
         rules.maxLoopRms = juce::jlimit (0.05f, 1.0f, readFloat (object, "maxLoopRms", rules.maxLoopRms));
-        rules.minLoopSamples = juce::jlimit (256, 48000, readInt (object, "minLoopSamples", rules.minLoopSamples));
+        rules.minLoopSamples = juce::jlimit (256, 192000, readInt (object, "minLoopSamples", rules.minLoopSamples));
+        rules.minLoopSec = juce::jlimit (0.4f, 4.0f, readFloat (object, "minLoopSec", rules.minLoopSec));
+        rules.maxLoopSec = juce::jlimit (0.6f, 8.0f, readFloat (object, "maxLoopSec", rules.maxLoopSec));
+        rules.minLoopCorrelation = juce::jlimit (0.0f, 0.95f, readFloat (object, "minLoopCorrelation", rules.minLoopCorrelation));
         rules.releaseLongSec = juce::jlimit (0.05f, 4.0f, readFloat (object, "releaseLongSec", rules.releaseLongSec));
         rules.releaseShortSec = juce::jlimit (0.02f, 1.0f, readFloat (object, "releaseShortSec", rules.releaseShortSec));
         rules.releaseHitSec = juce::jlimit (0.01f, 0.6f, readFloat (object, "releaseHitSec", rules.releaseHitSec));

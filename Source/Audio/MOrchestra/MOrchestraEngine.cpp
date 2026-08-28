@@ -94,6 +94,155 @@ namespace
 
         return true;
     }
+
+    int estimatePeriod (const std::vector<float>& mono, int center, double sr)
+    {
+        const int win = juce::jmax (32, (int) (0.10 * sr));
+        const int minT = juce::jmax (8, (int) (sr / 1400.0));
+        const int maxT = juce::jmin ((int) (sr / 45.0), (int) mono.size() - center - win - 2);
+        if (maxT <= minT || center < 0)
+            return 0;
+
+        double bestCorr = 0.0;
+        int bestT = 0;
+
+        for (int t = minT; t <= maxT; ++t)
+        {
+            double dot = 0.0, na = 0.0, nb = 0.0;
+            for (int i = 0; i < win; i += 2)
+            {
+                const double a = (double) mono[(size_t) (center + i)];
+                const double b = (double) mono[(size_t) (center + i + t)];
+                dot += a * b;
+                na += a * a;
+                nb += b * b;
+            }
+
+            if (na < 1.0e-12 || nb < 1.0e-12)
+                continue;
+
+            const auto corr = dot / std::sqrt (na * nb);
+            if (corr > bestCorr)
+            {
+                bestCorr = corr;
+                bestT = t;
+            }
+        }
+
+        return bestCorr >= 0.45 ? bestT : 0;
+    }
+
+    int estimateVibratoPeriod (const std::vector<float>& mono, int from, int to, double sr)
+    {
+        const int smooth = juce::jmax (4, (int) (sr * 0.010));
+        const int minT = juce::jmax (8, (int) (sr * 0.12));
+        const int maxT = juce::jmin ((int) (sr * 0.34), (to - from) / 3);
+        if (maxT <= minT)
+            return 0;
+
+        std::vector<float> env;
+        env.reserve ((size_t) juce::jmax (1, (to - from) / smooth));
+
+        for (int i = from; i + smooth < to; i += smooth)
+        {
+            float sum = 0.0f;
+            for (int j = 0; j < smooth; ++j)
+                sum += std::abs (mono[(size_t) (i + j)]);
+            env.push_back (sum / (float) smooth);
+        }
+
+        if ((int) env.size() < maxT + 8)
+            return 0;
+
+        double bestCorr = 0.0;
+        int bestT = 0;
+        const int win = juce::jmin ((int) env.size() / 2, (int) (0.22 * sr / smooth));
+
+        for (int t = minT / smooth; t <= maxT / smooth; ++t)
+        {
+            if (t <= 0 || win + t >= (int) env.size())
+                continue;
+
+            double dot = 0.0, na = 0.0, nb = 0.0;
+            for (int i = 0; i < win; ++i)
+            {
+                const double a = (double) env[(size_t) i];
+                const double b = (double) env[(size_t) (i + t)];
+                dot += a * b;
+                na += a * a;
+                nb += b * b;
+            }
+
+            if (na < 1.0e-12 || nb < 1.0e-12)
+                continue;
+
+            const auto corr = dot / std::sqrt (na * nb);
+            if (corr > bestCorr)
+            {
+                bestCorr = corr;
+                bestT = t * smooth;
+            }
+        }
+
+        return bestCorr >= 0.35 ? bestT : 0;
+    }
+
+    double correlate (const std::vector<float>& mono, int aStart, int bStart, int count)
+    {
+        if (count <= 8)
+            return 0.0;
+
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        for (int i = 0; i < count; i += 2)
+        {
+            const double a = (double) mono[(size_t) (aStart + i)];
+            const double b = (double) mono[(size_t) (bStart + i)];
+            dot += a * b;
+            na += a * a;
+            nb += b * b;
+        }
+
+        if (na < 1.0e-12 || nb < 1.0e-12)
+            return 0.0;
+
+        return dot / std::sqrt (na * nb);
+    }
+
+    int snapRisingZero (const std::vector<float>& mono, int pos, int span)
+    {
+        int snapped = pos;
+        int bestDist = span + 1;
+
+        for (int i = -span; i <= span; ++i)
+        {
+            const int a = pos + i;
+            const int b = a + 1;
+            if (a < 1 || b >= (int) mono.size())
+                continue;
+
+            if (mono[(size_t) a] <= 0.0f && mono[(size_t) b] > 0.0f)
+            {
+                const int dist = i < 0 ? -i : i;
+                if (dist < bestDist)
+                {
+                    snapped = b;
+                    bestDist = dist;
+                }
+            }
+        }
+
+        return snapped;
+    }
+
+    int alignToPeriod (int pos, int period, int minPos, int maxPos)
+    {
+        if (period <= 0)
+            return pos;
+
+        const int cycles = (int) std::round ((double) (pos - minPos) / (double) period);
+        const int aligned = minPos + cycles * period;
+        return juce::jlimit (minPos, maxPos, aligned);
+    }
 }
 
 Engine& Engine::get()
@@ -263,8 +412,13 @@ void Engine::findLoopPoints (SampleBuffer& buffer) const
     const auto& rules = library.playback;
     const auto samples = buffer.audio.getNumSamples();
     const auto channels = juce::jmax (1, buffer.audio.getNumChannels());
+    const auto sr = buffer.sampleRate;
 
-    if (! buffer.loop || samples < rules.minLoopSamples * 2)
+    const auto xfade = juce::jmax (256, (int) (rules.minCrossfadeMs * 0.001 * sr));
+    const auto minLoop = juce::jmax (rules.minLoopSamples, (int) (rules.minLoopSec * sr));
+    const auto maxLoop = (int) (rules.maxLoopSec * sr);
+
+    if (! buffer.loop || samples < minLoop + xfade * 2 + (int) (0.35 * sr))
     {
         buffer.loop = false;
         return;
@@ -272,81 +426,208 @@ void Engine::findLoopPoints (SampleBuffer& buffer) const
 
     const auto searchStart = juce::jlimit (0, samples - 2, (int) (samples * (double) rules.loopSearchStart));
     const auto searchEnd = juce::jlimit (searchStart + 8, samples - 1, (int) (samples * (double) rules.loopSearchEnd));
-    const auto window = juce::jlimit (256, searchEnd - searchStart,
-                                      (int) (rules.loopWindowSec * buffer.sampleRate));
+    const auto avail = searchEnd - searchStart;
 
-    if (window < rules.minLoopSamples || searchEnd - searchStart < window)
+    if (avail < minLoop + xfade)
     {
         buffer.loop = false;
         return;
     }
 
-    const auto* data = buffer.audio.getReadPointer (0);
-    const auto hop = juce::jmax (32, window / 8);
-    double bestEnergy = 1.0e100;
-    int bestStart = searchStart;
-
-    for (int i = searchStart; i + window < searchEnd; i += hop)
+    std::vector<float> mono ((size_t) samples);
+    for (int i = 0; i < samples; ++i)
     {
-        double energy = 0.0;
-        for (int s = 0; s < window; s += 4)
-        {
-            const auto v = data[i + s];
-            energy += (double) v * (double) v;
-        }
-
-        if (energy < bestEnergy)
-        {
-            bestEnergy = energy;
-            bestStart = i;
-        }
+        float sum = 0.0f;
+        for (int ch = 0; ch < channels; ++ch)
+            sum += buffer.audio.getSample (ch, i);
+        mono[(size_t) i] = sum / (float) channels;
     }
 
-    const auto zcSpan = juce::jmax (8, (int) (0.02 * buffer.sampleRate));
-    auto findZero = [&] (int pos)
+    const int pitchPeriod = estimatePeriod (mono, searchStart + avail / 4, sr);
+    const int vibPeriod = estimateVibratoPeriod (mono, searchStart, searchEnd, sr);
+    const int alignPeriod = pitchPeriod > 0 && vibPeriod > 0
+        ? juce::jmax (pitchPeriod, vibPeriod)
+        : juce::jmax (pitchPeriod, vibPeriod);
+
+    auto loopScore = [&] (int start, int end) -> double
     {
-        for (int i = 0; i < zcSpan; ++i)
+        if (end - start <= xfade * 2 + 64)
+            return -1.0;
+
+        const auto boundary = correlate (mono, start, end - xfade, xfade);
+        const auto bodyWin = juce::jmin (xfade * 2, (end - start - xfade * 2) / 2);
+        const auto body = bodyWin >= 64
+            ? correlate (mono, start + xfade, end - xfade - bodyWin, bodyWin)
+            : boundary;
+
+        double dot = 0.0, na = 0.0, nb = 0.0;
+        const int slopeN = juce::jmin (128, xfade);
+        for (int i = 1; i < slopeN; i += 2)
         {
-            const auto a = pos + i;
-            const auto b = a + 1;
-            if (b >= samples)
-                break;
-            if (data[a] <= 0.0f && data[b] >= 0.0f)
-                return b;
+            const double a = (double) mono[(size_t) (start + i)] - (double) mono[(size_t) (start + i - 1)];
+            const double b = (double) mono[(size_t) (end - xfade + i)] - (double) mono[(size_t) (end - xfade + i - 1)];
+            dot += a * b;
+            na += a * a;
+            nb += b * b;
         }
-        return pos;
+
+        const auto slope = (na < 1.0e-12 || nb < 1.0e-12) ? 0.0 : dot / std::sqrt (na * nb);
+
+        double rmsSumA = 0.0, rmsSumB = 0.0;
+        int rmsCount = 0;
+        for (int i = 0; i < xfade; i += 4)
+        {
+            const double a = (double) mono[(size_t) (start + i)];
+            const double b = (double) mono[(size_t) (end - xfade + i)];
+            rmsSumA += a * a;
+            rmsSumB += b * b;
+            ++rmsCount;
+        }
+        const auto rmsA2 = std::sqrt (rmsSumA / (double) juce::jmax (1, rmsCount));
+        const auto rmsB2 = std::sqrt (rmsSumB / (double) juce::jmax (1, rmsCount));
+        const auto rmsDelta = std::abs (rmsA2 - rmsB2) / juce::jmax (rmsA2, rmsB2, 1.0e-6);
+
+        return boundary * 0.42 + body * 0.38 + slope * 0.12 - rmsDelta * 0.35;
     };
 
-    auto loopStart = findZero (bestStart);
-    auto loopEnd = findZero (juce::jmin (samples - 2, bestStart + window));
+    std::vector<int> lengths;
+    const double candidates[] = { rules.loopWindowSec, 1.8, 2.2, 2.6, 3.0, 3.4 };
 
-    if (loopEnd <= loopStart + rules.minLoopSamples)
-        loopEnd = juce::jmin (samples - 2, loopStart + window);
-
-    auto xfade = juce::jmax (64, (int) (rules.minCrossfadeMs * 0.001 * buffer.sampleRate));
-    xfade = juce::jmin (xfade, juce::jmax (1, (loopEnd - loopStart) / 4));
-
-    double rms = 0.0;
-    int count = 0;
-    for (int i = loopStart; i < loopEnd; i += 8)
+    for (double sec : candidates)
     {
-        float v = 0.0f;
-        for (int ch = 0; ch < channels; ++ch)
-            v += buffer.audio.getSample (ch, i);
-        v /= (float) channels;
-        rms += (double) v * (double) v;
-        ++count;
-    }
-    rms = std::sqrt (rms / (double) juce::jmax (1, count));
+        int len = (int) (sec * sr);
+        if (alignPeriod > 0)
+        {
+            const int body = juce::jmax (alignPeriod,
+                                         (int) std::round (((sec * sr) - (double) xfade) / (double) alignPeriod) * alignPeriod);
+            len = body + xfade;
+        }
 
-    if (loopEnd - loopStart < rules.minLoopSamples || rms > (double) rules.maxLoopRms)
+        if (len < minLoop || len > maxLoop || len + xfade >= avail)
+            continue;
+
+        bool dup = false;
+        for (int existing : lengths)
+        {
+            const int delta = existing > len ? existing - len : len - existing;
+            if (delta < juce::jmax (32, alignPeriod / 2))
+                dup = true;
+        }
+        if (! dup)
+            lengths.push_back (len);
+    }
+
+    if (lengths.empty())
+    {
+        int len = juce::jmin (maxLoop, avail - xfade);
+        if (alignPeriod > 0)
+            len = juce::jmax (minLoop, ((len - xfade) / alignPeriod) * alignPeriod + xfade);
+        if (len >= minLoop)
+            lengths.push_back (len);
+    }
+
+    if (lengths.empty())
     {
         buffer.loop = false;
         return;
     }
 
-    buffer.loopStart = loopStart;
-    buffer.loopEnd = loopEnd;
+    double bestScore = -1.0e9;
+    int bestStart = searchStart;
+    int bestEnd = searchStart + minLoop;
+    const int hop = alignPeriod > 0 ? juce::jmax (8, alignPeriod / 8) : juce::jmax (64, (int) (sr * 0.004));
+    const int searchRadius = alignPeriod > 0
+        ? juce::jmax (alignPeriod * 3, (int) (sr * 0.05))
+        : (int) (sr * 0.14);
+
+    for (int len : lengths)
+    {
+        const int start0 = searchEnd - len;
+        if (start0 < searchStart)
+            continue;
+
+        double localScore = -1.0e9;
+        int localStart = start0;
+        int localEnd = start0 + len;
+        const int from = juce::jmax (searchStart, start0 - searchRadius);
+        const int to = juce::jmin (searchEnd - minLoop, start0 + searchRadius);
+
+        for (int start = from; start <= to; start += hop)
+        {
+            const int end = start + len;
+            if (end + xfade >= samples || end > searchEnd + (int) (sr * 0.02))
+                continue;
+
+            const auto score = loopScore (start, end) + 0.04 * ((double) len / sr);
+            if (score > localScore)
+            {
+                localScore = score;
+                localStart = start;
+                localEnd = end;
+            }
+        }
+
+        const int refineFrom = juce::jmax (searchStart, localStart - juce::jmax (128, alignPeriod));
+        const int refineTo = juce::jmin (samples - len - xfade - 2, localStart + juce::jmax (128, alignPeriod));
+
+        for (int start = refineFrom; start <= refineTo; ++start)
+        {
+            const int end = start + len;
+            if (end + xfade >= samples)
+                continue;
+
+            const auto score = loopScore (start, end) + 0.04 * ((double) len / sr);
+            if (score > localScore)
+            {
+                localScore = score;
+                localStart = start;
+                localEnd = end;
+            }
+        }
+
+        if (localScore > bestScore)
+        {
+            bestScore = localScore;
+            bestStart = localStart;
+            bestEnd = localEnd;
+        }
+    }
+
+    if (bestScore < (double) rules.minLoopCorrelation)
+    {
+        buffer.loop = false;
+        return;
+    }
+
+    const int zcSpan = juce::jmax (8, (int) (0.012 * sr));
+    int snapped = snapRisingZero (mono, bestStart, zcSpan);
+    if (alignPeriod > 0)
+        snapped = alignToPeriod (snapped, alignPeriod, juce::jmax (searchStart, bestStart - alignPeriod),
+                                 juce::jmin (searchEnd - (bestEnd - bestStart) - xfade, bestStart + alignPeriod));
+
+    const int snappedEnd = snapped + (bestEnd - bestStart);
+    if (snappedEnd < samples - 2 && loopScore (snapped, snappedEnd) >= bestScore - 0.05)
+    {
+        bestStart = snapped;
+        bestEnd = snappedEnd;
+    }
+
+    for (int ch = 0; ch < channels; ++ch)
+    {
+        auto* data = buffer.audio.getWritePointer (ch);
+        for (int i = 0; i < xfade; ++i)
+        {
+            const float t = xfade <= 1 ? 1.0f : (float) i / (float) (xfade - 1);
+            const float fadeOut = std::cos (t * juce::MathConstants<float>::halfPi);
+            const float fadeIn = std::sin (t * juce::MathConstants<float>::halfPi);
+            const int dst = bestEnd - xfade + i;
+            data[dst] = data[dst] * fadeOut + data[bestStart + i] * fadeIn;
+        }
+    }
+
+    buffer.loop = true;
+    buffer.loopStart = bestStart + xfade;
+    buffer.loopEnd = bestEnd;
     buffer.crossfade = xfade;
 }
 

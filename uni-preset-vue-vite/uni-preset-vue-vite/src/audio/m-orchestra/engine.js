@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
 import { playbackFrom } from './playback.js'
-import { findLoopPoints, pickLayer, pickNeighbor, pickSample as pickFromManifest } from './pick.js'
+import { prepareLoop, pickLayer, pickNeighbor, pickSample as pickFromManifest } from './pick.js'
 
 const TECHNIQUE_ARTIC = {
   m_orch_long: 'long',
@@ -98,7 +98,7 @@ async function fetchZip (pack) {
 }
 
 async function decodeSample (context, sample) {
-  const key = sample.pack + '|' + sample.entry
+  const key = sample.pack + '|' + sample.entry + '|loop3'
   if (bufferCache.has(key)) return bufferCache.get(key)
   const zip = await fetchZip(sample.pack)
   const file = zip.file(sample.entry)
@@ -107,7 +107,7 @@ async function decodeSample (context, sample) {
   const audio = await context.decodeAudioData(bytes.slice(0))
   const rules = pb()
   const loopInfo = sample.loop
-    ? findLoopPoints(audio.getChannelData(0), audio.sampleRate, rules)
+    ? prepareLoop(audio, rules)
     : { loop: false, loopStart: 0, loopEnd: 0 }
   const decoded = {
     audio,
@@ -310,7 +310,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     const semitones = decoded.unpitched ? 0 : Math.max(-rules.maxStretchSemitones, Math.min(rules.maxStretchSemitones, pitch - decoded.rootNote + cents / 100))
     const rate = Math.pow(2, semitones / 12)
     src.playbackRate.value = rate
-    if (decoded.loop && decoded.audio.duration > 0.4) {
+    if (decoded.loop && decoded.loopEnd - decoded.loopStart > 0.8) {
       src.loop = true
       src.loopStart = decoded.loopStart
       src.loopEnd = decoded.loopEnd

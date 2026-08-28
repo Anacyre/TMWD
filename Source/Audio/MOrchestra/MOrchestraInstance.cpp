@@ -52,23 +52,23 @@ namespace
             const auto start = (double) buffer.loopStart;
             const auto end = (double) buffer.loopEnd;
             const auto span = end - start;
+            const auto safety = (double) juce::jmax (32, buffer.crossfade / 6);
 
-            if (wrapped >= end)
-                wrapped = start + std::fmod (wrapped - start, span);
-
-            const auto xf = (double) juce::jmax (1, buffer.crossfade);
-
-            if (wrapped >= end - xf)
+            if (span > safety + 8.0 && wrapped >= end)
             {
-                const auto fade = (float) ((end - wrapped) / xf);
-                const auto b = start + (wrapped - (end - xf));
-                const auto la = lerp (0, wrapped);
-                const auto ra = lerp (1, wrapped);
-                const auto lb = lerp (0, b);
-                const auto rb = lerp (1, b);
-                left = la * fade + lb * (1.0f - fade);
-                right = ra * fade + rb * (1.0f - fade);
-                return;
+                const auto offset = std::fmod (wrapped - end, span);
+                wrapped = start + offset;
+
+                if (offset < safety)
+                {
+                    const auto t = (float) (offset / safety);
+                    const auto fadeIn = std::sin (t * juce::MathConstants<float>::halfPi);
+                    const auto fadeOut = std::cos (t * juce::MathConstants<float>::halfPi);
+                    const auto tailPos = end - safety + offset;
+                    left = lerp (0, wrapped) * fadeIn + lerp (0, tailPos) * fadeOut;
+                    right = lerp (1, wrapped) * fadeIn + lerp (1, tailPos) * fadeOut;
+                    return;
+                }
             }
         }
         else if (wrapped >= (double) (length - 1))

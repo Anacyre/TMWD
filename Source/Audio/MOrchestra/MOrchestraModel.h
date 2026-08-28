@@ -40,12 +40,15 @@ namespace MOrchestra
     {
         int maxStretchSemitones = 4;
         float dynamicsVelocityMix = 0.35f;
-        int minCrossfadeMs = 80;
-        float loopSearchStart = 0.35f;
-        float loopSearchEnd = 0.85f;
-        float loopWindowSec = 0.3f;
-        float maxLoopRms = 0.55f;
-        int minLoopSamples = 2048;
+        int minCrossfadeMs = 320;
+        float loopSearchStart = 0.28f;
+        float loopSearchEnd = 0.90f;
+        float loopWindowSec = 2.4f;
+        float maxLoopRms = 0.90f;
+        int minLoopSamples = 8192;
+        float minLoopSec = 1.45f;
+        float maxLoopSec = 3.5f;
+        float minLoopCorrelation = 0.38f;
         float releaseLongSec = 0.9f;
         float releaseShortSec = 0.12f;
         float releaseHitSec = 0.08f;
