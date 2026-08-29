@@ -37,12 +37,20 @@ namespace
         if (length <= 1)
             return;
 
-        auto lerp = [&] (int channel, double pos) -> float
+        auto interpolate = [&] (int channel, double pos) -> float
         {
-            const auto i = juce::jlimit (0, length - 2, (int) pos);
+            const auto i = juce::jlimit (0, length - 2, (int) std::floor (pos));
             const auto frac = (float) (pos - (double) i);
             const auto* data = buffer.audio.getReadPointer (juce::jmin (channel, channels - 1));
-            return data[i] + (data[i + 1] - data[i]) * frac;
+            const float y0 = data[juce::jmax (0, i - 1)];
+            const float y1 = data[i];
+            const float y2 = data[juce::jmin (length - 1, i + 1)];
+            const float y3 = data[juce::jmin (length - 1, i + 2)];
+            const float c0 = y1;
+            const float c1 = 0.5f * (y2 - y0);
+            const float c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+            const float c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+            return ((c3 * frac + c2) * frac + c1) * frac + c0;
         };
 
         auto wrapped = position;
@@ -65,8 +73,8 @@ namespace
                     const auto fadeIn = std::sin (t * juce::MathConstants<float>::halfPi);
                     const auto fadeOut = std::cos (t * juce::MathConstants<float>::halfPi);
                     const auto tailPos = end - safety + offset;
-                    left = lerp (0, wrapped) * fadeIn + lerp (0, tailPos) * fadeOut;
-                    right = lerp (1, wrapped) * fadeIn + lerp (1, tailPos) * fadeOut;
+                    left = interpolate (0, wrapped) * fadeIn + interpolate (0, tailPos) * fadeOut;
+                    right = interpolate (1, wrapped) * fadeIn + interpolate (1, tailPos) * fadeOut;
                     return;
                 }
             }
@@ -76,8 +84,8 @@ namespace
             return;
         }
 
-        left = lerp (0, wrapped);
-        right = lerp (1, wrapped);
+        left = interpolate (0, wrapped);
+        right = interpolate (1, wrapped);
     }
 }
 

@@ -652,10 +652,38 @@ function stopLocalClock () {
   rafId = 0
 }
 
+async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
+  if (!graph) return
+  const jobs = new Map()
+  session.clips.forEach((clip) => {
+    if (!clip || clip.midi === false) return
+    const track = session.tracks[clip.trackIndex]
+    if (!track || !isMOrchestraTrack(track)) return
+    const pitches = jobs.get(track) || []
+    ;(clip.notes || []).forEach((note) => {
+      if (!note || note.muted) return
+      expandRepeats(note).forEach((slice) => {
+        const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
+        if (start >= fromBeat - 0.05 && start < fromBeat + windowBeats) pitches.push(slice.pitch)
+      })
+    })
+    if (pitches.length) jobs.set(track, pitches)
+  })
+  await Promise.all([...jobs].map(([track, pitches]) => (
+    mOrchestraCloud.preloadNotes(graph, track, pitches).catch(() => {})
+  )))
+}
+
 export async function play () {
   if (session.playing) return
   session.playing = true
-  await unlockAudio()
+  const graph = await unlockAudio()
+  if (graph) {
+    await Promise.race([
+      prefetchOrchestraWindow(graph, session.positionBeats),
+      new Promise((resolve) => setTimeout(resolve, 120))
+    ])
+  }
   startBrowserMeterLoop()
   startExpressionPlayback()
   if (isEngineConnected()) {

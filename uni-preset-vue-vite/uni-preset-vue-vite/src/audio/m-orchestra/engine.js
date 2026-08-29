@@ -2,7 +2,8 @@ import JSZip from 'jszip'
 import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
 import { playbackFrom } from './playback.js'
-import { prepareLoop, pickLayer, pickNeighbor, pickSample as pickFromManifest } from './pick.js'
+import { pickLayer, pickSample as pickFromManifest } from './pick.js'
+import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
 
 const TECHNIQUE_ARTIC = {
   m_orch_long: 'long',
@@ -15,11 +16,42 @@ const TECHNIQUE_ARTIC = {
 let manifest = bundled
 let loadPromise = null
 const zipCache = new Map()
-const bufferCache = new Map()
+const bufferCache = new AudioBufferLru(96 * 1024 * 1024)
+const decodePromises = new Map()
+const decodeQueue = new AsyncLimiter(2)
 const voices = new Map()
 const pending = new Map()
 const rrCounters = new Map()
 let noteEpoch = 0
+const profile = {
+  noteCount: 0,
+  cacheHits: 0,
+  idbHits: 0,
+  networkFetches: 0,
+  zipFallbacks: 0,
+  fetchMs: 0,
+  decodeMs: 0,
+  loopMs: 0,
+  noteReadyMs: 0,
+  maxNoteReadyMs: 0
+}
+
+function nowMs () {
+  return typeof performance !== 'undefined' && performance.now ? performance.now() : Date.now()
+}
+
+export function getLoadDiagnostics () {
+  return {
+    ...profile,
+    decodedMb: Math.round(bufferCache.bytes / 10485.76) / 100,
+    decodeActive: decodeQueue.active,
+    decodePending: decodeQueue.pending
+  }
+}
+
+export function resetLoadDiagnostics () {
+  Object.keys(profile).forEach((key) => { profile[key] = 0 })
+}
 
 function pb () {
   return playbackFrom(manifest)
@@ -99,44 +131,118 @@ async function fetchZip (pack) {
   }
 }
 
-async function decodeSample (context, sample) {
-  const key = sample.pack + '|' + sample.entry + '|loop3'
-  if (bufferCache.has(key)) return bufferCache.get(key)
+async function fetchSampleBytes (sample) {
+  const objectPath = sample.objectPath || `samples/${sample.pack}/${sample.entry}`
+  const cacheKey = objectPath
+  const cached = await readEncodedSample(cacheKey)
+  if (cached) {
+    profile.idbHits += 1
+    return cached
+  }
+
+  const started = nowMs()
+  if (objectPath) {
+    const response = await fetch(publicOrchestraUrl(objectPath))
+    if (response.ok) {
+      const bytes = await response.arrayBuffer()
+      profile.fetchMs += nowMs() - started
+      profile.networkFetches += 1
+      writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
+      return bytes
+    }
+  }
+
+  profile.zipFallbacks += 1
   const zip = await fetchZip(sample.pack)
   const file = zip.file(sample.entry)
   if (!file) throw new Error('missing ' + sample.entry)
   const bytes = await file.async('arraybuffer')
-  const audio = await context.decodeAudioData(bytes.slice(0))
-  const rules = pb()
-  const loopInfo = sample.loop
-    ? prepareLoop(audio, rules)
-    : { loop: false, loopStart: 0, loopEnd: 0 }
-  const decoded = {
-    audio,
-    loop: !!loopInfo.loop,
-    loopStart: loopInfo.loopStart || 0,
-    loopEnd: loopInfo.loopEnd || 0,
-    rootNote: sample.rootNote,
-    unpitched: !!sample.unpitched,
-    dynamicLayer: sample.dynamicLayer,
-    key
+  profile.fetchMs += nowMs() - started
+  writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
+  return bytes
+}
+
+/** Applies only the short equal-power seam described by the manifest. The expensive
+ * loop search is performed by the publisher, never while transport is running. */
+function applyManifestLoop (audio, sample) {
+  if (!sample.loop) {
+    return { loop: false, loopStart: 0, loopEnd: 0 }
   }
-  bufferCache.set(key, decoded)
-  return decoded
+  const started = nowMs()
+  const sr = audio.sampleRate
+  const duration = audio.duration || (audio.length / sr)
+  const loopStart = sample.loopEnd > sample.loopStart ? sample.loopStart : Math.max(0.18, duration * 0.28)
+  const loopEnd = sample.loopEnd > sample.loopStart
+    ? sample.loopEnd
+    : Math.min(duration - 0.08, loopStart + Math.min(3.2, Math.max(1.15, duration * 0.52)))
+  if (loopEnd - loopStart < 0.8) return { loop: false, loopStart: 0, loopEnd: 0 }
+  const start = Math.max(0, Math.min(audio.length - 2, Math.round(loopStart * sr)))
+  const end = Math.max(start + 2, Math.min(audio.length - 1, Math.round(loopEnd * sr)))
+  const maxCrossfade = Math.floor((end - start) * 0.1)
+  const crossfade = Math.max(0, Math.min(maxCrossfade, Math.round((sample.crossfadeSec || 0.08) * sr)))
+  if (crossfade > 8) {
+    for (let channel = 0; channel < audio.numberOfChannels; channel++) {
+      const data = audio.getChannelData(channel)
+      for (let i = 0; i < crossfade; i++) {
+        const t = i / Math.max(1, crossfade - 1)
+        const fadeOut = Math.cos(t * Math.PI * 0.5)
+        const fadeIn = Math.sin(t * Math.PI * 0.5)
+        data[end - crossfade + i] = data[end - crossfade + i] * fadeOut + data[start + i] * fadeIn
+      }
+    }
+  }
+  profile.loopMs += nowMs() - started
+  return { loop: true, loopStart: (start + crossfade) / sr, loopEnd: end / sr }
+}
+
+async function decodeSample (context, sample, priority = true) {
+  const key = sample.pack + '|' + sample.entry + '|object-v2'
+  const cached = bufferCache.get(key)
+  if (cached) {
+    profile.cacheHits += 1
+    return cached
+  }
+  if (decodePromises.has(key)) return decodePromises.get(key)
+
+  const promise = decodeQueue.run(async () => {
+    const bytes = await fetchSampleBytes(sample)
+    const started = nowMs()
+    const audio = await context.decodeAudioData(bytes.slice(0))
+    profile.decodeMs += nowMs() - started
+    const loopInfo = applyManifestLoop(audio, sample)
+    const decoded = {
+      audio,
+      loop: !!loopInfo.loop,
+      loopStart: loopInfo.loopStart || 0,
+      loopEnd: loopInfo.loopEnd || 0,
+      rootNote: sample.rootNote,
+      unpitched: !!sample.unpitched,
+      dynamicLayer: sample.dynamicLayer,
+      key
+    }
+    bufferCache.set(key, decoded)
+    return decoded
+  }, priority)
+  decodePromises.set(key, promise)
+  try {
+    return await promise
+  } finally {
+    decodePromises.delete(key)
+  }
 }
 
 function prefetchSilent (context, spec, artic, pitch, velocity, dynamics) {
+  if (decodeQueue.pending > 2) return pb()
   const rules = pb()
   const list = [
     pickFromManifest(samples(), spec, artic, pitch, velocity, dynamics, 0, manifest),
-    pickLayer(samples(), spec, artic, pitch, velocity, dynamics, -1, 1, manifest),
-    pickNeighbor(samples(), spec, artic, pitch, velocity, dynamics, pitch, 2, manifest)
+    pickLayer(samples(), spec, artic, pitch, velocity, dynamics, -1, 1, manifest)
   ]
-  for (const offset of [-2, -1, 1, 2]) {
+  for (const offset of [-1, 1]) {
     list.push(pickFromManifest(samples(), spec, artic, pitch + offset, velocity, dynamics, 0, manifest))
   }
-  list.filter(Boolean).slice(0, 6).forEach((sample) => {
-    decodeSample(context, sample).catch(() => {})
+  list.filter(Boolean).slice(0, 3).forEach((sample) => {
+    decodeSample(context, sample, false).catch(() => {})
   })
   return rules
 }
@@ -152,12 +258,15 @@ export async function ensureManifest () {
         const remoteCount = ((remote && remote.samples) || []).length
         const bundledReady = !!(bundled && bundled.playback)
         const remoteReady = !!(remote && remote.playback)
-        if (remoteReady && remoteCount >= bundledCount) manifest = remote
+        const bundledFormat = Number(bundled && bundled.formatVersion) || 1
+        const remoteFormat = Number(remote && remote.formatVersion) || 1
+        if (remoteReady && remoteCount >= bundledCount && remoteFormat >= bundledFormat) manifest = remote
         else if (!bundledReady) manifest = remote
       }
     } catch (err) {
       console.warn('[m-orchestra] using bundled manifest', err)
     }
+    bufferCache.setBudgetMb(Math.min(96, (manifest && manifest.cacheBudgetMb) || 96))
     return manifest
   })()
   return loadPromise
@@ -235,11 +344,15 @@ function orchestraDest (graph) {
   return graph.samplerGain || graph.master || graph.context.destination
 }
 
+const noiseBuffers = new WeakMap()
+
 function makeNoiseBuffer (context) {
+  if (noiseBuffers.has(context)) return noiseBuffers.get(context)
   const length = Math.max(1, Math.floor(context.sampleRate * 0.35))
   const buffer = context.createBuffer(1, length, context.sampleRate)
   const data = buffer.getChannelData(0)
   for (let i = 0; i < length; i++) data[i] = Math.random() * 2 - 1
+  noiseBuffers.set(context, buffer)
   return buffer
 }
 
@@ -293,8 +406,42 @@ export function applyControllers (track) {
   })
 }
 
+function attachLayerWhenReady (context, key, layer, track, spec, pitch, rules) {
+  if (!layer) return
+  decodeSample(context, layer, false).then((decoded) => {
+    const voice = voices.get(key)
+    if (!voice) return
+    const src = context.createBufferSource()
+    src.buffer = decoded.audio
+    const pan = context.createStereoPanner()
+    pan.pan.value = (spec.sectionSize || 1) > 1 ? 0.22 : 0
+    const semitones = decoded.unpitched
+      ? 0
+      : Math.max(-rules.maxStretchSemitones, Math.min(rules.maxStretchSemitones, pitch - decoded.rootNote))
+    src.playbackRate.value = Math.pow(2, semitones / 12)
+    if (decoded.loop && decoded.loopEnd - decoded.loopStart > 0.8) {
+      src.loop = true
+      src.loopStart = decoded.loopStart
+      src.loopEnd = decoded.loopEnd
+    }
+    src.connect(pan)
+    pan.connect(voice.layerGainB)
+    const now = context.currentTime
+    voice.dualLayer = true
+    voice.dynLayerB = layer.dynamicLayer
+    const mix = layerMix(voice, track)
+    voice.layerGainA.gain.setTargetAtTime(mix.a, now, 0.045)
+    voice.layerGainB.gain.setValueAtTime(0, now)
+    voice.layerGainB.gain.setTargetAtTime(mix.b, now, 0.045)
+    src.start()
+    voice.sources.push(src)
+  }).catch(() => {})
+}
+
 export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   if (!graph || !track) return null
+  const noteStarted = nowMs()
+  profile.noteCount += 1
   if (graph.context.state === 'suspended') {
     try { await graph.context.resume() } catch (err) { /* autoplay policy */ }
   }
@@ -321,17 +468,9 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   const layer = isSustaining(artic)
     ? pickLayer(samples(), spec, artic, pitch, velocityMidi, dynamics, primary.dynamicLayer, rr + 1, manifest)
     : null
-  const dual = !!(layer && layer.entry !== primary.entry)
-  let wanted = Math.max(1, Math.min(rules.maxSources, spec.sourceVoices || 1))
-  if (spec.solo || (spec.sectionSize || 1) <= 1) wanted = dual ? 2 : 1
-  else if (dual) wanted = Math.max(wanted, 2)
-  const neighbor = (!spec.solo && (spec.sectionSize || 1) > 1 && wanted >= (dual ? 3 : 2))
-    ? pickNeighbor(samples(), spec, artic, pitch, velocityMidi, dynamics, primary.rootNote, rr + 2, manifest)
-    : null
-
+  const secondaryLayer = layer && layer.entry !== primary.entry ? layer : null
+  const dual = false
   const refs = [primary]
-  if (dual) refs.push(layer)
-  if (neighbor && neighbor.entry !== primary.entry && (!dual || neighbor.entry !== layer.entry)) refs.push(neighbor)
   const decodedList = []
   for (const ref of refs) {
     try {
@@ -454,10 +593,14 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     velocity,
     dualLayer: dual,
     dynLayerA: primary.dynamicLayer,
-    dynLayerB: dual ? layer.dynamicLayer : primary.dynamicLayer,
+    dynLayerB: primary.dynamicLayer,
     baseRate: decodedList[0] ? (decodedList[0].decoded.unpitched ? 1 : Math.pow(2, (pitch - decodedList[0].decoded.rootNote) / 12)) : 1
   })
+  attachLayerWhenReady(ctx, key, secondaryLayer, track, spec, pitch, rules)
   applyControllers(track)
+  const readyMs = nowMs() - noteStarted
+  profile.noteReadyMs += readyMs
+  profile.maxNoteReadyMs = Math.max(profile.maxNoteReadyMs, readyMs)
   return key
 }
 
@@ -476,12 +619,28 @@ export async function preloadInstrument (graph, definitionId) {
   await ensureManifest()
   const spec = findInstrument(definitionId)
   if (!spec || !graph) return
-  await fetchZip(spec.pack)
   const arts = spec.articulations || ['long']
   for (const artic of arts) {
     const sample = pickFromManifest(samples(), spec, artic, 60, 100, 100, 0, manifest)
     if (sample) {
-      try { await decodeSample(graph.context, sample) } catch (err) { console.warn('[m-orchestra] preload', err) }
+      try { await decodeSample(graph.context, sample, false) } catch (err) { console.warn('[m-orchestra] preload', err) }
     }
   }
+}
+
+/** Preloads only the exact primary samples used by the next transport window. */
+export async function preloadNotes (graph, track, pitches, velocity = 0.8) {
+  if (!graph || !track || !Array.isArray(pitches) || !pitches.length) return
+  await ensureManifest()
+  const spec = findInstrument(track.definitionId)
+  if (!spec) return
+  const artic = articForTrack(track, spec)
+  const dynamics = dynamicsForTrack(track)
+  const velocityMidi = Math.round(Math.max(0.05, velocity) * 127)
+  const unique = [...new Set(pitches.map((pitch) => Math.round(Number(pitch))).filter(Number.isFinite))]
+  await Promise.all(unique.slice(0, 24).map(async (pitch) => {
+    const sample = pickFromManifest(samples(), spec, artic, pitch, velocityMidi, dynamics, 0, manifest)
+    if (!sample) return
+    try { await decodeSample(graph.context, sample, false) } catch (err) { /* retry on note-on */ }
+  }))
 }

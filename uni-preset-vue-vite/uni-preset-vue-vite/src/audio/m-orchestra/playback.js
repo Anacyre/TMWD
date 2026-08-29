@@ -3,7 +3,7 @@
 export const PLAYBACK = {
   maxStretchSemitones: 4,
   dynamicsVelocityMix: 0.35,
-  minCrossfadeMs: 320,
+  minCrossfadeMs: 120,
   loopSearchStart: 0.28,
   loopSearchEnd: 0.90,
   loopWindowSec: 2.4,
@@ -12,18 +12,18 @@ export const PLAYBACK = {
   minLoopSec: 1.45,
   maxLoopSec: 3.5,
   minLoopCorrelation: 0.38,
-  releaseLongSec: 0.9,
+  releaseLongSec: 0.45,
   releaseShortSec: 0.12,
   releaseHitSec: 0.08,
   sectionDetuneCents: 2.0,
   soloDetuneCents: 0.8,
-  cutoffMinHz: 1800,
-  cutoffSpanHz: 4200,
-  noiseAmount: 0.0012,
+  cutoffMinHz: 7000,
+  cutoffSpanHz: 12000,
+  noiseAmount: 0.0004,
   noiseHpHz: 2200,
   vibratoDepthSemis: 0.12,
   vibratoGate: 0.12,
-  maxSources: 3
+  maxSources: 1
 }
 
 export function playbackFrom (manifest) {
