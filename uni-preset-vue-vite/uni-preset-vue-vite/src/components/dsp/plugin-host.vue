@@ -152,7 +152,7 @@ function onChange () { persistWebMixer() }
 .host {
   position: fixed;
   inset: 0;
-  background: rgba(4, 6, 10, 0.72);
+  background: rgba(18, 20, 24, 0.58);
   z-index: 1000;
   display: flex;
   align-items: center;
@@ -175,13 +175,11 @@ function onChange () { persistWebMixer() }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  background:
-    radial-gradient(ellipse at 50% -8%, rgba(80, 70, 130, 0.16), transparent 46%),
-    #080A0F;
-  border: 1px solid rgba(255,255,255,0.08);
+  background: linear-gradient(180deg, #F4F3F0 0%, #EDECE8 38%, #E4E2DD 100%);
+  border: 1px solid rgba(38, 40, 44, 0.16);
   border-radius: 10px;
   padding: 4px 4px 10px;
-  box-shadow: 0 28px 80px rgba(0,0,0,0.6), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 24px 64px rgba(24, 26, 30, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
 .sheet > :deep(.x-plug) {
   flex: 1;
@@ -216,15 +214,16 @@ function onChange () { persistWebMixer() }
   justify-content: flex-end;
   gap: 16px;
   padding: 0 14px;
-  color: #6B7380;
-  letter-spacing: 0.16em;
+  color: #8E939C;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  font-size: 10px;
+  font-size: 9px;
   flex-shrink: 0;
 }
 .grab-remove, .grab-close, .grab-change { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
-.grab-remove { color: #a87870; }
-.grab-change { color: #c8c8c8; margin-right: auto; }
+.grab-remove { color: #C4503C; }
+.grab-change { color: #5A5E66; margin-right: auto; }
+.head-lite { color: #8E939C; }
 .head-lite .grab-change { margin-right: 0; }
 .missing {
   padding: 24px 16px 40px;
@@ -233,6 +232,6 @@ function onChange () { persistWebMixer() }
   gap: 8px;
   align-items: center;
 }
-.missing-title { font-size: 16px; color: #e8e4dc; }
-.missing-id { font-size: 13px; color: #8a8680; text-align: center; line-height: 1.45; }
+.missing-title { font-size: 16px; color: #26282C; }
+.missing-id { font-size: 13px; color: #8E939C; text-align: center; line-height: 1.45; }
 </style>

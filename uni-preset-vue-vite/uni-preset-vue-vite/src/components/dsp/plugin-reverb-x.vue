@@ -10,81 +10,119 @@
       @reset="onReset"
     >
       <template #actions>
-        <view class="wet header-wet">
-          <text class="wet-lab">Wet</text>
-          <view class="wet-track" @mousedown.stop.prevent="dragAmount" @touchstart.stop.prevent="dragAmount">
-            <view class="wet-fill" :style="{ width: (state.amount * 100) + '%' }" />
-            <view class="wet-thumb" :style="{ left: (state.amount * 100) + '%' }" />
-          </view>
-          <text class="wet-lab">Dry</text>
-        </view>
+        <view class="x-chip wet-btn" :class="{ on: state.wetProcess }" @click="toggleWet">Wet Process</view>
       </template>
     </plugin-shell>
 
-    <view class="stage x-panel">
-      <view class="graph-wrap">
-        <dsp-canvas class="graph" ref="canvas" fill :height="248" @pointerdown="dragTime" />
+    <view class="stage">
+      <view class="graph x-panel">
+        <text class="graph-lab">Amount</text>
+        <dsp-canvas ref="canvas" fill :height="230" @pointerdown="dragTime" />
+        <view class="pods">
+          <view class="pod x-card">
+            <dsp-knob
+              size="sm"
+              :model-value="state.preDelayMs"
+              :min="0" :max="250" :default-value="20"
+              scale="log"
+              label="Pre-Delay"
+              :format="fmtPreDelay"
+              @update:model-value="set('preDelayMs', $event)"
+            />
+          </view>
+          <view class="pod x-card">
+            <dsp-knob
+              size="sm"
+              :model-value="state.dampingHz"
+              :min="500" :max="20000" :default-value="6200"
+              scale="log"
+              label="Damping"
+              :format="fmtDamping"
+              @update:model-value="set('dampingHz', $event)"
+            />
+          </view>
+        </view>
       </view>
-      <dsp-meter fill :level="outLevel" label="Out" :height="220" />
+
+      <dsp-meter label="Out" :level="outLevel" fill :height="230" />
     </view>
 
-    <view class="knobs x-knobs">
+    <view class="tray x-tray">
       <dsp-knob
-        size="lg"
-        :model-value="state.amount"
-        :min="0" :max="1" :default-value="0.35"
+        :model-value="state.reverbLevel"
+        :min="0" :max="1.5" :default-value="0.65"
         label="Amount"
-        :format="(v) => Math.round(v * 100) + '%'"
-        @update:model-value="set('amount', $event)"
+        :format="fmtPercent150"
+        @update:model-value="set('reverbLevel', $event)"
       />
       <dsp-knob
-        size="lg"
         :model-value="state.decay"
         :min="0.15" :max="12" :default-value="2.2"
         scale="log"
         label="Time"
-        :format="(v) => v.toFixed(2) + ' s'"
+        :format="(v) => Number(v).toFixed(2) + ' s'"
         @update:model-value="set('decay', $event)"
       />
       <dsp-knob
-        size="lg"
         :model-value="state.size"
         :min="0" :max="1" :default-value="0.62"
         label="Size"
-        :format="(v) => Math.round(v * 100) + '%'"
+        :format="(v) => Math.round(v * 100) + ' %'"
         @update:model-value="set('size', $event)"
+      />
+      <dsp-knob
+        :model-value="state.amount"
+        :min="0" :max="1" :default-value="0.35"
+        label="Mix"
+        :format="(v) => Math.round(v * 100) + ' %'"
+        @update:model-value="set('amount', $event)"
+      />
+      <dsp-knob
+        :model-value="state.width"
+        :min="0" :max="2" :default-value="1"
+        label="Width"
+        :format="(v) => Math.round(v * 100) + ' %'"
+        @update:model-value="set('width', $event)"
       />
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">Venue</text>
-      <view class="x-seg wrap">
+      <text class="dsp-lab">Mode</text>
+      <view class="x-seg railed wrap">
         <view
-          v-for="v in venues"
-          :key="v.id"
+          v-for="mode in REVERB_MODES"
+          :key="mode.id"
           class="x-chip"
-          :class="{ on: state.venue === v.id }"
-          @click="setVenue(v.id)"
-        >{{ shortVenue(v.name) }}</view>
+          :class="{ on: activeMode === mode.id }"
+          @click="setMode(mode)"
+        >{{ mode.name }}</view>
       </view>
-      <view class="gap" />
-      <view class="wet footer-wet">
-        <text class="wet-lab">Wet</text>
-        <view class="wet-track" @mousedown.stop.prevent="dragAmount" @touchstart.stop.prevent="dragAmount">
-          <view class="wet-fill" :style="{ width: (state.amount * 100) + '%' }" />
-          <view class="wet-thumb" :style="{ left: (state.amount * 100) + '%' }" />
-        </view>
-        <text class="wet-lab">Dry</text>
+      <view class="x-sel venue-sel" @click.stop="venueOpen = !venueOpen">
+        <text>{{ venueName }}</text>
+        <text class="caret">▾</text>
       </view>
-      <view class="x-chip" :class="{ on: state.wetProcess }" @click="toggleWet">Wet FX</view>
+      <view v-if="venueOpen" class="x-menu venue-menu" @click.stop>
+        <view
+          v-for="venue in REVERB_VENUES"
+          :key="venue.id"
+          class="item"
+          :class="{ on: state.venue === venue.id }"
+          @click="setVenue(venue.id)"
+        >{{ venue.name }}</view>
+      </view>
     </view>
 
-    <view v-if="state.wetProcess" class="wet-pick" @click="cycleWet">{{ wetLabel }}</view>
     <view v-if="wetInsert" class="wet-editor">
-      <text class="wet-head">Wet process · {{ wetLabel }}</text>
-      <plugin-equalizer-x v-if="wetInsert && wetInsert.pluginId === 'equalizer-x'" embedded :insert="wetInsert" @change="onWetChange" />
-      <plugin-dynamic-x v-else-if="wetInsert && wetInsert.pluginId === 'dynamic-x'" :insert="wetInsert" @change="onWetChange" />
-      <plugin-boost-x v-else-if="wetInsert && wetInsert.pluginId === 'boost-x'" :insert="wetInsert" @change="onWetChange" />
+      <view class="wet-head">
+        <text class="dsp-lab">Wet chain</text>
+        <view class="x-sel wet-pick" @click="cycleWet">
+          <text>{{ wetLabel }}</text>
+          <text class="caret">⇄</text>
+        </view>
+      </view>
+      <plugin-equalizer-x v-if="wetInsert.pluginId === 'equalizer-x'" embedded :insert="wetInsert" @change="onWetChange" />
+      <plugin-dynamic-x v-else-if="wetInsert.pluginId === 'dynamic-x'" embedded :insert="wetInsert" @change="onWetChange" />
+      <plugin-boost-x v-else-if="wetInsert.pluginId === 'boost-x'" :insert="wetInsert" @change="onWetChange" />
     </view>
   </view>
 </template>
@@ -98,11 +136,14 @@ import DspCanvas from './dsp-canvas.vue'
 import PluginEqualizerX from './plugin-equalizer-x.vue'
 import PluginDynamicX from './plugin-dynamic-x.vue'
 import PluginBoostX from './plugin-boost-x.vue'
-import { plugins, REVERB_VENUES, WET_PROCESS_PLUGINS, applyPreset, resetInsert, getPlugin } from '../../dsp/registry.js'
+import {
+  plugins, REVERB_VENUES, REVERB_MODES, reverbModeForVenue,
+  WET_PROCESS_PLUGINS, applyPreset, resetInsert, getPlugin
+} from '../../dsp/registry.js'
 import { createInsert } from '../../dsp/plugin.js'
 import { getReverbVisualization } from '../../dsp/reverb-x.js'
 import { prepareCanvas } from './canvas-util.js'
-import { DSP_THEME, strokeGlow } from './dsp-theme.js'
+import { DSP_THEME, drawLogTimeGrid, drawDecadeGrid, timeToX, ampToY, axisText } from './dsp-theme.js'
 import './dsp-theme.css'
 
 const props = defineProps({
@@ -111,19 +152,30 @@ const props = defineProps({
 })
 const emit = defineEmits(['change'])
 const canvas = ref(null)
+const venueOpen = ref(false)
 const state = computed(() => props.insert.state)
 const presets = computed(() => plugins['reverb-x'].presets)
-const venues = REVERB_VENUES
+
+const T_LO = 0.001
+const T_HI = 10
+const FLOOR_DB = -60
+
 const outLevel = computed(() => {
   const m = props.meters || {}
   if (m.wetPeak != null && m.wetPeak > 0) return m.wetPeak
   return m.outPeak != null ? m.outPeak : 0
+})
+const activeMode = computed(() => reverbModeForVenue(state.value.venue))
+const venueName = computed(() => {
+  const found = REVERB_VENUES.find((venue) => venue.id === state.value.venue)
+  return found ? found.name : 'Concert Hall'
 })
 const wetLabel = computed(() => {
   const id = state.value.wetPluginId
   if (!id) return 'Select FX'
   return (getPlugin(id) || {}).name || id
 })
+
 const wetInsert = ref(null)
 watch(() => [state.value.wetProcess, state.value.wetPluginId, state.value.wetState], () => {
   if (!state.value.wetProcess || !state.value.wetPluginId || !state.value.wetState) {
@@ -142,11 +194,18 @@ watch(() => [state.value.wetProcess, state.value.wetPluginId, state.value.wetSta
   }
 }, { immediate: true })
 
-function shortVenue (name) {
-  if (name === 'Concert Hall') return 'Concert'
-  if (name === 'Large Stage') return 'Stage'
-  if (name === 'Small Room') return 'Room'
-  return name
+function fmtPreDelay (v) {
+  const ms = Number(v) || 0
+  return ms < 10 ? ms.toFixed(1) + ' ms' : Math.round(ms) + ' ms'
+}
+
+function fmtDamping (v) {
+  const hz = Number(v) || 0
+  return hz >= 1000 ? (hz / 1000).toFixed(1) + ' kHz' : Math.round(hz) + ' Hz'
+}
+
+function fmtPercent150 (v) {
+  return Math.round((Number(v) || 0) / 1.5 * 100) + ' %'
 }
 
 function commit () { emit('change', props.insert) }
@@ -154,12 +213,22 @@ function set (key, value) { props.insert.state[key] = value; commit() }
 function onPreset (id) { applyPreset(props.insert, id); commit() }
 function onEnabled (v) { props.insert.enabled = v; commit() }
 function onReset () { resetInsert(props.insert); commit() }
+
 function setVenue (id) {
   props.insert.state.venue = id
-  const match = presets.value.find((p) => p.id === id)
+  const match = presets.value.find((preset) => preset.id === id)
   if (match) props.insert.presetId = match.id
+  venueOpen.value = false
   commit()
 }
+
+function setMode (mode) {
+  // A mode chip selects its representative venue unless the current venue already
+  // belongs to that mode, in which case it is left alone.
+  if (activeMode.value === mode.id) return
+  setVenue(mode.venue)
+}
+
 function toggleWet () {
   props.insert.state.wetProcess = !props.insert.state.wetProcess
   if (props.insert.state.wetProcess && !props.insert.state.wetPluginId) {
@@ -169,6 +238,7 @@ function toggleWet () {
   }
   commit()
 }
+
 function cycleWet () {
   const cur = WET_PROCESS_PLUGINS.indexOf(props.insert.state.wetPluginId)
   const nextId = WET_PROCESS_PLUGINS[(cur + 1) % WET_PROCESS_PLUGINS.length]
@@ -177,88 +247,86 @@ function cycleWet () {
   props.insert.state.wetState = fx.state
   commit()
 }
+
 function onWetChange () {
   if (wetInsert.value) props.insert.state.wetState = wetInsert.value.state
   commit()
 }
 
 function draw () {
-  const prepared = prepareCanvas(canvas, 640, 248)
+  const prepared = prepareCanvas(canvas, 640, 230)
   if (!prepared) return
   const { ctx, w, h } = prepared
   ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#0B0E14'
+  ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
 
-  const padL = 36, padB = 28, padT = 16, padR = 12
-  const gw = w - padL - padR
-  const gh = h - padT - padB
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'
+  const padL = 4
+  const padR = 96
+  const padT = 18
+  const padB = 4
+  const gw = Math.max(40, w - padL - padR)
+  const gh = Math.max(40, h - padT - padB)
+
+  ctx.save()
+  ctx.translate(padL, padT)
+  drawDecadeGrid(ctx, gw, gh, FLOOR_DB)
+  drawLogTimeGrid(ctx, gw, gh, T_LO, T_HI)
+
+  const viz = getReverbVisualization(state.value) || {}
+  const envelope = Array.isArray(viz.envelope) ? viz.envelope : []
+  const taps = Array.isArray(viz.earlyTaps) ? viz.earlyTaps : []
+  const level = Number(state.value.reverbLevel)
+  const scale = Math.min(1, Number.isFinite(level) ? level / 1.5 : 0.43) * 0.75 + 0.25
+  const preDelaySec = Math.max(0, Number(state.value.preDelayMs) || 0) / 1000
+
+  if (envelope.length > 1) {
+    const trace = (close) => {
+      ctx.beginPath()
+      if (close) ctx.moveTo(timeToX(preDelaySec + T_LO, gw, T_LO, T_HI), gh)
+      envelope.forEach((point, i) => {
+        const x = timeToX(preDelaySec + Math.max(T_LO, point.t), gw, T_LO, T_HI)
+        const y = ampToY(Math.max(1e-6, point.env * scale), gh, FLOOR_DB)
+        if (!close && i === 0) ctx.moveTo(x, y)
+        else ctx.lineTo(x, y)
+      })
+      if (close) {
+        const last = envelope[envelope.length - 1]
+        ctx.lineTo(timeToX(preDelaySec + Math.max(T_LO, last.t), gw, T_LO, T_HI), gh)
+        ctx.closePath()
+      }
+    }
+
+    trace(true)
+    ctx.fillStyle = DSP_THEME.rev.fill
+    ctx.fill()
+
+    trace(false)
+    ctx.strokeStyle = DSP_THEME.rev.accent
+    ctx.lineWidth = 1.6
+    ctx.stroke()
+  }
+
+  // Early reflections as discrete taps, offset by pre-delay like the real tap list.
+  ctx.strokeStyle = DSP_THEME.rev.early
   ctx.lineWidth = 1
-  ;[0.1, 0.25, 0.5, 1].forEach((t) => {
-    const y = padT + (1 - t) * gh
-    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(w - padR, y); ctx.stroke()
-  })
-  ctx.fillStyle = DSP_THEME.muted
-  ctx.font = '8px Inter, Segoe UI, sans-serif'
-  ctx.textAlign = 'right'
-  ctx.fillText('AMT', padL - 6, padT + 8)
-  ctx.fillText('100%', padL - 6, padT + 14)
-  ctx.textAlign = 'left'
-  ;[0.5, 1, 2, 5, 10].forEach((sec) => {
-    const x = padL + Math.min(1, sec / 12) * gw
-    ctx.fillText(sec + 's', x, h - 8)
-  })
-
-  const viz = getReverbVisualization(state.value)
-  const amount = viz.wetGain
-  const tEnd = Math.min(0.96, Math.max(0.18, viz.tMax / 12))
-  const ss = Math.min(2, viz.sizeScale)
-  const rw = gw * (0.18 + 0.32 * (ss / 2))
-  const rh = gh * (0.16 + 0.22 * (ss / 2))
-  ctx.strokeStyle = 'rgba(183,148,246,0.14)'
-  ctx.strokeRect(padL + 6, padT + 6, rw, rh)
-
-  ctx.beginPath()
-  ctx.moveTo(padL, padT + gh)
-  viz.envelope.forEach((pt) => {
-    const x = padL + Math.min(1, pt.t / 12) * tEnd * gw
-    ctx.lineTo(x, padT + gh - pt.env * gh)
-  })
-  ctx.lineTo(padL + tEnd * gw, padT + gh)
-  ctx.closePath()
-  const fill = ctx.createLinearGradient(0, padT, 0, padT + gh)
-  fill.addColorStop(0, 'rgba(183,148,246,0.22)')
-  fill.addColorStop(1, 'rgba(183,148,246,0.02)')
-  ctx.fillStyle = fill
-  ctx.fill()
-
-  ctx.beginPath()
-  viz.envelope.forEach((pt, i) => {
-    const x = padL + Math.min(1, pt.t / 12) * tEnd * gw
-    const y = padT + gh - pt.env * gh
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  })
-  ctx.lineWidth = 1.8
-  strokeGlow(ctx, DSP_THEME.rev.accent, 10, () => ctx.stroke())
-
-  ctx.strokeStyle = 'rgba(183,148,246,0.45)'
-  ctx.lineWidth = 1
-  viz.earlyTaps.forEach((tap) => {
-    const x = padL + Math.min(1, tap.t / 12) * tEnd * gw
-    const hgt = Math.min(gh * 0.9, Math.max(2, Math.abs(tap.gL) * amount * gh * 1.4))
-    ctx.globalAlpha = 0.35 + Math.min(0.5, Math.abs(tap.gL))
+  taps.forEach((tap) => {
+    const x = timeToX(preDelaySec + Math.max(T_LO, tap.t), gw, T_LO, T_HI)
+    const amp = Math.max(1e-6, Math.abs(Number(tap.gL) || 0) * scale)
+    const y = ampToY(amp, gh, FLOOR_DB)
+    if (y >= gh - 1) return
     ctx.beginPath()
-    ctx.moveTo(x, padT + gh)
-    ctx.lineTo(x, padT + gh - hgt)
+    ctx.moveTo(Math.round(x) + 0.5, gh)
+    ctx.lineTo(Math.round(x) + 0.5, y)
     ctx.stroke()
   })
-  ctx.globalAlpha = 1
+  ctx.restore()
+
+  axisText(ctx, 'Time', w - padR - 22, padT + 8, 'right')
 }
 
 let vizTimer = 0
-onMounted(() => { draw(); vizTimer = setInterval(draw, 50) })
+onMounted(() => { draw(); vizTimer = setInterval(draw, 60) })
 onUnmounted(() => clearInterval(vizTimer))
 watch(() => props.insert.state, draw, { deep: true })
 
@@ -267,24 +335,10 @@ function dragTime (e) {
   const start = props.insert.state.decay
   const move = (ev) => {
     const x = ev.touches ? ev.touches[0].clientX : ev.clientX
-    props.insert.state.decay = Math.min(12, Math.max(0.15, start + (x - startX) / 80))
+    // Horizontal drag is a ratio so it feels even across the log time axis.
+    props.insert.state.decay = Math.min(12, Math.max(0.15, start * Math.pow(2, (x - startX) / 140)))
     commit()
   }
-  bindDrag(move)
-}
-
-function dragAmount (e) {
-  const startX = e.touches ? e.touches[0].clientX : e.clientX
-  const start = props.insert.state.amount
-  const move = (ev) => {
-    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
-    props.insert.state.amount = Math.min(1, Math.max(0, start + (x - startX) / 140))
-    commit()
-  }
-  bindDrag(move)
-}
-
-function bindDrag (move) {
   const end = () => {
     window.removeEventListener('mousemove', move)
     window.removeEventListener('mouseup', end)
@@ -299,97 +353,91 @@ function bindDrag (move) {
 </script>
 
 <style scoped>
-.plug { gap: 10px; }
-.wet {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-right: 8px;
-}
-.wet-lab {
-  font-size: 9px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--dsp-muted);
-}
-.wet-track {
-  width: 88px;
-  height: 22px;
-  background: transparent;
-  border-radius: 2px;
-  position: relative;
-  cursor: ew-resize;
-  display: flex;
-  align-items: center;
-}
-.wet-fill {
-  height: 6px;
-  background: var(--dsp-accent);
-  border-radius: 2px;
-  box-shadow: 0 0 8px var(--dsp-glow);
-  width: 0;
-}
-.wet-track::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  right: 0;
-  height: 4px;
-  background: rgba(255,255,255,0.08);
-  border-radius: 2px;
-  z-index: 0;
-}
-.wet-fill { position: relative; z-index: 1; }
-.wet-thumb {
-  position: absolute;
-  top: 50%;
-  width: 14px;
-  height: 14px;
-  margin: -7px 0 0 -7px;
-  z-index: 2;
-  border-radius: 50%;
-  background: #F4F1EA;
-  box-shadow: 0 0 8px var(--dsp-glow);
-}
+.plug { gap: 8px; }
 .stage {
   display: flex;
   gap: 10px;
-  padding: 8px 10px 8px 8px;
   min-height: 0;
   flex: 1 1 auto;
 }
-.graph-wrap { flex: 1; min-width: 0; min-height: 0; height: auto; display: flex; }
-.knobs { flex-shrink: 0; }
+.graph {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  overflow: hidden;
+}
+.graph-lab {
+  position: absolute;
+  top: 6px;
+  left: 8px;
+  z-index: 2;
+  font-size: 9px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--x-ink-3);
+  pointer-events: none;
+}
+.pods {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+}
+.pod {
+  width: 76px;
+  padding: 6px 4px;
+  display: flex;
+  justify-content: center;
+  background: var(--x-panel-2);
+}
+.tray {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 6px;
+  padding: 8px 10px;
+  flex-shrink: 0;
+}
 .wrap { flex-wrap: wrap; }
-.gap { flex: 1; }
-.wet-pick {
-  margin-left: auto;
-  min-height: 28px;
-  padding: 0 12px;
-  width: max-content;
-  border: 1px solid var(--dsp-line);
-  border-radius: 4px;
-  color: var(--dsp-muted);
-  font-size: 11px;
+.venue-sel { margin-left: auto; min-width: 120px; }
+.venue-menu { right: 2px; bottom: 34px; }
+.wet-btn { min-width: 88px; }
+.wet-editor {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--x-line);
+}
+.wet-head {
   display: flex;
   align-items: center;
-  cursor: pointer;
+  gap: 10px;
+  margin-bottom: 6px;
 }
-.wet-editor { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--dsp-line); }
-.wet-head {
-  display: block;
-  font-size: 10px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--dsp-muted);
-  margin-bottom: 8px;
-}
-.footer-wet { display: none; }
+.wet-pick { min-width: 130px; }
+.caret { font-size: 8px; color: var(--x-ink-3); }
 
 @media (max-width: 720px) {
-  .wet-track { width: 120px; }
-  .header-wet { display: none; }
-  .footer-wet { display: flex; }
-  .x-footer { padding-bottom: 8px; }
+  .pods {
+    position: static;
+    flex-direction: row;
+    justify-content: flex-start;
+  }
+  .graph { flex-direction: column; }
+  .pod { width: 68px; }
+  .tray {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-items: center;
+    gap: 8px 4px;
+  }
+  .venue-sel { margin-left: 0; flex: 1 1 100%; }
+  .venue-menu { left: 0; right: 0; }
 }
 </style>

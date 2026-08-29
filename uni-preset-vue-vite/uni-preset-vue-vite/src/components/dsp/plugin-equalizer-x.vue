@@ -10,128 +10,142 @@
       @reset="onReset"
     />
 
-    <view class="stage x-panel">
-      <view class="graph-wrap">
+    <view class="stage">
+      <view class="graph x-panel">
         <dsp-canvas
           ref="canvas"
           :fill="!embedded"
-          :height="embedded ? 180 : 248"
+          :height="embedded ? 170 : 240"
           @pointerdown="onDown"
           @dblclick="onCreate"
         />
-        <view class="add-node" :class="{ full: state.nodes.length >= 7 }" @click="addNodeAtCenter">
-          {{ state.nodes.length >= 7 ? '7 / 7' : '+' }}
+        <view class="add-node" :class="{ full: nodes.length >= 7 }" @click="addNodeAtCenter">
+          {{ nodes.length >= 7 ? '7 / 7' : '+' }}
         </view>
       </view>
       <dsp-meter
-        fill
-        :stereo="false"
+        label="Gain"
         :level="outLevel"
-        label="Out"
+        :level-r="outLevelR"
+        fill
+        :height="embedded ? 170 : 240"
         show-gain
         :gain="state.outputGainDb"
         :gain-min="-24"
         :gain-max="24"
         :gain-default="0"
-        @update:gain="setOutDb"
+        @update:gain="set('outputGainDb', $event)"
       />
     </view>
 
-    <view
-      class="band"
-      :class="{ empty: !selected }"
-      :style="selected ? { '--band': eqBandColor(selectedIndex) } : null"
-    >
-      <template v-if="selected">
-        <view class="band-head">
-          <view class="pills">
-            <view
-              v-for="(node, i) in state.nodes"
-              :key="'n' + i"
-              class="pill"
-              :class="{ on: i === selectedIndex, off: node.enabled === false }"
-              :style="{ '--band': eqBandColor(i) }"
-              @click="select(i)"
-            >{{ i + 1 }}</view>
-          </view>
-          <view class="dot" :class="{ off: !selected.enabled }" @click.stop="toggleEnableAt(selectedIndex)">
-            {{ selected.enabled === false ? 'Off' : 'On' }}
-          </view>
-          <view class="shape" :class="{ 'ctrl-off': selected.enabled === false }" @click.stop>
-            <view class="shape-btn" @click="shapeOpen = !shapeOpen">
-              <text>{{ shapeName(selected) }}</text>
+    <view class="strip">
+      <view
+        v-for="(node, i) in nodes"
+        :key="'band' + i"
+        class="card x-card"
+        :class="{ sel: i === activeIndex, muted: node.enabled === false }"
+        :style="{ '--band': eqBandColor(i) }"
+        @pointerdown="activeIndex = i"
+      >
+        <view class="card-head">
+          <view class="x-dot num" :class="{ on: node.enabled !== false }" @click.stop="toggleEnableAt(i)">{{ i + 1 }}</view>
+          <view class="shape" @click.stop>
+            <view class="x-sel shape-btn" @click="shapeOpen = shapeOpen === i ? -1 : i">
+              <text class="shape-txt">{{ shapeShort(node) }}</text>
               <text class="caret">▾</text>
             </view>
-            <view v-if="shapeOpen" class="shape-drop">
+            <view v-if="shapeOpen === i" class="x-menu shape-menu">
               <view
-                v-for="shape in shapes"
+                v-for="shape in EQ_SHAPES"
                 :key="shape"
-                class="shape-item"
-                :class="{ on: selected.shape === shape }"
-                @click="setShape(shape)"
-              >{{ shapeLabel(shape) }}</view>
+                class="item"
+                :class="{ on: node.shape === shape }"
+                @click="setShapeAt(i, shape)"
+              >{{ SHAPE_LABELS[shape] }}</view>
             </view>
           </view>
-          <view class="solo" :class="{ on: selected.solo }" @click.stop="soloAt(selectedIndex)">S</view>
+          <view class="x-dot solo" :class="{ on: node.solo }" @click.stop="soloAt(i)">S</view>
+          <view class="x-dot kill" @click.stop="removeAt(i)">×</view>
         </view>
-        <view class="controls" :class="{ 'ctrl-off': selected.enabled === false, 'ctrl-lock': selected.enabled === false }">
-          <view class="knobs x-knobs">
-            <dsp-knob
-              :size="embedded ? 'md' : 'lg'"
-              :accent="eqBandColor(selectedIndex)"
-              :model-value="showGainFor(selected) ? selected.gain : 0"
-              :min="-18" :max="18" :default-value="0"
-              label="Gain"
-              :format="(v) => fmtDb(v)"
-              :disabled="!showGainFor(selected)"
-              @update:model-value="setGainAt(selectedIndex, $event)"
-            />
-            <dsp-knob
-              :size="embedded ? 'md' : 'lg'"
-              :accent="eqBandColor(selectedIndex)"
-              :model-value="selected.freq"
-              :min="20" :max="20000" :default-value="1000"
-              scale="log"
-              label="Freq"
-              :format="(v) => fmtHz(v)"
-              @update:model-value="setFreqAt(selectedIndex, $event)"
-            />
-            <dsp-knob
-              :size="embedded ? 'md' : 'lg'"
-              :accent="eqBandColor(selectedIndex)"
-              :model-value="selected.q"
-              :min="0.2" :max="12" :default-value="0.9"
-              scale="log"
-              label="Q"
-              :format="(v) => v.toFixed(2)"
-              :disabled="!showQFor(selected)"
-              @update:model-value="setQAt(selectedIndex, $event)"
-            />
-          </view>
-          <view v-if="canSlope" class="slope">
-            <text class="dsp-lab">Slope</text>
-            <view class="x-seg">
-              <view
-                v-for="step in slopeSteps"
-                :key="step"
-                class="x-chip"
-                :class="{ on: (selected.slope || 12) === step }"
-                @click="setSlope(step)"
-              >{{ step }}</view>
-            </view>
+
+        <view class="card-knobs">
+          <dsp-knob
+            size="sm"
+            :accent="eqBandColor(i)"
+            :model-value="showGainFor(node) ? node.gain : 0"
+            :min="-18" :max="18" :default-value="0"
+            label="Gain"
+            :format="(v) => fmtDb(v, 1)"
+            :disabled="!showGainFor(node)"
+            @update:model-value="setAt(i, 'gain', $event)"
+          />
+          <dsp-knob
+            size="sm"
+            :accent="eqBandColor(i)"
+            :model-value="node.freq"
+            :min="20" :max="20000" :default-value="1000"
+            scale="log"
+            label="Freq"
+            :format="(v) => fmtHz(v)"
+            @update:model-value="setAt(i, 'freq', $event)"
+          />
+          <dsp-knob
+            size="sm"
+            :accent="eqBandColor(i)"
+            :model-value="node.q"
+            :min="0.2" :max="12" :default-value="0.9"
+            scale="log"
+            label="Q"
+            :format="(v) => Number(v).toFixed(2)"
+            :disabled="!showQFor(node)"
+            @update:model-value="setAt(i, 'q', $event)"
+          />
+        </view>
+
+        <view v-if="canSlope(node)" class="card-slope">
+          <view class="x-seg railed">
+            <view
+              v-for="step in SLOPE_STEPS"
+              :key="step"
+              class="x-chip slope"
+              :class="{ on: (node.slope || 12) === step }"
+              @click.stop="setAt(i, 'slope', step)"
+            >{{ step }}</view>
           </view>
         </view>
-      </template>
-      <template v-else>
-        <text class="empty-lab">No band selected</text>
-        <text class="empty-plus" @click="addNodeAtCenter">+</text>
-      </template>
+      </view>
+
+      <view v-if="!nodes.length" class="card empty" @click="addNodeAtCenter">
+        <text class="empty-lab">Add a band</text>
+        <text class="empty-plus">+</text>
+      </view>
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">{{ analyzerOn ? '● Analyzer' : 'Analyzer' }}</text>
+      <text class="dsp-lab">Analyzer</text>
+      <view class="x-seg railed">
+        <view
+          v-for="mode in EQ_ANALYZER_MODES"
+          :key="mode"
+          class="x-chip an"
+          :class="{ on: analyzerMode === mode }"
+          @click="set('analyzerMode', mode)"
+        >{{ mode }}</view>
+      </view>
+
+      <text class="dsp-lab">Oversampling</text>
+      <view class="x-seg railed">
+        <view
+          v-for="factor in OVERSAMPLE_FACTORS"
+          :key="factor"
+          class="x-chip os"
+          :class="{ on: oversampling === factor }"
+          @click="set('oversampling', factor)"
+        >{{ factor }}×</view>
+      </view>
+
       <view class="gap" />
-      <view class="x-chip" :class="{ on: state.autoGain }" @click="toggleAuto">{{ state.autoGain ? 'Auto Gain ON' : 'Auto Gain OFF' }}</view>
+      <view class="x-chip" :class="{ on: state.autoGain }" @click="set('autoGain', !state.autoGain)">Auto Gain</view>
     </view>
   </view>
 </template>
@@ -142,12 +156,15 @@ import PluginShell from './plugin-shell.vue'
 import DspKnob from './dsp-knob.vue'
 import DspMeter from './dsp-meter.vue'
 import DspCanvas from './dsp-canvas.vue'
-import { plugins, EQ_SHAPES, applyPreset, resetInsert, createEmptyNode } from '../../dsp/registry.js'
+import {
+  plugins, EQ_SHAPES, EQ_ANALYZER_MODES, OVERSAMPLE_FACTORS,
+  applyPreset, resetInsert, createEmptyNode
+} from '../../dsp/registry.js'
 import { eqCurvePoints, nodeToCanvas, canvasToNode } from '../../dsp/eq-curve.js'
 import { showToast } from '../../store/session.js'
 import { canvasRect, prepareCanvas } from './canvas-util.js'
 import {
-  DSP_THEME, fmtHz, fmtDb, SHAPE_LABELS,
+  DSP_THEME, fmtHz, fmtDb, SHAPE_LABELS, SHAPE_LABELS_SHORT,
   eqBandColor, drawFreqGrid, drawDbGrid, drawSpectrum
 } from './dsp-theme.js'
 import './dsp-theme.css'
@@ -160,95 +177,175 @@ const props = defineProps({
 })
 const emit = defineEmits(['change'])
 const canvas = ref(null)
-const selectedIndex = ref(0)
-const shapeOpen = ref(false)
-const slopeSteps = [6, 12, 24, 48]
-const shapes = EQ_SHAPES
+const activeIndex = ref(0)
+const shapeOpen = ref(-1)
+
+const SLOPE_STEPS = [6, 12, 24, 48]
+const SLOPE_SHAPES = ['lowcut', 'highcut', 'lowshelf', 'highshelf']
+const DB_RANGE = 18
+const DB_TICKS = [12, 6, 0, -6, -12]
+
 const state = computed(() => props.insert.state)
+const nodes = computed(() => state.value.nodes || [])
 const presets = computed(() => plugins['equalizer-x'].presets)
-const selected = computed(() => state.value.nodes[selectedIndex.value] || null)
-const canSlope = computed(() => selected.value && ['lowcut', 'highcut', 'lowshelf', 'highshelf'].includes(selected.value.shape))
-const analyzerOn = computed(() => (props.spectrum || []).some((v) => v > 0.03))
+const analyzerMode = computed(() => EQ_ANALYZER_MODES.includes(state.value.analyzerMode) ? state.value.analyzerMode : 'post')
+const oversampling = computed(() => OVERSAMPLE_FACTORS.includes(state.value.oversampling) ? state.value.oversampling : 1)
 const outLevel = computed(() => props.meters && props.meters.outPeak != null ? props.meters.outPeak : 0)
+const outLevelR = computed(() => props.meters && props.meters.outPeakR != null ? props.meters.outPeakR : null)
 
-function showGainFor (node) { return node && !['lowcut', 'highcut', 'notch', 'bandpass'].includes(node.shape) }
-function showQFor (node) { return node && ['bell', 'notch', 'bandpass'].includes(node.shape) }
-function shapeName (node) { return SHAPE_LABELS[(node && node.shape) || 'bell'] || 'Peak' }
-function shapeLabel (shape) { return SHAPE_LABELS[shape] || shape }
-function select (index) { selectedIndex.value = index; shapeOpen.value = false }
+function showGainFor (node) { return !!node && !['lowcut', 'highcut', 'notch', 'bandpass'].includes(node.shape) }
+function showQFor (node) { return !!node && ['bell', 'notch', 'bandpass'].includes(node.shape) }
+function canSlope (node) { return !!node && SLOPE_SHAPES.includes(node.shape) }
+function shapeShort (node) { return SHAPE_LABELS_SHORT[(node && node.shape) || 'bell'] || 'PEAK' }
 
-let raf = 0
 function commit () { emit('change', props.insert) }
-function onPreset (id) { applyPreset(props.insert, id); selectedIndex.value = 0; shapeOpen.value = false; commit() }
+function onPreset (id) { applyPreset(props.insert, id); activeIndex.value = 0; shapeOpen.value = -1; commit() }
 function onEnabled (v) { props.insert.enabled = v; commit() }
 function onReset () { resetInsert(props.insert); commit() }
+function set (key, value) { props.insert.state[key] = value; commit() }
+
+function setAt (index, key, value) {
+  const node = nodes.value[index]
+  if (!node) return
+  node[key] = value
+  activeIndex.value = index
+  commit()
+}
+
+function setShapeAt (index, shape) {
+  const node = nodes.value[index]
+  if (!node) return
+  node.shape = shape
+  if (canSlope(node) && !node.slope) node.slope = 12
+  shapeOpen.value = -1
+  activeIndex.value = index
+  commit()
+}
+
+function toggleEnableAt (index) {
+  const node = nodes.value[index]
+  if (!node) return
+  node.enabled = node.enabled === false
+  activeIndex.value = index
+  commit()
+}
+
+function soloAt (index) {
+  const node = nodes.value[index]
+  if (!node) return
+  const next = !node.solo
+  nodes.value.forEach((item) => { item.solo = false })
+  node.solo = next
+  activeIndex.value = index
+  commit()
+}
+
+function removeAt (index) {
+  if (!nodes.value[index]) return
+  nodes.value.splice(index, 1)
+  if (activeIndex.value >= nodes.value.length) activeIndex.value = Math.max(0, nodes.value.length - 1)
+  shapeOpen.value = -1
+  commit()
+}
+
+function addNodeAtCenter () {
+  if (nodes.value.length >= 7) {
+    showToast('Equalizer X allows 7 nodes')
+    return
+  }
+  nodes.value.push(createEmptyNode(1000, 0))
+  activeIndex.value = nodes.value.length - 1
+  commit()
+}
 
 function draw () {
   const prepared = prepareCanvas(canvas, 960, 420)
   if (!prepared) return
   const { ctx, w, h } = prepared
   ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#0B0E14'
+  ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
-  drawSpectrum(ctx, props.spectrum, w, h, DSP_THEME.eq.spec)
-  drawDbGrid(ctx, w, h, -18, 18, [12, 6, 0, -6, -12])
+
+  drawSpectrum(ctx, props.spectrum, w, h, DSP_THEME.eq.spec, DSP_THEME.eq.specLine)
+  drawDbGrid(ctx, w, h, -DB_RANGE, DB_RANGE, DB_TICKS)
   drawFreqGrid(ctx, w, h)
 
-  const pts = eqCurvePoints(state.value.nodes, w, h)
+  const list = nodes.value
+
+  // Ghost curve per band so every card's contribution stays readable at a glance.
+  if (list.length > 1) {
+    ctx.lineWidth = 1
+    list.forEach((node, i) => {
+      if (node.enabled === false) return
+      const ghost = eqCurvePoints([node], w, h)
+      if (!ghost.length) return
+      ctx.beginPath()
+      ghost.forEach((point, k) => k ? ctx.lineTo(point[0], point[1]) : ctx.moveTo(point[0], point[1]))
+      ctx.strokeStyle = eqBandColor(i)
+      ctx.globalAlpha = i === activeIndex.value ? 0.55 : 0.26
+      ctx.stroke()
+    })
+    ctx.globalAlpha = 1
+  }
+
+  const pts = eqCurvePoints(list, w, h)
   if (pts.length) {
-    const grad = ctx.createLinearGradient(0, 0, w, 0)
-    grad.addColorStop(0, DSP_THEME.eq.accent)
-    grad.addColorStop(0.5, DSP_THEME.eq.accent2)
-    grad.addColorStop(1, DSP_THEME.eq.accent)
     ctx.beginPath()
-    pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))
+    pts.forEach((point, i) => i ? ctx.lineTo(point[0], point[1]) : ctx.moveTo(point[0], point[1]))
     ctx.lineTo(w, h / 2)
     ctx.lineTo(0, h / 2)
     ctx.closePath()
     ctx.fillStyle = DSP_THEME.eq.fill
     ctx.fill()
+
     ctx.beginPath()
-    pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1]))
+    pts.forEach((point, i) => i ? ctx.lineTo(point[0], point[1]) : ctx.moveTo(point[0], point[1]))
+    ctx.strokeStyle = DSP_THEME.eq.accent
     ctx.lineWidth = 2
-    ctx.strokeStyle = grad
-    ctx.shadowColor = DSP_THEME.eq.accent
-    ctx.shadowBlur = 10
-    ctx.stroke()
-    ctx.shadowBlur = 0
     ctx.stroke()
   }
 
-  state.value.nodes.forEach((node, i) => {
+  list.forEach((node, i) => {
     const p = nodeToCanvas(node, w, h)
-    const active = i === selectedIndex.value
-    const color = node.enabled === false ? '#4A5160' : eqBandColor(i)
-    const r = active ? 11 : 9
-    ctx.save()
-    ctx.shadowColor = color
-    ctx.shadowBlur = active ? 14 : 8
+    const active = i === activeIndex.value
+    const off = node.enabled === false
+    const color = off ? DSP_THEME.ink3 : eqBandColor(i)
+    const r = active ? 10 : 8
     ctx.beginPath()
     ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
-    ctx.fillStyle = '#0B0E14'
+    ctx.fillStyle = color
+    ctx.globalAlpha = off ? 0.4 : 1
     ctx.fill()
-    ctx.lineWidth = active ? 2 : 1.5
-    ctx.strokeStyle = color
-    ctx.stroke()
-    ctx.restore()
-    ctx.fillStyle = node.enabled === false ? '#6B7380' : '#F4F6FA'
-    ctx.font = (active ? '700 ' : '500 ') + '10px Inter, Segoe UI, sans-serif'
+    ctx.globalAlpha = 1
+    if (active) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, r + 2.5, 0, Math.PI * 2)
+      ctx.strokeStyle = color
+      ctx.lineWidth = 1
+      ctx.stroke()
+    }
+    ctx.fillStyle = '#FFFFFF'
+    ctx.font = (active ? '600 ' : '500 ') + '10px Inter, "Segoe UI", sans-serif'
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.fillText(String(i + 1), p.x, p.y + 0.5)
   })
 }
 
-function loop () { draw(); raf = requestAnimationFrame(loop) }
+let raf = 0
+let lastDraw = 0
+function loop (t) {
+  if (!lastDraw || t - lastDraw >= 25) {
+    draw()
+    lastDraw = t
+  }
+  raf = requestAnimationFrame(loop)
+}
 onMounted(() => { raf = requestAnimationFrame(loop) })
 onUnmounted(() => cancelAnimationFrame(raf))
 watch(() => props.insert.state, draw, { deep: true })
-watch(() => selectedIndex.value, draw)
-watch(() => (state.value.nodes || []).length, (n) => {
-  if (selectedIndex.value >= n) selectedIndex.value = Math.max(0, n - 1)
+watch(() => nodes.value.length, (n) => {
+  if (activeIndex.value >= n) activeIndex.value = Math.max(0, n - 1)
 })
 
 function localXY (e) {
@@ -258,36 +355,25 @@ function localXY (e) {
 }
 
 function hitNode (x, y, w, h) {
-  return state.value.nodes.findIndex((node) => {
+  return nodes.value.findIndex((node) => {
     const p = nodeToCanvas(node, w, h)
     return Math.hypot(p.x - x, p.y - y) < 16
   })
 }
 
 let createGuard = 0
-
 function onCreate (e) {
   const now = Date.now()
   if (now - createGuard < 400) return
   createGuard = now
-  if (state.value.nodes.length >= 7) {
+  if (nodes.value.length >= 7) {
     showToast('Equalizer X allows 7 nodes')
     return
   }
   const { x, y, w, h } = localXY(e)
   const mapped = canvasToNode(x, y, w, h)
-  state.value.nodes.push(createEmptyNode(mapped.freq, mapped.gain))
-  selectedIndex.value = state.value.nodes.length - 1
-  commit()
-}
-
-function addNodeAtCenter () {
-  if (state.value.nodes.length >= 7) {
-    showToast('Equalizer X allows 7 nodes')
-    return
-  }
-  state.value.nodes.push(createEmptyNode(1000, 0))
-  selectedIndex.value = state.value.nodes.length - 1
+  nodes.value.push(createEmptyNode(mapped.freq, mapped.gain))
+  activeIndex.value = nodes.value.length - 1
   commit()
 }
 
@@ -300,7 +386,7 @@ let lastTouchX = 0
 let lastTouchY = 0
 
 function onDown (e) {
-  shapeOpen.value = false
+  shapeOpen.value = -1
   const { x, y, w, h } = localXY(e)
   const idx = hitNode(x, y, w, h)
   if (idx < 0) {
@@ -318,8 +404,8 @@ function onDown (e) {
     }
     return
   }
-  selectedIndex.value = idx
-  const node = state.value.nodes[idx]
+  activeIndex.value = idx
+  const node = nodes.value[idx]
   const canGain = showGainFor(node)
   const move = (ev) => {
     const loc = localXY(ev)
@@ -339,57 +425,6 @@ function onDown (e) {
   window.addEventListener('touchmove', move, { passive: false })
   window.addEventListener('touchend', end)
 }
-
-function toggleEnableAt (index) {
-  const node = state.value.nodes[index]
-  if (!node) return
-  node.enabled = !node.enabled
-  selectedIndex.value = index
-  commit()
-}
-function soloAt (index) {
-  const node = state.value.nodes[index]
-  if (!node) return
-  const next = !node.solo
-  state.value.nodes.forEach((n) => { n.solo = false })
-  node.solo = next
-  selectedIndex.value = index
-  commit()
-}
-function setGainAt (index, v) {
-  const node = state.value.nodes[index]
-  if (!node) return
-  node.gain = v
-  selectedIndex.value = index
-  commit()
-}
-function setFreqAt (index, v) {
-  const node = state.value.nodes[index]
-  if (!node) return
-  node.freq = v
-  selectedIndex.value = index
-  commit()
-}
-function setQAt (index, v) {
-  const node = state.value.nodes[index]
-  if (!node) return
-  node.q = v
-  selectedIndex.value = index
-  commit()
-}
-function setShape (shape) {
-  if (!selected.value) return
-  selected.value.shape = shape
-  shapeOpen.value = false
-  commit()
-}
-function setSlope (step) {
-  if (!selected.value || !canSlope.value) return
-  selected.value.slope = step
-  commit()
-}
-function setOutDb (v) { props.insert.state.outputGainDb = v; commit() }
-function toggleAuto () { props.insert.state.autoGain = !props.insert.state.autoGain; commit() }
 </script>
 
 <style scoped>
@@ -398,163 +433,110 @@ function toggleAuto () { props.insert.state.autoGain = !props.insert.state.autoG
 .stage {
   display: flex;
   gap: 10px;
-  padding: 8px 10px 8px 8px;
   min-height: 0;
   flex: 1 1 auto;
 }
-.plug:not(.eq-fill) .stage { min-height: 180px; flex: 0 0 auto; }
-.graph-wrap {
+.plug:not(.eq-fill) .stage { min-height: 170px; flex: 0 0 auto; }
+.graph {
   position: relative;
   flex: 1;
   min-width: 0;
   min-height: 0;
   display: flex;
+  overflow: hidden;
 }
-.plug.eq-fill .graph-wrap { height: auto; }
-.plug:not(.eq-fill) .graph-wrap { height: 180px; }
+.plug:not(.eq-fill) .graph { height: 170px; }
 .add-node {
   position: absolute;
-  right: 10px;
-  bottom: 18px;
-  min-width: 28px;
-  height: 28px;
+  right: 8px;
+  top: 8px;
+  min-width: 26px;
+  height: 26px;
   padding: 0 8px;
-  border: 1px solid var(--dsp-line);
+  border: 1px solid var(--x-line);
   border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 14px;
-  color: var(--dsp-muted);
-  background: rgba(8,10,15,0.72);
+  color: var(--x-ink-2);
+  background: var(--x-panel);
   cursor: pointer;
   z-index: 2;
+  box-sizing: border-box;
 }
-.add-node.full { font-size: 10px; }
-.band {
+.add-node.full { font-size: 9px; color: var(--x-ink-3); }
+
+.strip {
+  display: flex;
+  gap: 8px;
+  padding: 2px 2px 6px;
+  overflow-x: auto;
+  overflow-y: visible;
   flex-shrink: 0;
-  min-height: 0;
-  padding: 4px 2px 2px;
+  scrollbar-width: thin;
 }
-.band.empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  min-height: 72px;
-  border: 1px dashed var(--dsp-line);
-  border-radius: 8px;
-  opacity: 0.7;
-}
-.empty-lab { font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dsp-muted); }
-.empty-plus { font-size: 22px; color: var(--dsp-dim); cursor: pointer; }
-.band-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-}
-.pills { display: flex; gap: 4px; flex-wrap: wrap; }
-.pill {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1px solid var(--dsp-line);
-  color: var(--dsp-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-}
-.pill.on { border-color: var(--band, var(--dsp-accent)); color: var(--dsp-text); box-shadow: 0 0 8px var(--dsp-glow); }
-.pill.off { border-style: dashed; }
-.dot {
-  min-width: 36px;
-  height: 22px;
-  padding: 0 8px;
-  border-radius: 3px;
-  border: 1px solid var(--band, var(--dsp-accent));
-  color: var(--dsp-text);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-}
-.dot.off { border-style: dashed; color: var(--dsp-muted); }
-.shape { position: relative; flex: 1; min-width: 120px; }
-.shape-btn {
-  height: 22px;
-  padding: 0 10px;
-  border: 1px solid var(--dsp-line);
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.28);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  cursor: pointer;
-  font-size: 11px;
-  color: var(--dsp-text);
-}
-.caret { color: var(--dsp-muted); font-size: 9px; }
-.shape-drop {
-  position: absolute;
-  top: 26px;
-  left: 0;
-  right: 0;
-  background: #10131A;
-  border: 1px solid var(--dsp-line);
-  border-radius: 6px;
-  z-index: 12;
-  max-height: 220px;
-  overflow: auto;
-  box-shadow: 0 16px 40px rgba(0,0,0,0.5);
-}
-.shape-item {
-  height: 32px;
-  display: flex;
-  align-items: center;
-  padding: 0 12px;
-  font-size: 12px;
-  color: var(--dsp-muted);
-  cursor: pointer;
-}
-.shape-item:hover { background: rgba(255,255,255,0.04); color: var(--dsp-text); }
-.shape-item.on { color: var(--dsp-text); }
-.solo {
-  width: 22px;
-  height: 22px;
-  border: 1px solid var(--dsp-line);
-  border-radius: 3px;
-  color: var(--dsp-muted);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  cursor: pointer;
-}
-.solo.on { color: var(--dsp-text); border-color: var(--band, var(--dsp-accent)); box-shadow: 0 0 8px var(--dsp-glow); }
-.controls { display: flex; align-items: center; gap: 16px; }
-.knobs { flex: 1; justify-content: space-around; }
-.slope {
+.card {
+  flex: 0 0 auto;
+  width: 194px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  min-width: 168px;
+  gap: 4px;
+  border-top: 2px solid var(--band, var(--x-accent));
 }
+.card.muted { opacity: 0.52; }
+.card.empty {
+  width: 140px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 96px;
+  border: 1px dashed var(--x-line);
+  cursor: pointer;
+}
+.empty-lab { font-size: 9px; letter-spacing: 0.13em; text-transform: uppercase; color: var(--x-ink-3); }
+.empty-plus { font-size: 20px; color: var(--x-ink-3); }
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.x-dot.num {
+  font-size: 9px;
+  font-weight: 600;
+}
+.x-dot.num.on {
+  background: var(--band, var(--x-accent));
+  border-color: var(--band, var(--x-accent));
+}
+.x-dot.kill { font-size: 13px; line-height: 1; }
+.x-dot.kill:hover { color: var(--x-warn); border-color: var(--x-warn); }
+.shape { position: relative; flex: 1; min-width: 0; }
+.shape-btn { width: 100%; }
+.shape-txt {
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.caret { font-size: 8px; color: var(--x-ink-3); }
+.shape-menu { top: 26px; left: 0; right: 0; max-height: 210px; overflow: auto; }
+.card-knobs {
+  display: flex;
+  justify-content: space-between;
+  gap: 2px;
+}
+.card-slope { display: flex; justify-content: center; }
+.x-chip.slope { min-width: 30px; height: 20px; font-size: 8px; }
+.x-chip.an,
+.x-chip.os { min-width: 38px; text-transform: uppercase; }
 .gap { flex: 1; }
 
 @media (max-width: 720px) {
   .stage { min-height: 110px; max-height: 24vh; }
-  .add-node { min-width: 36px; height: 36px; }
-  .pill { width: 32px; height: 32px; font-size: 12px; }
-  .dot, .solo, .shape-btn { height: 36px; min-width: 36px; }
-  .band-head { flex-wrap: wrap; }
-  .controls { flex-direction: column; align-items: stretch; gap: 10px; }
-  .slope { min-width: 0; }
+  .add-node { min-width: 34px; height: 34px; }
+  .card { width: 210px; }
+  .x-chip.slope { min-width: 36px; height: 30px; font-size: 9px; }
 }
 </style>

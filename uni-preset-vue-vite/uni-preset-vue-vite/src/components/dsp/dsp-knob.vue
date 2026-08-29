@@ -19,20 +19,24 @@
     <text v-if="label" class="lab">{{ label }}</text>
     <svg class="svg" viewBox="0 0 80 80">
       <defs>
-        <radialGradient :id="bodyId" cx="38%" cy="32%" r="70%">
-          <stop offset="0%" stop-color="#2A3140"/>
-          <stop offset="55%" stop-color="#161B24"/>
-          <stop offset="100%" stop-color="#0C0F16"/>
-        </radialGradient>
-        <linearGradient :id="dualId" x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stop-color="var(--dsp-accent)"/>
-          <stop offset="100%" stop-color="var(--dsp-accent-2)"/>
+        <linearGradient :id="bodyId" x1="0%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stop-color="#FFFFFF"/>
+          <stop offset="100%" stop-color="#EFEDE9"/>
         </linearGradient>
-        <filter :id="glowId" x="-50%" y="-50%" width="200%" height="200%">
-          <feGaussianBlur stdDeviation="1.4" result="b"/>
-          <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-        </filter>
+        <linearGradient :id="dualId" x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="var(--x-accent, #E08B2F)"/>
+          <stop offset="100%" stop-color="var(--x-cool, #4E7FA8)"/>
+        </linearGradient>
       </defs>
+      <line
+        v-for="(tick, i) in ticks"
+        :key="i"
+        :x1="tick.x1"
+        :y1="tick.y1"
+        :x2="tick.x2"
+        :y2="tick.y2"
+        class="tick"
+      />
       <path :d="track" fill="none" class="track" stroke-linecap="round" pathLength="270"/>
       <path
         :d="track"
@@ -42,12 +46,9 @@
         pathLength="270"
         :stroke-dasharray="arcDash"
         :style="dual ? { stroke: 'url(#' + dualId + ')' } : null"
-        :filter="'url(#' + glowId + ')'"
       />
-      <circle cx="40" cy="40" r="22" :fill="'url(#' + bodyId + ')'" class="body"/>
-      <ellipse cx="36" cy="30" rx="12" ry="7" fill="rgba(255,255,255,0.07)"/>
+      <circle cx="40" cy="40" r="21" :fill="'url(#' + bodyId + ')'" class="body"/>
       <line :x1="hub.x" :y1="hub.y" :x2="tip.x" :y2="tip.y" class="needle"/>
-      <circle cx="40" cy="40" r="2.2" class="hub"/>
     </svg>
     <text v-if="showValue" class="val">{{ display }}</text>
   </view>
@@ -73,11 +74,12 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 const dragging = ref(false)
 const uid = Math.random().toString(36).slice(2, 8)
-const glowId = 'kg' + uid
 const bodyId = 'kb' + uid
 const dualId = 'kd' + uid
 
-const accentStyle = computed(() => props.accent ? { '--dsp-accent': props.accent } : null)
+const accentStyle = computed(() => props.accent
+  ? { '--x-accent': props.accent, '--dsp-accent': props.accent }
+  : null)
 
 function toT (value) {
   if (props.scale === 'log') {
@@ -117,8 +119,15 @@ const arcDash = computed(() => {
   const filled = Math.max(0.2, t.value * 270)
   return `${filled} 270`
 })
-const hub = computed(() => polar(t.value, 6))
-const tip = computed(() => polar(t.value, 16))
+const hub = computed(() => polar(t.value, 5))
+const tip = computed(() => polar(t.value, 18))
+
+// Engraved bezel ticks at the ends and centre of the 270° sweep.
+const ticks = computed(() => [0, 0.25, 0.5, 0.75, 1].map((u) => {
+  const a = polar(u, 33)
+  const b = polar(u, 36)
+  return { x1: a.x, y1: a.y, x2: b.x, y2: b.y }
+}))
 const display = computed(() => props.format ? props.format(props.modelValue) : props.modelValue.toFixed(2))
 
 function set (next) {
@@ -165,7 +174,7 @@ function reset () { set(props.defaultValue) }
 
 <style scoped>
 .k {
-  width: 92px;
+  width: 76px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -173,47 +182,58 @@ function reset () { set(props.defaultValue) }
   cursor: ns-resize;
   user-select: none;
 }
-.k.sz-sm { width: 76px; }
-.k.sz-lg { width: 112px; }
-.k.sz-xl { width: 156px; }
-.k.dim { opacity: 0.35; pointer-events: none; }
+.k.sz-sm { width: 58px; }
+.k.sz-lg { width: 96px; }
+.k.sz-xl { width: 190px; }
+.k.dim { opacity: 0.4; pointer-events: none; }
 .svg { width: 100%; height: auto; }
-.body { stroke: rgba(255,255,255,0.08); stroke-width: 1; }
-.track { stroke: rgba(255,255,255,0.08); stroke-width: 2.2; }
-.arc { stroke: var(--dsp-accent, #C084FC); stroke-width: 2.4; fill: none; }
+.body {
+  stroke: rgba(38, 40, 44, 0.18);
+  stroke-width: 1;
+}
+.tick { stroke: rgba(38, 40, 44, 0.22); stroke-width: 1; }
+.track { stroke: rgba(38, 40, 44, 0.14); stroke-width: 2.6; }
+.arc { stroke: var(--x-accent, #E08B2F); stroke-width: 2.6; fill: none; }
 .needle {
-  stroke: #F4F1EA;
-  stroke-width: 1.6;
+  stroke: var(--x-ink-2, #5A5E66);
+  stroke-width: 1.8;
   stroke-linecap: round;
 }
-.hub { fill: #F4F1EA; }
-.k:hover .arc, .k.drag .arc { stroke-width: 3.1; }
-.k:hover .needle, .k.drag .needle { stroke: #fff; }
+.k:hover .arc, .k.drag .arc { stroke: var(--x-accent-hi, #F2A64A); stroke-width: 3.2; }
+.k:hover .needle, .k.drag .needle { stroke: var(--x-ink, #26282C); }
 .lab {
-  font-size: 10px;
-  letter-spacing: 0.16em;
+  font-size: 9px;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--dsp-muted, #6B7380);
-  margin-bottom: 2px;
+  color: var(--x-ink-3, #8E939C);
+  margin-bottom: 3px;
 }
 .val {
-  font-size: 13px;
+  font-size: 11px;
   font-weight: 500;
-  color: var(--dsp-accent, #C084FC);
-  margin-top: 2px;
+  color: var(--x-ink, #26282C);
+  margin-top: 3px;
   font-variant-numeric: tabular-nums;
 }
-.k.sz-xl .val { font-size: 22px; font-weight: 600; margin-top: 6px; color: var(--dsp-accent); }
-.k.sz-xl .lab { font-size: 11px; }
+.k.sz-sm .lab { font-size: 8px; letter-spacing: 0.1em; }
+.k.sz-sm .val { font-size: 10px; }
+.k.sz-xl .val {
+  font-size: 30px;
+  font-weight: 300;
+  margin-top: 8px;
+  color: var(--x-ink, #26282C);
+  letter-spacing: -0.01em;
+}
+.k.sz-xl .lab { font-size: 10px; margin-bottom: 6px; }
 
 @media (max-width: 720px) {
   .k,
   .k.sz-sm,
   .k.sz-lg {
-    width: min(152px, 100%);
+    width: min(140px, 100%);
   }
-  .k.sz-xl { width: min(200px, 100%); }
-  .lab { font-size: 11px; }
-  .val { font-size: 15px; }
+  .k.sz-xl { width: min(220px, 100%); }
+  .lab { font-size: 10px; }
+  .val { font-size: 13px; }
 }
 </style>

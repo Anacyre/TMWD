@@ -14,10 +14,13 @@
       @dblclick.stop="resetGain"
     >
       <view class="scale">
-        <text class="tick" :style="{ bottom: dbMark(6) }">+6</text>
-        <text class="tick" :style="{ bottom: dbMark(0) }">0</text>
-        <text class="tick" :style="{ bottom: dbMark(-24) }">-24</text>
-        <text class="tick" :style="{ bottom: dbMark(-60) }">-60</text>
+        <text
+          v-for="mark in SCALE_TICKS"
+          :key="mark"
+          class="tick"
+          :class="{ zero: mark === 0 }"
+          :style="{ bottom: dbMark(mark) }"
+        >{{ mark > 0 ? '+' + mark : mark }}</text>
       </view>
       <view class="cols">
         <view class="col">
@@ -60,6 +63,11 @@ const props = defineProps({
 const emit = defineEmits(['update:gain'])
 const body = ref(null)
 
+// 2.0 scale matches the reference design: -36 dB floor, +12 dB headroom.
+const METER_MIN_DB = -36
+const METER_MAX_DB = 12
+const SCALE_TICKS = [12, 6, 0, -6, -12, -36]
+
 const gainEnabled = computed(() => props.showGain)
 const wrapStyle = computed(() => props.fill ? null : { height: props.height + 'px' })
 const gainT = computed(() => {
@@ -74,18 +82,18 @@ const dbText = computed(() => {
 const gainText = computed(() => fmtDb(Number(props.gain) || 0, 1))
 
 function dbMark (db) {
-  const t = Math.min(1, Math.max(0, (db - (-60)) / (6 - (-60))))
+  const t = Math.min(1, Math.max(0, (db - METER_MIN_DB) / (METER_MAX_DB - METER_MIN_DB)))
   if (t <= 0.01) return '2px'
-  if (t >= 0.99) return 'calc(100% - 10px)'
+  if (t >= 0.99) return 'calc(100% - 9px)'
   return (t * 100) + '%'
 }
 
 function fillStyle (peak) {
-  const amount = peakToMeterT(peak || 0, -60, 6)
+  const amount = peakToMeterT(peak || 0, METER_MIN_DB, METER_MAX_DB)
+  const over = peakToDb(peak || 0) > 0
   return {
     height: Math.round(amount * 100) + '%',
-    background: props.color || 'linear-gradient(180deg, var(--dsp-accent-2), var(--dsp-accent))',
-    boxShadow: amount > 0.04 ? '0 0 8px var(--dsp-glow)' : 'none'
+    background: props.color || (over ? 'var(--x-warn, #C4503C)' : 'var(--x-accent, #E08B2F)')
   }
 }
 
@@ -144,22 +152,22 @@ function resetGain () {
 
 <style scoped>
 .meter {
-  width: 28px;
+  width: 30px;
   display: flex;
   flex-direction: column;
   align-items: center;
   flex-shrink: 0;
 }
-.meter.stereo { width: 36px; }
-.meter.has-gain { width: 52px; }
-.meter.has-gain.stereo { width: 58px; }
+.meter.stereo { width: 38px; }
+.meter.has-gain { width: 54px; }
+.meter.has-gain.stereo { width: 60px; }
 .meter.fill { height: 100%; min-height: 160px; }
-.meter.dim { opacity: 0.38; }
+.meter.dim { opacity: 0.42; }
 .lab {
   font-size: 8px;
-  letter-spacing: 0.14em;
+  letter-spacing: 0.13em;
   text-transform: uppercase;
-  color: var(--dsp-muted);
+  color: var(--x-ink-3);
   margin-bottom: 6px;
 }
 .body {
@@ -174,39 +182,41 @@ function resetGain () {
 }
 .meter.has-gain .body { cursor: ns-resize; }
 .scale {
-  width: 18px;
+  width: 17px;
   position: relative;
   flex-shrink: 0;
 }
 .tick {
   position: absolute;
   left: 0;
-  font-size: 8px;
-  color: var(--dsp-dim);
-  letter-spacing: 0.04em;
+  font-size: 7px;
+  color: var(--x-ink-3);
+  letter-spacing: 0.02em;
   transform: translateY(50%);
   white-space: nowrap;
 }
+.tick.zero { color: var(--x-ink-2); }
 .cols {
   flex: 0 0 auto;
   height: 100%;
   display: flex;
   justify-content: center;
-  gap: 3px;
+  gap: 2px;
 }
 .col {
-  width: 4px;
+  width: 6px;
   height: 100%;
-  background: rgba(255,255,255,0.04);
+  background: var(--x-panel-2);
+  border: 1px solid var(--x-line-2);
   border-radius: 1px;
   display: flex;
   align-items: flex-end;
   overflow: hidden;
+  box-sizing: border-box;
 }
 .fill-bar {
   width: 100%;
   min-height: 1px;
-  border-radius: 1px;
 }
 .fader {
   width: 10px;
@@ -214,27 +224,39 @@ function resetGain () {
   position: relative;
   flex-shrink: 0;
 }
+.fader::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 4px;
+  bottom: 4px;
+  width: 3px;
+  margin-left: -1.5px;
+  border-radius: 2px;
+  background: var(--x-line);
+}
 .fader.locked { opacity: 0.35; }
 .thumb {
   position: absolute;
   left: 50%;
-  width: 12px;
-  height: 8px;
-  margin-left: -6px;
-  margin-bottom: -4px;
-  border-radius: 2px;
-  background: #F4F1EA;
-  box-shadow: 0 0 10px var(--dsp-glow);
+  width: 13px;
+  height: 13px;
+  margin-left: -6.5px;
+  margin-bottom: -6.5px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  border: 1px solid var(--x-accent);
+  box-sizing: border-box;
 }
 .db,
 .gain {
   margin-top: 5px;
   font-size: 9px;
-  color: var(--dsp-muted);
+  color: var(--x-ink-3);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-.gain { color: var(--dsp-accent); }
+.gain { color: var(--x-ink); }
 
 @media (max-width: 720px) {
   .meter { width: 32px; }
@@ -242,12 +264,12 @@ function resetGain () {
   .meter.has-gain { width: 64px; }
   .meter.has-gain.stereo { width: 68px; }
   .meter.fill { min-height: 120px; }
-  .col { width: 6px; }
+  .col { width: 8px; }
   .thumb {
-    width: 16px;
-    height: 14px;
-    margin-left: -8px;
-    margin-bottom: -7px;
+    width: 18px;
+    height: 18px;
+    margin-left: -9px;
+    margin-bottom: -9px;
   }
   .lab { font-size: 9px; }
 }

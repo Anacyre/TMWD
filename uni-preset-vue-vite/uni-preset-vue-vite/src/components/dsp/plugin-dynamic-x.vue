@@ -10,96 +10,168 @@
       @reset="onReset"
     >
       <template #actions>
-        <view class="split-hit" :class="{ on: state.splitBands }" @click.stop="toggleSplit">
-          <view class="sw" />
-          Split
-        </view>
+        <view class="x-chip split-btn" :class="{ on: state.splitBands }" @click.stop="toggleSplit">Split Bands</view>
       </template>
     </plugin-shell>
 
     <view class="stage">
-      <view class="in-m">
-        <dsp-meter fill :level="inLevel" label="In" :height="220" />
-      </view>
-      <view class="graph-panel x-panel">
-        <text class="gtitle">Compressor</text>
-        <dsp-canvas ref="canvas" fill :height="248" @pointerdown="onGraph" />
+      <dsp-meter label="In" :level="inLevel" :level-r="inLevelR" fill :height="230" />
+
+      <view class="graph x-panel">
+        <view class="readout">
+          <text class="ro-lab">{{ targetLabel }}</text>
+          <text class="ro-val">{{ fmtDb(target.threshold, 1) }}</text>
+          <text class="ro-sub">{{ Number(target.ratio).toFixed(1) }} : 1</text>
+        </view>
+        <dsp-canvas ref="canvas" fill :height="230" @pointerdown="onGraph" />
         <view class="gr">
-          <text class="dsp-lab">GR</text>
+          <text class="gr-lab">GR</text>
           <view class="gr-col">
             <view class="gr-fill" :style="{ height: (grAmount * 100) + '%' }" />
           </view>
         </view>
       </view>
-      <view v-if="state.splitBands" class="split-panel x-panel">
-        <dsp-canvas ref="splitCanvas" :height="168" @pointerdown="onXo" />
-        <view class="bands">
-          <view v-for="(band, i) in state.bands" :key="i" class="band" :class="{ muted: !band.enabled }">
-            <text class="blab">{{ bandNames[i] }}</text>
-            <view class="tiny" :class="{ on: band.enabled }" @click="toggleBand(i)">{{ band.enabled ? 'On' : 'Off' }}</view>
-            <view class="tiny" :class="{ on: band.solo }" @click="soloBand(i)">S</view>
-          </view>
-        </view>
-      </view>
-      <view class="out-m">
-        <dsp-meter
-          fill
-          :stereo="false"
-          :level="outLevel"
-          label="Out"
-          show-gain
-          :gain="state.makeupDb"
-          :gain-min="-12"
-          :gain-max="24"
-          :gain-default="0"
-          :gain-disabled="state.autoGain"
-          @update:gain="set('makeupDb', $event)"
-        />
-      </view>
+
+      <dsp-meter
+        label="Out"
+        :level="outLevel"
+        :level-r="outLevelR"
+        fill
+        :height="230"
+        show-gain
+        :gain="state.makeupDb"
+        :gain-min="-12"
+        :gain-max="24"
+        :gain-default="0"
+        :gain-disabled="state.autoGain"
+        @update:gain="set('makeupDb', $event)"
+      />
     </view>
 
-    <view class="knobs x-knobs">
+    <view class="tray x-tray">
       <dsp-knob
-        size="lg"
-        :model-value="state.threshold"
+        :model-value="target.threshold"
         :min="-48" :max="0" :default-value="-18"
         label="Thresh"
-        :format="(v) => fmtDb(v)"
-        @update:model-value="set('threshold', $event)"
+        :format="(v) => fmtDb(v, 1)"
+        @update:model-value="setTarget('threshold', $event)"
       />
       <dsp-knob
-        size="lg"
-        :model-value="state.ratio"
+        :model-value="target.ratio"
         :min="1" :max="20" :default-value="4"
         scale="log"
         label="Ratio"
-        :format="(v) => v.toFixed(1) + ' : 1'"
-        @update:model-value="set('ratio', $event)"
+        :format="(v) => Number(v).toFixed(1) + ' : 1'"
+        @update:model-value="setTarget('ratio', $event)"
       />
       <dsp-knob
-        size="lg"
-        :model-value="state.attack"
-        :min="0.001" :max="0.2" :default-value="0.012"
+        :model-value="state.kneeDb"
+        :min="0" :max="24" :default-value="6"
+        label="Knee"
+        :format="(v) => Number(v).toFixed(1) + ' dB'"
+        @update:model-value="set('kneeDb', $event)"
+      />
+      <dsp-knob
+        :model-value="state.mix"
+        :min="0" :max="1" :default-value="1"
+        label="Mix"
+        :format="(v) => Math.round(v * 100) + ' %'"
+        @update:model-value="set('mix', $event)"
+      />
+      <dsp-knob
+        :model-value="state.lookaheadMs"
+        :min="0" :max="10" :default-value="0"
+        label="Lookahead"
+        :format="fmtLookahead"
+        @update:model-value="set('lookaheadMs', $event)"
+      />
+    </view>
+
+    <view class="faders">
+      <dsp-slider
+        horizontal
         scale="log"
+        :model-value="state.attack"
+        :min="0.0002" :max="0.2" :default-value="0.012"
         label="Attack"
-        :format="(v) => fmtMs(v)"
+        :format="fmtMs"
         @update:model-value="set('attack', $event)"
       />
-      <dsp-knob
-        size="lg"
+      <dsp-slider
+        horizontal
+        scale="log"
         :model-value="state.release"
         :min="0.02" :max="1.5" :default-value="0.12"
-        scale="log"
         label="Release"
         :format="(v) => state.autoRelease ? 'Auto' : fmtMs(v)"
         :disabled="state.autoRelease"
         @update:model-value="set('release', $event)"
       />
+      <dsp-slider
+        horizontal
+        :model-value="state.makeupDb"
+        :min="-12" :max="24" :default-value="0"
+        label="Gain"
+        :format="(v) => fmtDb(v, 1)"
+        :disabled="state.autoGain"
+        @update:model-value="set('makeupDb', $event)"
+      />
     </view>
 
     <view class="x-footer">
+      <text class="dsp-lab">Detector</text>
+      <view class="x-seg railed">
+        <view
+          v-for="mode in DYNAMIC_DETECTORS"
+          :key="mode"
+          class="x-chip det"
+          :class="{ on: detector === mode }"
+          @click="set('detector', mode)"
+        >{{ mode }}</view>
+      </view>
+      <dsp-knob
+        v-if="detector === 'rms'"
+        size="sm"
+        :model-value="state.rmsMs"
+        :min="1" :max="100" :default-value="10"
+        scale="log"
+        label="Window"
+        :format="(v) => Math.round(v) + ' ms'"
+        @update:model-value="set('rmsMs', $event)"
+      />
+      <view class="gap" />
       <view class="x-chip" :class="{ on: state.autoRelease }" @click="toggleAutoRel">Auto Rel</view>
       <view class="x-chip" :class="{ on: state.autoGain }" @click="toggleAutoGain">Auto Gain</view>
+    </view>
+
+    <view v-if="state.splitBands" class="bands">
+      <view class="band-xo x-panel">
+        <dsp-canvas ref="splitCanvas" :height="84" @pointerdown="onXo" />
+      </view>
+      <view class="band-row">
+        <view
+          v-for="(band, i) in state.bands"
+          :key="i"
+          class="band x-card"
+          :class="{ sel: selectedBand === i, muted: !band.enabled }"
+          @click="selectBand(i)"
+        >
+          <view class="band-head">
+            <view class="x-dot" :class="{ on: band.enabled }" @click.stop="toggleBand(i)">⏻</view>
+            <text class="band-name">{{ BAND_NAMES[i] }}</text>
+            <view class="x-dot solo" :class="{ on: band.solo }" @click.stop="soloBand(i)">S</view>
+          </view>
+          <text class="band-hz">{{ bandRange(i) }}</text>
+          <text class="band-val">{{ fmtDb(band.threshold, 1) }} · {{ Number(band.ratio).toFixed(1) }}:1</text>
+        </view>
+        <view class="band x-card" :class="{ sel: selectedBand < 0 }" @click="selectBand(-1)">
+          <view class="band-head">
+            <text class="band-name">All Bands</text>
+          </view>
+          <text class="band-hz">Global gain computer</text>
+          <text class="band-val">{{ fmtDb(state.threshold, 1) }} · {{ Number(state.ratio).toFixed(1) }}:1</text>
+        </view>
+      </view>
     </view>
   </view>
 </template>
@@ -109,155 +181,272 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import PluginShell from './plugin-shell.vue'
 import DspKnob from './dsp-knob.vue'
 import DspMeter from './dsp-meter.vue'
+import DspSlider from './dsp-slider.vue'
 import DspCanvas from './dsp-canvas.vue'
-import { plugins, applyPreset, resetInsert } from '../../dsp/registry.js'
+import { plugins, applyPreset, resetInsert, DYNAMIC_DETECTORS } from '../../dsp/registry.js'
 import { compressorCurve, grMeterAmount } from '../../dsp/dynamic-x.js'
 import { canvasRect, prepareCanvas } from './canvas-util.js'
-import { DSP_THEME, fmtDb, fmtHz, fmtMs, strokeGlow, fillGlow, freqToX, drawSpectrum } from './dsp-theme.js'
+import {
+  DSP_THEME, fmtDb, fmtMs, fmtHz, freqToX, xToFreq,
+  drawSpectrum, drawTransferGrid, dbToY, axisText
+} from './dsp-theme.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
   meters: { type: Object, default: () => ({}) },
-  spectrum: { type: Array, default: () => [] }
+  spectrum: { type: Array, default: () => [] },
+  embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['change'])
 const canvas = ref(null)
 const splitCanvas = ref(null)
+const selectedBand = ref(-1)
+
 const state = computed(() => props.insert.state)
 const presets = computed(() => plugins['dynamic-x'].presets)
-const inLevel = computed(() => props.meters && props.meters.inPeak != null ? props.meters.inPeak : 0)
-const outLevel = computed(() => props.meters && props.meters.outPeak != null ? props.meters.outPeak : 0)
+
+const BAND_NAMES = ['Low', 'Mid', 'High']
+const IN_MIN_DB = -60
+const IN_MAX_DB = 0
+const OUT_MIN_DB = -36
+const OUT_MAX_DB = 12
+
+const detector = computed(() => DYNAMIC_DETECTORS.includes(state.value.detector) ? state.value.detector : 'peak')
+const inLevel = computed(() => num(props.meters.inPeak))
+const inLevelR = computed(() => props.meters.inPeakR != null ? props.meters.inPeakR : null)
+const outLevel = computed(() => num(props.meters.outPeak))
+const outLevelR = computed(() => props.meters.outPeakR != null ? props.meters.outPeakR : null)
 const grAmount = computed(() => {
   const m = props.meters || {}
   if (m.gainReductionDb != null) return grMeterAmount(m.gainReductionDb)
-  return Math.min(1, Math.max(0, m.gr || 0))
+  return Math.min(1, Math.max(0, num(m.gr)))
 })
-const bandNames = ['Low', 'Mid', 'High']
+
+/* Thresh / Ratio edit either the global computer or one band, so per-band values
+   are reachable without a second set of knobs. */
+const bandActive = computed(() => state.value.splitBands && selectedBand.value >= 0)
+const target = computed(() => {
+  if (bandActive.value) {
+    const band = state.value.bands[selectedBand.value]
+    if (band) {
+      return {
+        threshold: num(band.threshold, -18),
+        ratio: num(band.ratio, 4)
+      }
+    }
+  }
+  return {
+    threshold: num(state.value.threshold, -18),
+    ratio: num(state.value.ratio, 4)
+  }
+})
+const targetLabel = computed(() => bandActive.value
+  ? BAND_NAMES[selectedBand.value] + ' Threshold'
+  : 'Threshold')
+
+function num (value, fallback = 0) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : fallback
+}
+
+function fmtLookahead (v) {
+  const ms = num(v)
+  return ms <= 0.001 ? 'Off' : ms.toFixed(2) + ' ms'
+}
+
+function bandRange (i) {
+  const lo = i === 0 ? 20 : i === 1 ? num(state.value.xo1, 180) : num(state.value.xo2, 3500)
+  const hi = i === 0 ? num(state.value.xo1, 180) : i === 1 ? num(state.value.xo2, 3500) : 20000
+  return fmtHz(lo) + ' – ' + fmtHz(hi)
+}
 
 function commit () { emit('change', props.insert) }
 function onPreset (id) { applyPreset(props.insert, id); commit() }
 function onEnabled (v) { props.insert.enabled = v; commit() }
 function onReset () { resetInsert(props.insert); commit() }
 function set (key, value) { props.insert.state[key] = value; commit() }
-function toggleAutoGain () { props.insert.state.autoGain = !props.insert.state.autoGain; if (props.insert.state.autoGain) props.insert.state.makeupDb = 0; commit() }
+
+function setTarget (key, value) {
+  if (bandActive.value) {
+    const band = props.insert.state.bands[selectedBand.value]
+    if (band) {
+      band[key] = value
+      commit()
+      return
+    }
+  }
+  props.insert.state[key] = value
+  commit()
+}
+
+function selectBand (i) { selectedBand.value = i }
+function toggleAutoGain () {
+  props.insert.state.autoGain = !props.insert.state.autoGain
+  if (props.insert.state.autoGain) props.insert.state.makeupDb = 0
+  commit()
+}
 function toggleAutoRel () { props.insert.state.autoRelease = !props.insert.state.autoRelease; commit() }
-function toggleSplit () { props.insert.state.splitBands = !props.insert.state.splitBands; commit() }
-function toggleBand (i) { props.insert.state.bands[i].enabled = !props.insert.state.bands[i].enabled; commit() }
+function toggleSplit () {
+  props.insert.state.splitBands = !props.insert.state.splitBands
+  if (!props.insert.state.splitBands) selectedBand.value = -1
+  commit()
+}
+function toggleBand (i) {
+  props.insert.state.bands[i].enabled = !props.insert.state.bands[i].enabled
+  commit()
+}
 function soloBand (i) {
   const next = !props.insert.state.bands[i].solo
-  props.insert.state.bands.forEach((b) => { b.solo = false })
+  props.insert.state.bands.forEach((band) => { band.solo = false })
   props.insert.state.bands[i].solo = next
   commit()
 }
 
+function mapIn (db, w) {
+  return ((db - IN_MIN_DB) / (IN_MAX_DB - IN_MIN_DB)) * w
+}
+
+function tracePath (ctx, pts, w, h) {
+  ctx.beginPath()
+  pts.forEach((point, i) => {
+    const x = mapIn(point.inDb, w)
+    const y = dbToY(point.outDb, h, OUT_MIN_DB, OUT_MAX_DB)
+    if (i === 0) ctx.moveTo(x, y)
+    else ctx.lineTo(x, y)
+  })
+}
+
 function draw () {
-  const prepared = prepareCanvas(canvas, 520, 248)
+  const prepared = prepareCanvas(canvas, 520, 230)
   if (!prepared) return
   const { ctx, w, h } = prepared
   ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#0B0E14'
+  ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
-  const mapIn = (db) => ((db + 60) / 60) * w
-  const mapOut = (db) => (1 - (db + 60) / 60) * h
-  ctx.strokeStyle = 'rgba(255,255,255,0.05)'
-  ctx.lineWidth = 1
-  for (let db = -48; db <= 0; db += 12) {
-    ctx.beginPath(); ctx.moveTo(mapIn(db), 0); ctx.lineTo(mapIn(db), h); ctx.stroke()
-    ctx.beginPath(); ctx.moveTo(0, mapOut(db)); ctx.lineTo(w, mapOut(db)); ctx.stroke()
-  }
-  ctx.strokeStyle = 'rgba(255,255,255,0.1)'
-  ctx.beginPath(); ctx.moveTo(0, h); ctx.lineTo(w, 0); ctx.stroke()
-  ctx.fillStyle = DSP_THEME.muted
-  ctx.font = '8px Inter, Segoe UI, sans-serif'
-  ctx.fillText('INPUT', 8, h - 8)
-  ctx.save()
-  ctx.translate(10, 14)
-  ctx.fillText('OUTPUT', 0, 0)
-  ctx.restore()
 
-  const pts = compressorCurve(state.value.threshold, state.value.ratio)
+  drawTransferGrid(ctx, w, h, IN_MIN_DB, IN_MAX_DB, OUT_MIN_DB, OUT_MAX_DB)
+
+  // Unity reference.
+  ctx.strokeStyle = DSP_THEME.gridMinor
+  ctx.lineWidth = 1
   ctx.beginPath()
-  pts.forEach((p, i) => i ? ctx.lineTo(mapIn(p.inDb), mapOut(p.outDb)) : ctx.moveTo(mapIn(p.inDb), mapOut(p.outDb)))
-  ctx.lineTo(w, h)
-  ctx.lineTo(0, h)
+  ctx.moveTo(mapIn(IN_MIN_DB, w), dbToY(IN_MIN_DB, h, OUT_MIN_DB, OUT_MAX_DB))
+  ctx.lineTo(mapIn(IN_MAX_DB, w), dbToY(IN_MAX_DB, h, OUT_MIN_DB, OUT_MAX_DB))
+  ctx.stroke()
+
+  const knee = num(state.value.kneeDb, 6)
+
+  if (state.value.splitBands) {
+    ctx.lineWidth = 1
+    ctx.strokeStyle = DSP_THEME.gridMinor
+    state.value.bands.forEach((band, i) => {
+      if (i === selectedBand.value || !band.enabled) return
+      tracePath(ctx, compressorCurve(num(band.threshold, -18), num(band.ratio, 4), knee), w, h)
+      ctx.stroke()
+    })
+  }
+
+  const pts = compressorCurve(target.value.threshold, target.value.ratio, knee)
+  tracePath(ctx, pts, w, h)
+  ctx.lineTo(mapIn(IN_MAX_DB, w), h)
+  ctx.lineTo(mapIn(IN_MIN_DB, w), h)
   ctx.closePath()
   ctx.fillStyle = DSP_THEME.dyn.fill
   ctx.fill()
-  ctx.beginPath()
-  pts.forEach((p, i) => i ? ctx.lineTo(mapIn(p.inDb), mapOut(p.outDb)) : ctx.moveTo(mapIn(p.inDb), mapOut(p.outDb)))
+
+  tracePath(ctx, pts, w, h)
+  ctx.strokeStyle = DSP_THEME.dyn.accent
   ctx.lineWidth = 1.8
-  strokeGlow(ctx, DSP_THEME.dyn.accent, 10, () => ctx.stroke())
-  const tx = mapIn(state.value.threshold)
-  const ty = mapOut(state.value.threshold)
+  ctx.stroke()
+
+  // Handles along the curve, echoing the reference design's dotted transfer line.
+  ctx.fillStyle = DSP_THEME.dyn.accent
+  for (let db = IN_MIN_DB; db <= IN_MAX_DB; db += 12) {
+    const point = pts.reduce((best, p) => (
+      Math.abs(p.inDb - db) < Math.abs(best.inDb - db) ? p : best
+    ), pts[0])
+    ctx.beginPath()
+    ctx.arc(mapIn(point.inDb, w), dbToY(point.outDb, h, OUT_MIN_DB, OUT_MAX_DB), 2.6, 0, Math.PI * 2)
+    ctx.fill()
+  }
+
+  const tx = mapIn(target.value.threshold, w)
+  ctx.strokeStyle = DSP_THEME.accentLo
   ctx.setLineDash([3, 4])
-  ctx.strokeStyle = 'rgba(92,225,255,0.28)'
-  ctx.beginPath(); ctx.moveTo(tx, 0); ctx.lineTo(tx, h); ctx.stroke()
-  ctx.beginPath(); ctx.moveTo(0, ty); ctx.lineTo(w, ty); ctx.stroke()
-  ctx.setLineDash([])
-  fillGlow(ctx, DSP_THEME.dyn.accent, 10, () => {
-    ctx.beginPath(); ctx.arc(tx, ty, 6, 0, Math.PI * 2); ctx.fill()
-  })
   ctx.beginPath()
-  ctx.arc(tx, ty, 6, 0, Math.PI * 2)
-  ctx.fillStyle = '#0B0E14'
+  ctx.moveTo(tx, 0)
+  ctx.lineTo(tx, h)
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  const ty = dbToY(target.value.threshold, h, OUT_MIN_DB, OUT_MAX_DB)
+  ctx.beginPath()
+  ctx.arc(tx, ty, 5, 0, Math.PI * 2)
+  ctx.fillStyle = DSP_THEME.panel
   ctx.fill()
   ctx.strokeStyle = DSP_THEME.dyn.accent
-  ctx.lineWidth = 1.6
+  ctx.lineWidth = 1.8
   ctx.stroke()
 
   const meters = props.meters || {}
   const inDb = meters.inputPeakDb != null
-    ? meters.inputPeakDb
-    : (meters.inPeak ? 20 * Math.log10(Math.max(1e-5, meters.inPeak)) : null)
-  const grDb = meters.gainReductionDb != null ? meters.gainReductionDb : 0
+    ? num(meters.inputPeakDb, -120)
+    : (meters.inPeak ? 20 * Math.log10(Math.max(1e-5, num(meters.inPeak))) : null)
+  const grDb = num(meters.gainReductionDb)
   if (inDb != null && inDb > -90) {
-    const curveOut = inDb + grDb
-    ctx.fillStyle = 'rgba(92,225,255,0.35)'
-    ctx.fillRect(mapIn(inDb) - 1, 0, 2, h)
-    ctx.fillStyle = 'rgba(56,189,248,0.35)'
-    ctx.fillRect(0, mapOut(curveOut) - 1, w, 2)
-    fillGlow(ctx, DSP_THEME.dyn.accent, 12, () => {
-      ctx.beginPath()
-      ctx.arc(mapIn(inDb), mapOut(curveOut), 4, 0, Math.PI * 2)
-      ctx.fill()
-    })
+    const outDb = inDb + grDb
+    ctx.fillStyle = DSP_THEME.dyn.over
+    ctx.fillRect(Math.round(mapIn(inDb, w)), 0, 1, h)
+    ctx.beginPath()
+    ctx.arc(mapIn(inDb, w), dbToY(outDb, h, OUT_MIN_DB, OUT_MAX_DB), 3.4, 0, Math.PI * 2)
+    ctx.fill()
   }
+
+  axisText(ctx, 'Input', 6, 10, 'left')
 }
 
 function drawSplit () {
   if (!state.value.splitBands) return
-  const prepared = prepareCanvas(splitCanvas, 160, 168)
+  const prepared = prepareCanvas(splitCanvas, 480, 84)
   if (!prepared) return
   const { ctx, w, h } = prepared
   ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#0B0E14'
+  ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
-  drawSpectrum(ctx, props.spectrum, w, h, 'rgba(92,225,255,0.16)')
-  const x1 = freqToX(state.value.xo1, w)
-  const x2 = freqToX(state.value.xo2, w)
-  ctx.fillStyle = 'rgba(94,234,212,0.08)'
-  ctx.fillRect(0, 0, x1, h)
-  ctx.fillStyle = 'rgba(92,225,255,0.08)'
-  ctx.fillRect(x1, 0, x2 - x1, h)
-  ctx.fillStyle = 'rgba(167,139,250,0.08)'
-  ctx.fillRect(x2, 0, w - x2, h)
-  ctx.lineWidth = 1.4
-  ;[
-    [x1, '#5EEAD4'],
-    [x2, '#A78BFA']
-  ].forEach(([x, color]) => {
-    ctx.strokeStyle = color
-    ctx.shadowColor = color
-    ctx.shadowBlur = 8
-    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke()
-    ctx.shadowBlur = 0
-    ctx.beginPath(); ctx.arc(x, 12, 5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill()
+
+  const x1 = freqToX(num(state.value.xo1, 180), w)
+  const x2 = freqToX(num(state.value.xo2, 3500), w)
+  const regions = [
+    [0, x1, 0],
+    [x1, x2, 1],
+    [x2, w, 2]
+  ]
+  regions.forEach(([from, to, i]) => {
+    const band = state.value.bands[i]
+    ctx.fillStyle = selectedBand.value === i
+      ? DSP_THEME.accentLo
+      : (band && band.enabled ? 'rgba(38,40,44,0.03)' : 'rgba(38,40,44,0.07)')
+    ctx.fillRect(from, 0, to - from, h)
   })
-  ctx.fillStyle = DSP_THEME.muted
-  ctx.font = '8px Inter, Segoe UI, sans-serif'
-  ctx.fillText(fmtHz(state.value.xo1), Math.min(w - 40, x1 + 4), h - 8)
-  ctx.fillText(fmtHz(state.value.xo2), Math.min(w - 40, x2 + 4), h - 20)
+
+  drawSpectrum(ctx, props.spectrum, w, h, DSP_THEME.eq.spec, DSP_THEME.eq.specLine)
+
+  ctx.lineWidth = 1.4
+  ctx.strokeStyle = DSP_THEME.dyn.accent
+  ;[x1, x2].forEach((x) => {
+    ctx.beginPath()
+    ctx.moveTo(Math.round(x) + 0.5, 0)
+    ctx.lineTo(Math.round(x) + 0.5, h - 12)
+    ctx.stroke()
+    ctx.beginPath()
+    ctx.arc(x, 10, 4, 0, Math.PI * 2)
+    ctx.fillStyle = DSP_THEME.dyn.accent
+    ctx.fill()
+  })
+
+  axisText(ctx, fmtHz(num(state.value.xo1, 180)), Math.min(w - 4, x1 + 5), h - 6, 'left')
+  axisText(ctx, fmtHz(num(state.value.xo2, 3500)), Math.min(w - 4, x2 + 5), h - 6, 'left')
 }
 
 let raf = 0
@@ -275,15 +464,14 @@ onUnmounted(() => cancelAnimationFrame(raf))
 watch(() => props.insert.state, () => { draw(); drawSplit() }, { deep: true })
 
 function onGraph (e) {
-  const startY = (e.touches ? e.touches[0].clientY : e.clientY)
-  const startX = (e.touches ? e.touches[0].clientX : e.clientX)
-  const startT = props.insert.state.threshold
-  const startR = props.insert.state.ratio
+  const startY = e.touches ? e.touches[0].clientY : e.clientY
+  const startX = e.touches ? e.touches[0].clientX : e.clientX
+  const startT = target.value.threshold
+  const startR = target.value.ratio
   const move = (ev) => {
     const p = ev.touches ? ev.touches[0] : ev
-    props.insert.state.threshold = Math.min(0, Math.max(-48, startT - (p.clientY - startY) * 0.15))
-    props.insert.state.ratio = Math.min(20, Math.max(1, startR + (p.clientX - startX) * 0.04))
-    commit()
+    setTarget('threshold', Math.min(0, Math.max(-48, startT - (p.clientY - startY) * 0.15)))
+    setTarget('ratio', Math.min(20, Math.max(1, startR * Math.pow(2, (p.clientX - startX) / 160))))
   }
   bindDrag(move)
 }
@@ -293,13 +481,12 @@ function onXo (e) {
   if (!rect.width) return
   const p0 = e.touches ? e.touches[0] : e
   const x0 = p0.clientX - rect.left
-  const x1 = freqToX(state.value.xo1, rect.width)
-  const x2 = freqToX(state.value.xo2, rect.width)
+  const x1 = freqToX(num(state.value.xo1, 180), rect.width)
+  const x2 = freqToX(num(state.value.xo2, 3500), rect.width)
   const which = Math.abs(x0 - x1) <= Math.abs(x0 - x2) ? 'xo1' : 'xo2'
   const move = (ev) => {
     const p = ev.touches ? ev.touches[0] : ev
-    const t = Math.min(1, Math.max(0, (p.clientX - rect.left) / rect.width))
-    const hz = Math.exp(Math.log(20) + t * (Math.log(20000) - Math.log(20)))
+    const hz = xToFreq(p.clientX - rect.left, rect.width)
     if (which === 'xo1') props.insert.state.xo1 = Math.min(800, Math.max(40, hz))
     else props.insert.state.xo2 = Math.min(12000, Math.max(800, hz))
     commit()
@@ -322,41 +509,8 @@ function bindDrag (move) {
 </script>
 
 <style scoped>
-.plug { gap: 10px; }
-.split-hit {
-  height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--dsp-line);
-  border-radius: 4px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--dsp-muted);
-  cursor: pointer;
-}
-.split-hit.on { color: var(--dsp-text); border-color: var(--dsp-accent); box-shadow: 0 0 10px var(--dsp-glow); }
-.sw {
-  width: 22px;
-  height: 12px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.08);
-  position: relative;
-}
-.sw::after {
-  content: '';
-  position: absolute;
-  left: 2px;
-  top: 2px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--dsp-muted);
-}
-.split-hit.on .sw { background: rgba(92,225,255,0.25); }
-.split-hit.on .sw::after { left: 12px; background: var(--dsp-accent); box-shadow: 0 0 8px var(--dsp-glow); }
+.plug { gap: 8px; }
+.split-btn { min-width: 88px; }
 .stage {
   display: flex;
   gap: 10px;
@@ -364,102 +518,153 @@ function bindDrag (move) {
   flex: 1 1 auto;
   align-items: stretch;
 }
-.in-m, .out-m {
-  display: flex;
-  flex-shrink: 0;
-  min-height: 0;
-}
-.graph-panel {
+.graph {
   flex: 1;
   min-width: 0;
   min-height: 0;
   position: relative;
   display: flex;
-  padding: 8px 28px 8px 8px;
+  padding: 0 30px 0 0;
+  overflow: hidden;
 }
-.gtitle {
+.readout {
   position: absolute;
-  left: 12px;
   top: 8px;
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--dsp-muted);
-  z-index: 1;
+  right: 40px;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  pointer-events: none;
 }
-.graph { flex: 1; min-width: 0; }
+.ro-lab {
+  font-size: 8px;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+  color: var(--x-ink-3);
+}
+.ro-val {
+  font-size: 18px;
+  font-weight: 300;
+  color: var(--x-ink);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+}
+.ro-sub {
+  font-size: 10px;
+  color: var(--x-ink-2);
+  font-variant-numeric: tabular-nums;
+}
 .gr {
   position: absolute;
   right: 8px;
-  top: 28px;
-  bottom: 12px;
-  width: 16px;
+  top: 8px;
+  bottom: 8px;
+  width: 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
+}
+.gr-lab {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  color: var(--x-ink-3);
 }
 .gr-col {
   flex: 1;
-  width: 4px;
-  background: rgba(255,255,255,0.05);
+  width: 6px;
+  background: var(--x-panel-2);
+  border: 1px solid var(--x-line-2);
+  border-radius: 1px;
   display: flex;
-  align-items: flex-end;
+  align-items: flex-start;
   overflow: hidden;
+  box-sizing: border-box;
 }
 .gr-fill {
   width: 100%;
-  background: var(--dsp-accent);
-  box-shadow: 0 0 8px var(--dsp-glow);
+  background: var(--x-cool);
   min-height: 1px;
 }
-.split-panel {
-  width: 160px;
+.tray {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-around;
+  gap: 6px;
+  padding: 8px 10px;
   flex-shrink: 0;
-  padding: 8px;
+}
+.faders {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 18px;
+  padding: 2px 6px;
+  flex-shrink: 0;
+}
+.gap { flex: 1; }
+.x-chip.det { min-width: 44px; text-transform: uppercase; }
+.bands {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px solid var(--x-line);
 }
-.xo { width: 100%; flex: 1; min-height: 140px; display: block; touch-action: none; }
-.bands { display: flex; flex-direction: column; gap: 6px; }
-.band { display: flex; align-items: center; gap: 6px; }
-.band.muted { filter: grayscale(1); opacity: 0.42; }
-.blab { flex: 1; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--dsp-muted); }
-.tiny {
-  min-width: 28px;
-  height: 22px;
-  border: 1px solid var(--dsp-line);
-  border-radius: 3px;
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--dsp-muted);
+.band-xo {
+  overflow: hidden;
+  display: flex;
+  min-height: 84px;
+}
+.band-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+.band {
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.band.muted { opacity: 0.5; }
+.band-head {
   display: flex;
   align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  gap: 6px;
 }
-.tiny.on { color: var(--dsp-text); border-color: var(--dsp-accent); }
-.knobs { flex-shrink: 0; }
+.band-name {
+  flex: 1;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--x-ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.band-hz {
+  font-size: 9px;
+  color: var(--x-ink-3);
+  font-variant-numeric: tabular-nums;
+}
+.band-val {
+  font-size: 10px;
+  color: var(--x-ink-2);
+  font-variant-numeric: tabular-nums;
+}
 
 @media (max-width: 720px) {
-  .stage,
-  uni-view.stage {
-    display: grid !important;
-    grid-template-columns: 40px minmax(0, 1fr) 64px;
-    grid-template-rows: minmax(110px, 24vh) auto;
+  .readout { right: 34px; top: 6px; }
+  .ro-val { font-size: 15px; }
+  .tray {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    justify-items: center;
+    gap: 8px 4px;
   }
-  .in-m { grid-column: 1; grid-row: 1; }
-  .graph-panel { grid-column: 2; grid-row: 1; min-height: 110px; max-height: 24vh; }
-  .out-m { grid-column: 3; grid-row: 1; }
-  .split-panel {
-    grid-column: 1 / -1;
-    grid-row: 2;
-    width: auto;
-    min-height: 110px;
-  }
-  .tiny { min-width: 36px; height: 32px; }
-  .split-hit { height: 36px; }
+  .faders { grid-template-columns: 1fr; }
+  .band-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 </style>

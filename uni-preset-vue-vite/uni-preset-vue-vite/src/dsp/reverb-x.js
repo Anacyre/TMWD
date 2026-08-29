@@ -3,26 +3,38 @@
  *  venue tables, parameter equations, visualization data, and ReverbXProcessor.
  */
 
-export const REVERB_X_MAX_PRE = 0.08
+export const REVERB_X_MAX_PRE = 0.25
 export const REVERB_X_MAX_ER = 0.22
 export const REVERB_X_MAX_COMB = 0.12
 export const REVERB_X_MAX_AP = 0.06
 export const REVERB_X_MIN_DELAY = 0.0003
 export const REVERB_X_NUM_COMBS = 6
 export const REVERB_X_NUM_ALLPASS = 3
+export const REVERB_X_MAX_BLOCK = 4096
 
-const REVERB_X_MAX_PRE_ = 0.08
+const REVERB_X_MAX_PRE_ = 0.25
 const REVERB_X_MAX_ER_ = 0.22
 const REVERB_X_MAX_COMB_ = 0.12
 const REVERB_X_MAX_AP_ = 0.06
 const REVERB_X_MIN_DELAY_ = 0.0003
 const REVERB_X_NUM_COMBS_ = 6
 const REVERB_X_NUM_ALLPASS_ = 3
+const REVERB_X_MAX_BLOCK_ = 4096
 
-const REVERB_X_COMB_BASE = [1117, 1187, 1277, 1351, 1423, 1493]
-const REVERB_X_COMB_R_OFF = [13, 19, 23, 29, 31, 37]
-const REVERB_X_ALLPASS_BASE = [307, 223, 163]
-const REVERB_X_ALLPASS_R_OFF = [11, 17, 13]
+/** Delay times in seconds, resampled at compile time (2.0: no 44.1 kHz index pinning). */
+const REVERB_X_COMB_SEC = [0.02532880, 0.02691610, 0.02895692, 0.03063492, 0.03226757, 0.03385488]
+const REVERB_X_COMB_R_OFF_SEC = [0.00029478, 0.00043084, 0.00052154, 0.00065760, 0.00070295, 0.00083900]
+const REVERB_X_ALLPASS_SEC = [0.00696145, 0.00505669, 0.00369615]
+const REVERB_X_ALLPASS_R_OFF_SEC = [0.00024943, 0.00038549, 0.00029478]
+
+/** Sub-Hz comb length modulation: breaks up the metallic ring of a static comb bank. */
+const REVERB_X_MOD_HZ = [0.331, 0.417, 0.523, 0.271, 0.611, 0.383]
+const REVERB_X_MOD_PHASE = [0, 1.71, 3.02, 4.63, 5.41, 2.19]
+const REVERB_X_MOD_DEPTH_ = 0.006
+const REVERB_X_MOD_R_SKEW_ = 2.1
+
+const REVERB_X_SAT_T_ = 1.2
+const REVERB_X_SAT_K_ = 1.2
 
 /**
  * Venue models as DATA. Each reflection:
@@ -148,18 +160,46 @@ const REVERB_X_VENUES = {
 export const VENUE_DEFINITIONS = REVERB_X_VENUES
 
 export const REVERB_X_FACTORY_PRESETS = [
-  { id: 'small-room', name: 'Small Room', state: { amount: 0.28, decay: 0.45, size: 0.22, venue: 'small-room' } },
-  { id: 'studio', name: 'Studio', state: { amount: 0.22, decay: 0.85, size: 0.32, venue: 'studio' } },
-  { id: 'chamber', name: 'Chamber', state: { amount: 0.30, decay: 1.40, size: 0.48, venue: 'chamber' } },
-  { id: 'hall', name: 'Hall', state: { amount: 0.32, decay: 2.10, size: 0.68, venue: 'hall' } },
-  { id: 'concert-hall', name: 'Concert Hall', state: { amount: 0.35, decay: 2.80, size: 0.82, venue: 'concert-hall' } },
-  { id: 'cathedral', name: 'Cathedral', state: { amount: 0.38, decay: 6.20, size: 1.00, venue: 'cathedral' } },
-  { id: 'large-stage', name: 'Large Stage', state: { amount: 0.30, decay: 1.70, size: 0.78, venue: 'large-stage' } },
-  { id: 'outdoor', name: 'Outdoor', state: { amount: 0.20, decay: 0.35, size: 0.70, venue: 'outdoor' } }
+  { id: 'small-room', name: 'Small Room', state: { amount: 0.28, reverbLevel: 0.55, decay: 0.45, size: 0.22, width: 0.80, preDelayMs: 8, dampingHz: 5200, venue: 'small-room' } },
+  { id: 'studio', name: 'Studio', state: { amount: 0.22, reverbLevel: 0.55, decay: 0.85, size: 0.32, width: 0.90, preDelayMs: 12, dampingHz: 7200, venue: 'studio' } },
+  { id: 'chamber', name: 'Chamber', state: { amount: 0.30, reverbLevel: 0.62, decay: 1.40, size: 0.48, width: 1.00, preDelayMs: 18, dampingHz: 6800, venue: 'chamber' } },
+  { id: 'hall', name: 'Hall', state: { amount: 0.32, reverbLevel: 0.68, decay: 2.10, size: 0.68, width: 1.15, preDelayMs: 26, dampingHz: 7800, venue: 'hall' } },
+  { id: 'concert-hall', name: 'Concert Hall', state: { amount: 0.35, reverbLevel: 0.65, decay: 2.80, size: 0.82, width: 1.10, preDelayMs: 32, dampingHz: 6200, venue: 'concert-hall' } },
+  { id: 'cathedral', name: 'Cathedral', state: { amount: 0.38, reverbLevel: 0.72, decay: 6.20, size: 1.00, width: 1.00, preDelayMs: 48, dampingHz: 3800, venue: 'cathedral' } },
+  { id: 'large-stage', name: 'Large Stage', state: { amount: 0.30, reverbLevel: 0.60, decay: 1.70, size: 0.78, width: 1.35, preDelayMs: 20, dampingHz: 8200, venue: 'large-stage' } },
+  { id: 'outdoor', name: 'Outdoor', state: { amount: 0.20, reverbLevel: 0.35, decay: 0.35, size: 0.70, width: 1.50, preDelayMs: 42, dampingHz: 9000, venue: 'outdoor' } }
 ]
 
 function reverbClamp (value, min, max) {
   return value < min ? min : (value > max ? max : value)
+}
+
+/** Soft knee above ±REVERB_X_SAT_T_, C1-continuous, asymptote ±(T+K). */
+function reverbSoftSat (x) {
+  if (x > REVERB_X_SAT_T_) {
+    const u = x - REVERB_X_SAT_T_
+    return REVERB_X_SAT_T_ + u / (1 + u / REVERB_X_SAT_K_)
+  }
+  if (x < -REVERB_X_SAT_T_) {
+    const u = -REVERB_X_SAT_T_ - x
+    return -REVERB_X_SAT_T_ - u / (1 + u / REVERB_X_SAT_K_)
+  }
+  return x
+}
+
+function dampCoeff (hz, sr) {
+  const rate = sr < 8000 ? 44100 : sr
+  const fc = reverbClamp(hz, 20, rate * 0.49)
+  const a = 1 - Math.exp(-2 * Math.PI * fc / rate)
+  return a < 0.002 ? 0.002 : (a > 1 ? 1 : a)
+}
+
+/** Legacy venue `damping` (one-pole coefficient at 44.1 kHz) expressed as a cutoff. */
+function venueDampingHz (venue) {
+  const d = reverbClamp(venue && venue.damping != null ? venue.damping : 0.3, 0, 0.92)
+  const a = 1 - d
+  const fc = -Math.log(a < 1e-6 ? 1e-6 : a) * 44100 / (2 * Math.PI)
+  return reverbClamp(fc, 500, 20000)
 }
 
 function sizeScale (s) {
@@ -181,7 +221,12 @@ function compileReverbNetwork (state, sr) {
   const s = sizeScale(st.size)
   const decay = reverbClamp(st.decay == null ? 2.2 : st.decay, 0.15, 12)
   const wetGain = reverbClamp(st.amount == null ? 0.35 : st.amount, 0, 1)
-  const preDelaySec = reverbClamp(venue.preDelay * s, 0, REVERB_X_MAX_PRE_)
+  const reverbLevel = reverbClamp(st.reverbLevel == null ? 0.65 : st.reverbLevel, 0, 1.5)
+  const width = reverbClamp(st.width == null ? 1 : st.width, 0, 2)
+  const preDelaySec = st.preDelayMs == null
+    ? reverbClamp(venue.preDelay * s, 0, REVERB_X_MAX_PRE_)
+    : reverbClamp(st.preDelayMs / 1000, 0, REVERB_X_MAX_PRE_)
+  const dampingHz = reverbClamp(st.dampingHz == null ? venueDampingHz(venue) : st.dampingHz, 500, 20000)
   const sizeGain = 1 / Math.sqrt(s)
   const ratios = venue.reflectionDelayRatios
   const gains = venue.reflectionGainRatios
@@ -203,8 +248,8 @@ function compileReverbNetwork (state, sr) {
   }
   const combs = []
   for (let i = 0; i < REVERB_X_NUM_COMBS_; i++) {
-    const delaySec = reverbClamp(REVERB_X_COMB_BASE[i] / 44100 * s, 0.003, REVERB_X_MAX_COMB_)
-    const offSec = REVERB_X_COMB_R_OFF[i] / 44100 * s
+    const delaySec = reverbClamp(REVERB_X_COMB_SEC[i] * s, 0.003, REVERB_X_MAX_COMB_)
+    const offSec = REVERB_X_COMB_R_OFF_SEC[i] * s
     const dR = reverbClamp(delaySec + offSec, 0.003, REVERB_X_MAX_COMB_)
     combs.push({
       delaySec: delaySec,
@@ -215,8 +260,8 @@ function compileReverbNetwork (state, sr) {
   }
   const allpass = []
   for (let i = 0; i < REVERB_X_NUM_ALLPASS_; i++) {
-    const delaySec = reverbClamp(REVERB_X_ALLPASS_BASE[i] / 44100 * s, 0.001, REVERB_X_MAX_AP_)
-    const offSec = REVERB_X_ALLPASS_R_OFF[i] / 44100 * s
+    const delaySec = reverbClamp(REVERB_X_ALLPASS_SEC[i] * s, 0.001, REVERB_X_MAX_AP_)
+    const offSec = REVERB_X_ALLPASS_R_OFF_SEC[i] * s
     allpass.push({
       dL: delaySec * rate,
       dR: reverbClamp(delaySec + offSec, 0.001, REVERB_X_MAX_AP_) * rate
@@ -227,17 +272,21 @@ function compileReverbNetwork (state, sr) {
     sizeScale: s,
     decay: decay,
     wetGain: wetGain,
+    reverbLevel: reverbLevel,
     preDelaySec: preDelaySec,
     preDelaySamples: preDelaySec * rate,
     taps: taps,
     combs: combs,
     allpass: allpass,
+    dampingHz: dampingHz,
+    dampAlpha: dampCoeff(dampingHz, rate),
     damping: reverbClamp(venue.damping, 0, 0.92),
     diffusion: reverbClamp(venue.diffusion, 0, 1),
     apG: reverbClamp(venue.diffusion * 0.62, 0.12, 0.86),
     earlyLevel: venue.earlyLevel,
     lateLevel: venue.lateLevel,
-    width: reverbClamp(0.4 + venue.stereoWidth * 0.7, 0.25, 1.15),
+    width: width,
+    venueWidth: reverbClamp(venue.stereoWidth, 0, 1),
     returnOnly: !!st.returnOnly,
     wetProcess: !!st.wetProcess
   }
@@ -373,7 +422,15 @@ class ReverbXProcessor {
     this.dampZR = new Float32Array(REVERB_X_NUM_COMBS_)
     this.combDL = new Float32Array(REVERB_X_NUM_COMBS_)
     this.combDR = new Float32Array(REVERB_X_NUM_COMBS_)
+    this.combMDL = new Float32Array(REVERB_X_NUM_COMBS_)
+    this.combMDR = new Float32Array(REVERB_X_NUM_COMBS_)
+    this.modPhase = new Float32Array(REVERB_X_NUM_COMBS_)
+    this.modInc = new Float32Array(REVERB_X_NUM_COMBS_)
     this.fb = new Float32Array(REVERB_X_NUM_COMBS_)
+    for (let i = 0; i < REVERB_X_NUM_COMBS_; i++) {
+      this.modPhase[i] = REVERB_X_MOD_PHASE[i]
+      this.modInc[i] = 2 * Math.PI * REVERB_X_MOD_HZ[i] / this.sr
+    }
     for (let i = 0; i < REVERB_X_NUM_COMBS_; i++) {
       this.combL.push(new ReverbDelayLine(((srN * REVERB_X_MAX_COMB_) | 0) + 8))
       this.combR.push(new ReverbDelayLine(((srN * REVERB_X_MAX_COMB_) | 0) + 8))
@@ -388,12 +445,9 @@ class ReverbXProcessor {
     }
     this.taps = []
     this.tapN = 0
-    this.preDelaySamp = 1
-    this.damp = 0.3
     this.apG = 0.5
     this.earlyLevel = 0.4
     this.lateLevel = 0.8
-    this.width = 0.7
     this.combNorm = 1 / REVERB_X_NUM_COMBS_
     this.returnOnly = false
     this.amountT = 0.35
@@ -402,6 +456,15 @@ class ReverbXProcessor {
     this.sizeZ = 0.62
     this.decayT = 2.2
     this.decayZ = 2.2
+    this.levelT = 0.65
+    this.levelZ = 0.65
+    this.widthT = 1
+    this.widthZ = 1
+    this.preT = 0.02 * this.sr
+    this.preZ = this.preT
+    this.dampHzT = 6200
+    this.dampHzZ = 6200
+    this.dampA = dampCoeff(6200, this.sr)
     this.wetMixT = 0
     this.wetMixZ = 0
     this.amtCoeff = 1 - Math.exp(-1 / (0.02 * this.sr))
@@ -409,8 +472,8 @@ class ReverbXProcessor {
     this.dcXR = 0
     this.dcYL = 0
     this.dcYR = 0
-    this.scratchL = new Float32Array(128)
-    this.scratchR = new Float32Array(128)
+    this.scratchL = new Float32Array(REVERB_X_MAX_BLOCK_)
+    this.scratchR = new Float32Array(REVERB_X_MAX_BLOCK_)
     this.muteSamples = 0
     this.lastWetPeak = 0
     this.lastCompileKey = ''
@@ -444,6 +507,14 @@ class ReverbXProcessor {
     this.amountT = reverbClamp(this.state.amount == null ? 0.35 : this.state.amount, 0, 1)
     this.sizeT = reverbClamp(this.state.size == null ? 0.62 : this.state.size, 0, 1)
     this.decayT = reverbClamp(this.state.decay == null ? 2.2 : this.state.decay, 0.15, 12)
+    this.levelT = reverbClamp(this.state.reverbLevel == null ? 0.65 : this.state.reverbLevel, 0, 1.5)
+    this.widthT = reverbClamp(this.state.width == null ? 1 : this.state.width, 0, 2)
+    const ven = REVERB_X_VENUES[this.state.venue] || REVERB_X_VENUES['concert-hall']
+    const preMs = this.state.preDelayMs == null
+      ? ven.preDelay * sizeScale(this.sizeT) * 1000
+      : this.state.preDelayMs
+    this.preT = reverbClamp(preMs, 0, 250) / 1000 * this.sr
+    this.dampHzT = reverbClamp(this.state.dampingHz == null ? venueDampingHz(ven) : this.state.dampingHz, 500, 20000)
     const hasWet = !!(this.state.wetProcess && (this.state.wetPluginId || (this.state.wetChain && this.state.wetChain.length)))
     this.wetMixT = hasWet ? 1 : 0
     this.returnOnly = !!this.state.returnOnly
@@ -459,6 +530,11 @@ class ReverbXProcessor {
       this.amountZ = this.amountT
       this.sizeZ = this.sizeT
       this.decayZ = this.decayT
+      this.levelZ = this.levelT
+      this.widthZ = this.widthT
+      this.preZ = this.preT
+      this.dampHzZ = this.dampHzT
+      this.dampA = dampCoeff(this.dampHzZ, this.sr)
       this.wetMixZ = this.wetMixT
       this.inited = true
       this.lastCompileKey = ''
@@ -467,17 +543,16 @@ class ReverbXProcessor {
 
   applyNetwork (net) {
     this.compiled = net
-    this.preDelaySamp = net.preDelaySamples < 1 ? 1 : net.preDelaySamples
     this.taps = net.taps
     this.tapN = net.taps.length
-    this.damp = net.damping
     this.apG = net.apG
     this.earlyLevel = net.earlyLevel
     this.lateLevel = net.lateLevel
-    this.width = net.width
     for (let i = 0; i < REVERB_X_NUM_COMBS_; i++) {
       this.combDL[i] = net.combs[i].dL
       this.combDR[i] = net.combs[i].dR
+      this.combMDL[i] = net.combs[i].dL
+      this.combMDR[i] = net.combs[i].dR
       this.fb[i] = net.combs[i].fb
     }
     for (let i = 0; i < REVERB_X_NUM_ALLPASS_; i++) {
@@ -499,20 +574,42 @@ class ReverbXProcessor {
     }, this.sr))
   }
 
-  ensureScratch (n) {
-    if (this.scratchL.length < n) {
-      this.scratchL = new Float32Array(n)
-      this.scratchR = new Float32Array(n)
+  updateModulation (n) {
+    const combDL = this.combDL
+    const combDR = this.combDR
+    const phase = this.modPhase
+    const inc = this.modInc
+    const twoPi = 2 * Math.PI
+    for (let c = 0; c < REVERB_X_NUM_COMBS_; c++) {
+      let p = phase[c] + inc[c] * n
+      if (p >= twoPi) p -= twoPi
+      phase[c] = p
+      this.combMDL[c] = combDL[c] * (1 + REVERB_X_MOD_DEPTH_ * Math.sin(p))
+      this.combMDR[c] = combDR[c] * (1 + REVERB_X_MOD_DEPTH_ * Math.sin(p + REVERB_X_MOD_R_SKEW_))
     }
   }
 
   process (l, r, n) {
+    this.lastWetPeak = 0
+    let base = 0
+    while (base < n) {
+      const left = n - base
+      const count = left > REVERB_X_MAX_BLOCK_ ? REVERB_X_MAX_BLOCK_ : left
+      this.renderChunk(l, r, base, count)
+      base += count
+    }
+  }
+
+  renderChunk (l, r, base, n) {
     const dt = n / this.sr
     this.sizeZ += (this.sizeT - this.sizeZ) * (1 - Math.exp(-dt / 0.08))
     this.decayZ += (this.decayT - this.decayZ) * (1 - Math.exp(-dt / 0.05))
     this.wetMixZ += (this.wetMixT - this.wetMixZ) * (1 - Math.exp(-dt / 0.03))
+    this.preZ += (this.preT - this.preZ) * (1 - Math.exp(-dt / 0.05))
+    this.dampHzZ += (this.dampHzT - this.dampHzZ) * (1 - Math.exp(-dt / 0.03))
+    this.dampA = dampCoeff(this.dampHzZ, this.sr)
     this.compileIfNeeded()
-    this.ensureScratch(n)
+    this.updateModulation(n)
     const wetL = this.scratchL
     const wetR = this.scratchR
     const taps = this.taps
@@ -521,35 +618,39 @@ class ReverbXProcessor {
     const combR = this.combR
     const apL = this.apL
     const apR = this.apR
-    const combDL = this.combDL
-    const combDR = this.combDR
+    const combDL = this.combMDL
+    const combDR = this.combMDR
     const fb = this.fb
     const dampZL = this.dampZL
     const dampZR = this.dampZR
     const apDL = this.apDL
     const apDR = this.apDR
-    const damp = this.damp
-    const oneMd = 1 - damp
+    const dampA = this.dampA
     const apG = this.apG
     const eLvl = this.earlyLevel
     const lLvl = this.lateLevel
-    const width = this.width
     const combNorm = this.combNorm
-    const preD = this.preDelaySamp
+    const preD = this.preZ < 1 ? 1 : this.preZ
     const amtC = this.amtCoeff
     const amountT = this.amountT
+    const levelT = this.levelT
+    const widthT = this.widthT
+    const satT = REVERB_X_SAT_T_
+    let levelZ = this.levelZ
+    let widthZ = this.widthZ
     let dcXL = this.dcXL
     let dcXR = this.dcXR
     let dcYL = this.dcYL
     let dcYR = this.dcYR
     let mute = this.muteSamples
     let wetPeak = 0
-    let runaway = false
+    let broken = false
     const DEN = 1e-30
 
     for (let i = 0; i < n; i++) {
-      const inL = l[i]
-      const inR = r[i]
+      const j = base + i
+      const inL = l[j]
+      const inR = r[j]
       this.preL.write(inL)
       this.preR.write(inR)
       const pL = this.preL.tapFrac(preD)
@@ -570,12 +671,16 @@ class ReverbXProcessor {
       for (let c = 0; c < REVERB_X_NUM_COMBS_; c++) {
         const yL = combL[c].tapFrac(combDL[c])
         const yR = combR[c].tapFrac(combDR[c])
-        const zL = oneMd * yL + damp * dampZL[c] + DEN
-        const zR = oneMd * yR + damp * dampZR[c] + DEN
+        const zL = dampZL[c] + dampA * (yL - dampZL[c]) + DEN
+        const zR = dampZR[c] + dampA * (yR - dampZR[c]) + DEN
         dampZL[c] = zL
         dampZR[c] = zR
-        combL[c].write(pL + zL * fb[c])
-        combR[c].write(pR + zR * fb[c])
+        let gL = zL * fb[c]
+        let gR = zR * fb[c]
+        if (gL > satT || gL < -satT) gL = reverbSoftSat(gL)
+        if (gR > satT || gR < -satT) gR = reverbSoftSat(gR)
+        combL[c].write(pL + gL)
+        combR[c].write(pR + gR)
         accL += yL
         accR += yR
       }
@@ -593,10 +698,12 @@ class ReverbXProcessor {
         accR = oR
       }
 
-      let wL = eL * eLvl + accL * lLvl
-      let wR = eR * eLvl + accR * lLvl
+      levelZ += (levelT - levelZ) * amtC
+      widthZ += (widthT - widthZ) * amtC
+      let wL = (eL * eLvl + accL * lLvl) * levelZ
+      let wR = (eR * eLvl + accR * lLvl) * levelZ
       const mid = (wL + wR) * 0.5
-      const side = (wL - wR) * 0.5 * width
+      const side = (wL - wR) * 0.5 * widthZ
       wL = mid + side
       wR = mid - side
 
@@ -617,7 +724,7 @@ class ReverbXProcessor {
       if (oL > 4 || oL < -4 || oR > 4 || oR < -4 || oL !== oL || oR !== oR) {
         oL = 0
         oR = 0
-        runaway = true
+        broken = true
       }
       wetL[i] = oL
       wetR[i] = oR
@@ -631,7 +738,7 @@ class ReverbXProcessor {
     this.dcYR = dcYR
     this.muteSamples = mute
     this.lastWetPeak = wetPeak
-    if (runaway) this.clearDelays()
+    if (broken) this.clearDelays()
 
     this.wetChain.process(wetL, wetR, n, this.wetMixZ)
 
@@ -727,10 +834,10 @@ const REVERB_X_MAX_AP_ = ${REVERB_X_MAX_AP_};
 const REVERB_X_MIN_DELAY_ = ${REVERB_X_MIN_DELAY_};
 const REVERB_X_NUM_COMBS_ = ${REVERB_X_NUM_COMBS_};
 const REVERB_X_NUM_ALLPASS_ = ${REVERB_X_NUM_ALLPASS_};
-const REVERB_X_COMB_BASE = [${REVERB_X_COMB_BASE.join(',')}];
-const REVERB_X_COMB_R_OFF = [${REVERB_X_COMB_R_OFF.join(',')}];
-const REVERB_X_ALLPASS_BASE = [${REVERB_X_ALLPASS_BASE.join(',')}];
-const REVERB_X_ALLPASS_R_OFF = [${REVERB_X_ALLPASS_R_OFF.join(',')}];
+const REVERB_X_COMB_BASE = [${REVERB_X_COMB_SEC.join(',')}];
+const REVERB_X_COMB_R_OFF = [${REVERB_X_COMB_R_OFF_SEC.join(',')}];
+const REVERB_X_ALLPASS_BASE = [${REVERB_X_ALLPASS_SEC.join(',')}];
+const REVERB_X_ALLPASS_R_OFF = [${REVERB_X_ALLPASS_R_OFF_SEC.join(',')}];
 ${reverbClamp.toString()}
 ${sizeScale.toString()}
 ${feedbackGain.toString()}

@@ -51,11 +51,18 @@
   justify-content: center;
   font-size: 22px;
   line-height: 1;
-  color: #8d8d8d;
+  color: #8E939C;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .lite-plugin-surface .close-x:hover {
-  color: #e6e6e6;
+  color: #26282C;
+}
+
+.lite-plugin-surface .x-dot,
+.lite-plugin-surface .x-sel {
+  min-width: var(--lite-ctrl-min);
+  min-height: var(--lite-ctrl-min);
+  box-sizing: border-box;
 }
