@@ -114,6 +114,9 @@ import {
   addMidiClip,
   exportProject,
   importProjectJson,
+  saveCurrentProject,
+  saveProjectAs,
+  openProjectManager,
   setProjectName,
   setLoopRange,
   openPluginPicker,
@@ -273,8 +276,13 @@ function runMenu (entry) {
     new: handleNew,
     demo: loadDemoProject,
     open: openProject,
-    save: saveProject,
-    saveAs: saveProject,
+    save: saveCurrentProject,
+    saveAs: async () => {
+      const name = typeof window !== 'undefined'
+        ? window.prompt('Save project as', session.projectName || 'Untitled')
+        : session.projectName
+      if (name != null) await saveProjectAs(name)
+    },
     exportAudio: () => showToast('Offline rendering needs the audio engine.'),
     exportMidi: () => showToast('MIDI export needs the sequencer back end.'),
     audio: () => emit('audio-settings'),
@@ -314,19 +322,11 @@ function runMenu (entry) {
 }
 
 function saveProject () {
-  exportProject()
+  saveCurrentProject()
 }
 
 function openProject () {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = '.dawweb,.json,application/json'
-  input.onchange = async () => {
-    const file = input.files && input.files[0]
-    if (!file) return
-    importProjectJson(await file.text())
-  }
-  input.click()
+  openProjectManager()
 }
 
 function notify () {
@@ -483,8 +483,8 @@ function commitName (e) {
   text-overflow: ellipsis;
 }
 .icon-btn {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
   border-radius: 4px;
   display: flex;
   align-items: center;

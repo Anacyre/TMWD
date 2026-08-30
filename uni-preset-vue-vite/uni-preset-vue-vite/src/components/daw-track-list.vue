@@ -4,14 +4,14 @@
       <text class="count">TRACKS {{ Math.max(0, session.tracks.length - 1) }}</text>
       <view class="spacer" />
       <view class="icon-btn" title="Add track" @click.stop="toggleAdd">
-        <daw-icon name="plus" />
+        <daw-icon name="plus" :size="16" />
       </view>
       <view v-if="session.openMenu === 'add-track'" class="dropdown">
         <view class="drop-item" @click="add('midi')">Instrument Track</view>
         <view class="drop-item" @click="add('audio')">Audio Track</view>
       </view>
       <view class="icon-btn" title="Track height" @click.stop="toggleHeight">
-        <daw-icon name="wave" :color="session.openMenu === 'track-height' ? '#4da3ff' : ''" />
+        <daw-icon name="wave" :size="16" :color="session.openMenu === 'track-height' ? '#4da3ff' : ''" />
       </view>
       <view v-if="session.openMenu === 'track-height'" class="dropdown height-menu">
         <view
@@ -66,7 +66,7 @@
               @click.stop="toggleFlag(index, 'recordArm')"
             >R</view>
             <view class="icon-btn menu" @click.stop="openTrackMenu(index)">
-              <daw-icon name="menu" />
+              <daw-icon name="menu" :size="16" />
             </view>
           </view>
           <text
@@ -181,8 +181,8 @@ function onScroll (e) {
 }
 .spacer { flex: 1; }
 .icon-btn {
-  width: 22px;
-  height: 22px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   display: flex;
   align-items: center;

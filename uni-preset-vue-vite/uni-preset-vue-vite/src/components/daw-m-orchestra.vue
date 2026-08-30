@@ -6,7 +6,9 @@
         <text class="sub">Cloud orchestral plugin</text>
       </view>
       <text class="status" :class="{ ok: isReady, err: isError }">{{ statusText }}</text>
-      <view class="swap" @click.stop="changePlugin">Change</view>
+      <view class="swap" title="Change instrument" aria-label="Change instrument" @click.stop="changePlugin">
+        <daw-icon name="copy" :size="16" />
+      </view>
     </view>
 
     <view class="body">
@@ -93,6 +95,7 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
 import DspKnob from './dsp/dsp-knob.vue'
+import DawIcon from './daw-icon.vue'
 import {
   FAMILIES,
   INSTRUMENTS,
@@ -298,9 +301,12 @@ function changePlugin () {
 .status.ok { color: #9db89a; }
 .status.err { color: #d08a8a; }
 .swap {
-  font-size: 11px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #cfcfcf;
-  padding: 4px 8px;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
 }

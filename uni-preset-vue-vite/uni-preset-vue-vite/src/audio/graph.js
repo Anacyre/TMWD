@@ -102,8 +102,16 @@ class RemoteVstPlayer extends AudioWorkletProcessor {
 registerProcessor('remote-vst-player', RemoteVstPlayer)
 `
 
+/** Routing modes. Exactly one is active; `direct` and `fallback` never carry FX. */
+export const ROUTING_INIT = 'init'
+export const ROUTING_DIRECT = 'direct'
+export const ROUTING_MIXER = 'mixer'
+export const ROUTING_FALLBACK = 'fallback'
+
 export function createAudioGraph (context) {
   const master = context.createGain()
+  // Controlled passthrough until the mixer attach attempt finishes. Voices
+  // that fire during unlock still reach the speakers, but nothing claims FX.
   master.gain.value = 1
   master.connect(context.destination)
 
@@ -120,7 +128,19 @@ export function createAudioGraph (context) {
     master,
     remoteGain,
     samplerGain,
-    remoteNode: null
+    remoteNode: null,
+    mixerNodes: null,
+    trackLanes: new Map(),
+    lastMixer: null,
+    clickThroughMaster: false,
+    routing: {
+      mode: ROUTING_INIT,
+      error: '',
+      fxAttached: false,
+      attempts: 0,
+      muted: false,
+      bypassReason: ''
+    }
   }
 }
 

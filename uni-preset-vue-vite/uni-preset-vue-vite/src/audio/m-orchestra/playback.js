@@ -45,10 +45,17 @@ export function durationQuality (entry, artic) {
     return 1
   }
   if (lower.includes('very-long')) return 4
+  if (lower.includes('_15_')) return 3
   if (lower.includes('_long_')) return 3
-  if (lower.includes('_15_')) return 2
-  if (lower.includes('_1_')) return 1
-  return 0
+  if (isOneShotDuration(lower)) return 0
+  return 1
+}
+
+/** `_1_` tokens are one-shots. `_15_` must not match this. */
+export function isOneShotDuration (entry) {
+  const lower = String(entry || '').toLowerCase()
+  if (lower.includes('_15_') || lower.includes('very-long') || lower.includes('_long_')) return false
+  return /(?:^|_)1(?:_|\.|$)/.test(lower)
 }
 
 export function classifyArticulation (duration, artic, percussion) {

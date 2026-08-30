@@ -12,6 +12,7 @@
     <daw-lite-hint />
     <daw-instrument-browser />
     <plugin-host />
+    <daw-project-manager />
     <view v-if="session.toast" class="toast">{{ session.toast }}</view>
   </view>
 </template>
@@ -27,6 +28,7 @@ import DawPlaylist from './daw-playlist.vue'
 import DawPianoRoll from './daw-piano-roll.vue'
 import DawInstrumentBrowser from './daw-instrument-browser.vue'
 import PluginHost from './dsp/plugin-host.vue'
+import DawProjectManager from './daw-project-manager.vue'
 import { session } from '../store/session.js'
 </script>
 

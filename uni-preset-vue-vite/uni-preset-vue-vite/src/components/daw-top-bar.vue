@@ -108,6 +108,7 @@
     </view>
 
     <view v-if="session.openMenu === 'project'" class="menu left-menu" @click.stop>
+      <view class="item" @click="run('manager')">Projects…</view>
       <view class="item" @click="run('new')">New</view>
       <view class="item" @click="run('open')">Open</view>
       <view class="item" @click="run('save')">Save</view>
@@ -116,8 +117,9 @@
       <view v-if="session.recentProjects && session.recentProjects.length" class="sep" />
       <view
         v-for="item in session.recentProjects"
-        :key="item.at"
+        :key="item.id || item.at"
         class="item muted"
+        @click="openRecent(item)"
       >{{ item.name }}</view>
       <view class="sep" />
       <view class="item" @click="run('demo')">Load Demo</view>
@@ -197,6 +199,10 @@ import {
   addTrack,
   exportProject,
   importProjectJson,
+  saveCurrentProject,
+  saveProjectAs,
+  openStoredProject,
+  openProjectManager,
   toggleDiagnostics,
   setWorkspaceView,
   setPositionFormat,
@@ -268,24 +274,28 @@ function commitBpm (e) {
 }
 
 function openProject () {
-  const input = document.createElement('input')
-  input.type = 'file'
-  input.accept = '.dawweb,.json,application/json'
-  input.onchange = async () => {
-    const file = input.files && input.files[0]
-    if (!file) return
-    importProjectJson(await file.text())
-  }
-  input.click()
+  openProjectManager()
+}
+
+function openRecent (item) {
+  closeMenus()
+  if (item && item.id) openStoredProject(item.id)
+  else openProjectManager()
 }
 
 async function run (action) {
   closeMenus()
   const map = {
+    manager: openProjectManager,
     new: async () => { await newProject(); await addTrack('midi', 'Instrument 1') },
     open: openProject,
-    save: exportProject,
-    saveAs: exportProject,
+    save: saveCurrentProject,
+    saveAs: async () => {
+      const name = typeof window !== 'undefined'
+        ? window.prompt('Save project as', session.projectName || 'Untitled')
+        : session.projectName
+      if (name != null) await saveProjectAs(name)
+    },
     demo: loadDemoProject,
     autosave: restoreAutosave,
     export: exportProject,

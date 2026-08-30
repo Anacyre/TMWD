@@ -23,6 +23,8 @@
         <view class="cell"><text class="k">VST plugins</text><text class="v">{{ metrics.pluginCount }}</text></view>
         <view class="cell"><text class="k">Browser FX</text><text class="v">{{ metrics.browserPlugins || 0 }}</text></view>
         <view class="cell"><text class="k">FX chain</text><text class="v">{{ metrics.browserFxAttached ? 'On' : 'Off' }}</text></view>
+        <view class="cell"><text class="k">Routing</text><text class="v">{{ metrics.routingMode || '—' }}</text></view>
+        <view class="cell"><text class="k">FX error</text><text class="v">{{ metrics.browserFxError || metrics.bypassReason || '—' }}</text></view>
         <view class="cell"><text class="k">Worklet block</text><text class="v">{{ metrics.browserCpuMs == null ? '—' : Number(metrics.browserCpuMs).toFixed(2) + ' ms' }}</text></view>
         <view class="cell"><text class="k">Limiter X</text><text class="v">{{ limiterCpu }}</text></view>
         <view class="cell"><text class="k">M Orchestra CPU</text><text class="v">{{ orchCpu }}</text></view>

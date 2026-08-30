@@ -262,8 +262,9 @@ function commitBpm (e) {
   margin-top: 1px;
 }
 .icon-btn {
-  width: 28px;
-  height: 28px;
+  /* 32 px hit target everywhere; the glyph inside is a fixed 20 px. */
+  width: 32px;
+  height: 32px;
   border-radius: 4px;
   display: flex;
   align-items: center;
@@ -271,12 +272,16 @@ function commitBpm (e) {
   cursor: pointer;
   flex-shrink: 0;
 }
-.icon-btn.panel { width: 26px; height: 26px; }
+.icon-btn.panel { width: 32px; height: 32px; }
 .icon-btn:hover { background: #353535; }
 .icon-btn.on { background: rgba(77,163,255,0.18); }
 .icon-btn.play.on { background: rgba(46,164,79,0.18); }
 .icon-btn.rec.on { background: rgba(231,76,60,0.2); }
-.icon-btn.play { width: 32px; }
+.icon-btn.play { width: 36px; }
+@media (pointer: coarse) {
+  .icon-btn, .icon-btn.panel { width: 44px; height: 44px; }
+  .icon-btn.play { width: 48px; }
+}
 .bpm, .sig, .snap {
   min-width: 46px;
   height: 22px;

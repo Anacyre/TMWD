@@ -1,20 +1,30 @@
 <template>
   <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="close" @pointerdown="onHostDown">
       <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite }]" @click.stop @pointerdown="onHostDown">
-        <view v-if="lite" class="head-lite">
-          <text class="grab-change" @click="changePlugin">Change</text>
-          <text v-if="session.openPlugin" class="grab-remove" @click="remove">Remove</text>
-          <view class="close-x" aria-label="Dismiss" @click="close">×</view>
-        </view>
-        <view v-else class="grab">
-          <text class="grab-change" @click="changePlugin">Change</text>
-          <text v-if="session.openPlugin" class="grab-remove" @click="remove">Remove</text>
-          <text class="grab-close" @click="close">Close</text>
+        <view class="grab" :class="{ 'head-lite': lite }">
+          <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin">
+            <daw-icon name="copy" :size="18" />
+          </view>
+          <view
+            v-if="session.openPlugin"
+            class="grab-btn danger"
+            title="Remove plugin"
+            aria-label="Remove plugin"
+            @click="remove"
+          >
+            <daw-icon name="trash" :size="18" />
+          </view>
+          <text v-if="visNotice" class="grab-state">{{ visNotice }}</text>
+          <view class="grab-btn close" title="Close" aria-label="Close" @click="close">
+            <daw-icon name="close" :size="18" />
+          </view>
         </view>
         <plugin-reverb-x
           v-if="insert && insert.pluginId === 'reverb-x'"
           :insert="insert"
           :meters="meters"
+          :vis-state="visState"
+          :vis-notice="visNotice"
           @change="onChange"
           @change-plugin="changePlugin"
         />
@@ -22,16 +32,28 @@
           v-else-if="insert && insert.pluginId === 'equalizer-x'"
           :insert="insert"
           :spectrum="spectrum"
+          :pre-spectrum="preSpectrum"
           :meters="meters"
+          :vis-state="visState"
+          :vis-notice="visNotice"
           @change="onChange"
           @change-plugin="changePlugin"
         />
-        <plugin-boost-x v-else-if="insert && insert.pluginId === 'boost-x'" :insert="insert" :meters="meters" @change="onChange" />
+        <plugin-boost-x
+          v-else-if="insert && insert.pluginId === 'boost-x'"
+          :insert="insert"
+          :meters="meters"
+          :vis-state="visState"
+          :vis-notice="visNotice"
+          @change="onChange"
+        />
         <plugin-dynamic-x
           v-else-if="insert && insert.pluginId === 'dynamic-x'"
           :insert="insert"
           :meters="meters"
           :spectrum="spectrum"
+          :vis-state="visState"
+          :vis-notice="visNotice"
           @change="onChange"
           @change-plugin="changePlugin"
         />
@@ -39,6 +61,8 @@
           v-else-if="insert && insert.pluginId === 'limiter-x'"
           :insert="insert"
           :meters="meters"
+          :vis-state="visState"
+          :vis-notice="visNotice"
           @change="onChange"
           @change-plugin="changePlugin"
         />
@@ -56,9 +80,10 @@
 
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import DawIcon from '../daw-icon.vue'
 import { session, closePlugin, persistWebMixer, getFxAnalyser, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
 import { resolveOpenInsert, fxMeterLaneKey, laneFromOpen } from '../../model/web-mixer.js'
-import { pickPluginSpectrum, metersForInsert } from '../../dsp/runtime.js'
+import { pickPluginSpectrum, pickPreSpectrum, metersForInsert, visualState, visualStateLabel } from '../../dsp/runtime.js'
 import PluginReverbX from './plugin-reverb-x.vue'
 import PluginEqualizerX from './plugin-equalizer-x.vue'
 import PluginBoostX from './plugin-boost-x.vue'
@@ -69,7 +94,9 @@ import './lite-plugin-surface.css'
 
 const lite = computed(() => isLite())
 const liveSpectrum = ref([])
+const livePreSpectrum = ref([])
 const liveMeters = ref({})
+const liveState = ref('')
 const insert = computed(() => resolveOpenInsert(session.webMixer, session.openPlugin, session.tracks))
 const skinClass = computed(() => {
   const id = insert.value && insert.value.pluginId
@@ -85,6 +112,9 @@ const meterKey = computed(() => fxMeterLaneKey(session.openPlugin, session.track
 }))
 const meters = computed(() => liveMeters.value)
 const spectrum = computed(() => liveSpectrum.value)
+const preSpectrum = computed(() => livePreSpectrum.value)
+const visState = computed(() => liveState.value)
+const visNotice = computed(() => visualStateLabel(liveState.value))
 
 let raf = 0
 function tick () {
@@ -92,18 +122,48 @@ function tick () {
   const posted = session.fxMeters[key] || {}
   liveMeters.value = metersForInsert(posted, insert.value)
   liveSpectrum.value = pickPluginSpectrum(posted, getFxAnalyser(key), insert.value)
+  livePreSpectrum.value = pickPreSpectrum(posted, insert.value)
+  liveState.value = visualState(posted, insert.value, {
+    attached: !!session.diagnostics.browserFxAttached,
+    error: session.diagnostics.browserFxError
+  })
+  raf = requestAnimationFrame(tick)
+}
+
+function stopTick () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+
+function startTick () {
+  if (raf || !session.openPlugin) return
   raf = requestAnimationFrame(tick)
 }
 
 watch(() => session.openPlugin, (open) => {
-  cancelAnimationFrame(raf)
+  stopTick()
   liveSpectrum.value = []
+  livePreSpectrum.value = []
   liveMeters.value = {}
-  if (open) raf = requestAnimationFrame(tick)
+  liveState.value = ''
+  if (open) startTick()
 }, { immediate: true })
 
-onMounted(() => { if (session.openPlugin) raf = requestAnimationFrame(tick) })
-onUnmounted(() => cancelAnimationFrame(raf))
+// A hidden tab must not keep burning RAF frames and battery on FFT redraws.
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stopTick()
+  else startTick()
+}
+
+onMounted(() => {
+  startTick()
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stopTick()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
 
 function close () { closePlugin() }
 function remove () {
@@ -132,9 +192,10 @@ function changePlugin () {
 }
 let holdTimer = 0
 function onHostDown (e) {
-  const cls = (e.target && (e.target.className || e.target.classList && e.target.classList.value)) || ''
-  const clsStr = String(cls)
-  if (clsStr.indexOf('grab') >= 0 || clsStr.indexOf('head-lite') >= 0 || clsStr.indexOf('close-x') >= 0) return
+  // Header buttons own their own gestures; a long press there must not swap the
+  // plugin out from under the tap.
+  const target = e.target
+  if (target && typeof target.closest === 'function' && target.closest('.grab')) return
   clearTimeout(holdTimer)
   holdTimer = setTimeout(() => changePlugin(), 480)
   const up = () => {
@@ -194,37 +255,45 @@ function onChange () { persistWebMixer() }
   max-width: 100%;
   max-height: 100%;
 }
-.head-lite {
-  height: 40px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 12px;
-  padding: 0 8px 0 12px;
-  flex-shrink: 0;
-  position: relative;
-}
-.head-lite .close-x {
-  margin-left: auto;
-}
 .grab {
   height: 36px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  gap: 16px;
-  padding: 0 14px;
+  gap: 4px;
+  padding: 0 6px;
   color: #8E939C;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  font-size: 9px;
   flex-shrink: 0;
 }
-.grab-remove, .grab-close, .grab-change { min-height: 32px; display: flex; align-items: center; cursor: pointer; }
-.grab-remove { color: #C4503C; }
-.grab-change { color: #5A5E66; margin-right: auto; }
-.head-lite { color: #8E939C; }
-.head-lite .grab-change { margin-right: 0; }
+.grab-btn {
+  /* 32 px hit target with 18 px of ink, matching the rest of the app. */
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #5A5E66;
+  flex-shrink: 0;
+}
+.grab-btn:hover { background: rgba(38, 40, 44, 0.06); }
+.grab-btn.danger { color: #C4503C; }
+.grab-btn.close { margin-left: auto; }
+/* Why a graph may be empty, spelled out next to the controls that caused it. */
+.grab-state {
+  margin-left: auto;
+  padding: 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #B0764A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.grab-state + .grab-btn.close { margin-left: 0; }
+.head-lite { height: 44px; padding: 0 8px; }
+.head-lite .grab-btn { width: 44px; height: 44px; }
 .missing {
   padding: 24px 16px 40px;
   display: flex;

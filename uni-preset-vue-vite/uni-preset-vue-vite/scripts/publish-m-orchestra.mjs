@@ -1,6 +1,8 @@
 import { existsSync, readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs'
 import { dirname, extname, join, relative, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { findLoopPoints } from '../src/audio/m-orchestra/pick.js'
+import { playbackFrom, isOneShotDuration } from '../src/audio/m-orchestra/playback.js'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const appRoot = join(here, '..')
@@ -189,22 +191,119 @@ function parseSample (pack, absolutePath, packRoot) {
     if (!percussion && artic && !isAllowedArtic(artic)) return null
     ref.dynamicLayer = dynamicToLayer(dynamic)
     ref.articulation = classifyArticulation(duration, artic, percussion || ref.unpitched)
-    ref.loop = ref.articulation === 'long' || ref.articulation === 'sustain'
-    if (ref.loop && extname(absolutePath).toLowerCase() === '.mp3') {
-      const durationSec = mp3DurationSec(readFileSync(absolutePath))
-      ref.durationSec = Math.round(durationSec * 1000) / 1000
-      const crossfadeSec = 0.12
-      const loopStart = Math.max(0.18, durationSec * 0.28)
-      const loopEnd = Math.min(durationSec - 0.08, loopStart + Math.min(3.2, Math.max(1.15, durationSec * 0.52)))
-      if (loopEnd - loopStart >= 0.8) {
-        ref.loopStart = Math.round(loopStart * 1000) / 1000
-        ref.loopEnd = Math.round(loopEnd * 1000) / 1000
-        ref.crossfadeSec = Math.min(crossfadeSec, (loopEnd - loopStart) * 0.1)
-      } else {
-        ref.loop = false
-      }
-    }
+    const oneShot = isOneShotDuration(path) || String(duration).toLowerCase() === '1'
+    ref.loop = !oneShot && (ref.articulation === 'long' || ref.articulation === 'sustain')
+    if (ref.loop) applyOfflineLoop(ref, absolutePath)
     return { ref, absolutePath }
+}
+
+function readAscii (buffer, offset, length) {
+  return buffer.toString('ascii', offset, offset + length)
+}
+
+function decodeWavPcm (buffer) {
+  if (buffer.length < 12 || readAscii(buffer, 0, 4) !== 'RIFF' || readAscii(buffer, 8, 4) !== 'WAVE') {
+    return null
+  }
+  let offset = 12
+  let channels = 1
+  let sampleRate = 44100
+  let bits = 16
+  let floatFmt = false
+  let dataOffset = 0
+  let dataBytes = 0
+  while (offset + 8 <= buffer.length) {
+    const id = readAscii(buffer, offset, 4)
+    const size = buffer.readUInt32LE(offset + 4)
+    const start = offset + 8
+    if (id === 'fmt ') {
+      const format = buffer.readUInt16LE(start)
+      channels = buffer.readUInt16LE(start + 2)
+      sampleRate = buffer.readUInt32LE(start + 4)
+      bits = buffer.readUInt16LE(start + 14)
+      floatFmt = format === 3
+    } else if (id === 'data') {
+      dataOffset = start
+      dataBytes = size
+      break
+    }
+    offset = start + size + (size % 2)
+  }
+  if (!dataBytes) return null
+  const frameSize = Math.max(1, channels * (bits / 8))
+  const frames = Math.floor(dataBytes / frameSize)
+  const mono = new Float32Array(frames)
+  if (floatFmt && bits === 32) {
+    for (let i = 0; i < frames; i++) {
+      let sum = 0
+      for (let c = 0; c < channels; c++) {
+        sum += buffer.readFloatLE(dataOffset + (i * channels + c) * 4)
+      }
+      mono[i] = sum / channels
+    }
+  } else if (bits === 16) {
+    for (let i = 0; i < frames; i++) {
+      let sum = 0
+      for (let c = 0; c < channels; c++) {
+        sum += buffer.readInt16LE(dataOffset + (i * channels + c) * 2) / 32768
+      }
+      mono[i] = sum / channels
+    }
+  } else if (bits === 24) {
+    for (let i = 0; i < frames; i++) {
+      let sum = 0
+      for (let c = 0; c < channels; c++) {
+        const p = dataOffset + (i * channels + c) * 3
+        let v = buffer[p] | (buffer[p + 1] << 8) | (buffer[p + 2] << 16)
+        if (v & 0x800000) v -= 0x1000000
+        sum += v / 8388608
+      }
+      mono[i] = sum / channels
+    }
+  } else {
+    return null
+  }
+  return { mono, sampleRate, durationSec: frames / sampleRate }
+}
+
+function applyOfflineLoop (ref, absolutePath) {
+  const ext = extname(absolutePath).toLowerCase()
+  if (ext === '.mp3') {
+    const durationSec = mp3DurationSec(readFileSync(absolutePath))
+    ref.durationSec = Math.round(durationSec * 1000) / 1000
+    // Percentage loops used to land in the release tail. MP3 is not PCM, so
+    // we refuse to invent points; the runtime will treat this as a one-shot.
+    ref.loop = false
+    delete ref.loopStart
+    delete ref.loopEnd
+    delete ref.crossfadeSec
+    delete ref.loopScore
+    return
+  }
+  if (ext !== '.wav') {
+    ref.loop = false
+    return
+  }
+  const pcm = decodeWavPcm(readFileSync(absolutePath))
+  if (!pcm) {
+    ref.loop = false
+    return
+  }
+  ref.durationSec = Math.round(pcm.durationSec * 1000) / 1000
+  const found = findLoopPoints(pcm.mono, pcm.sampleRate, playbackFrom({}))
+  if (!found.loop) {
+    ref.loop = false
+    delete ref.loopStart
+    delete ref.loopEnd
+    delete ref.crossfadeSec
+    delete ref.loopScore
+    return
+  }
+  ref.loop = true
+  ref.loopStart = Math.round(found.loopStart * 1000) / 1000
+  ref.loopEnd = Math.round(found.loopEnd * 1000) / 1000
+  ref.crossfadeSec = Math.round((found.crossfade || 0.12) * 1000) / 1000
+  ref.loopScore = Math.round((found.score || 0) * 1000) / 1000
 }
 
 function tightenPitchRanges (samples) {
@@ -281,7 +380,7 @@ async function main () {
     playback: library.playback || {},
     missing: library.missing || [],
     instruments: library.instruments || [],
-    formatVersion: 2,
+    formatVersion: 3,
     sampleLayout: 'objects',
     packs,
     sampleCount: samples.length,

@@ -10,12 +10,12 @@
         <view class="text-hit" :class="{ on: session.showSends }" @click.stop="toggleSends" @tap.stop="toggleSends">Sends</view>
         <view class="text-hit" @click.stop="loadDemoFxChain" @tap.stop="loadDemoFxChain">Demo</view>
         <view class="icon-close" @click.stop="toggleMixer" @tap.stop="toggleMixer">
-          <daw-icon name="chevron" />
+          <daw-icon name="chevron" :size="18" />
         </view>
       </view>
     </view>
 
-    <text v-if="session.webMixer.loadError" class="load-error">{{ session.webMixer.loadError }}</text>
+    <text v-if="routingNotice" class="load-error">{{ routingNotice }}</text>
     <scroll-view class="rack" scroll-x>
       <view class="lane-row">
         <view
@@ -33,7 +33,7 @@
             </view>
             <text class="name">{{ track.name }}</text>
             <text class="inst">{{ instrumentLabel(track) }}</text>
-            <view class="slots">
+            <view class="slots" :class="{ unrouted: !insertsReachAudio(track) }" :title="insertHint(track)">
               <view
                 v-for="slot in MIXER_INSERT_SLOTS"
                 :key="'ti' + track.id + slot"
@@ -42,8 +42,7 @@
                 @click.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
                 @tap.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'track', id: track.id }, slot - 1)"
-                @touchstart.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
-                @mousedown.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
+                @pointerdown.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
               >{{ slotLabel(webTrackInsert(track, slot - 1)) }}</view>
             </view>
             <view class="pan-row">
@@ -51,21 +50,26 @@
                 :model-value="track.pan || 0"
                 :min="-1"
                 :max="1"
-                title="Pan"
+                :title="'Pan ' + formatPan(track.pan)"
                 @update:model-value="onPan(track, $event)"
                 @drag-start="beginMixDrag(track, 'pan')"
                 @drag-end="endMixDrag(track, 'pan')"
               />
               <text class="pan-lab">{{ formatPan(track.pan) }}</text>
             </view>
-            <view v-if="session.showSends && track.source === 'web-sampler'" class="sends">
+            <view v-if="session.showSends" class="sends">
               <view
                 v-for="send in trackSends(track)"
                 :key="send.id"
                 class="send"
               >
                 <text class="send-id">{{ send.name }}</text>
-                <view class="send-bar" @mousedown.stop.prevent="beginSendLevel(track, send, $event)" @touchstart.stop.prevent="beginSendLevel(track, send, $event)">
+                <view
+                  class="send-bar"
+                  :class="{ off: !sendsAvailable(track) }"
+                  :title="sendsAvailable(track) ? send.name + ' send' : sendHint(track)"
+                  @pointerdown.stop.prevent="beginSendLevel(track, send, $event)"
+                >
                   <view class="send-fill" :style="{ width: Math.round((send.level || 0) * 100) + '%' }" />
                 </view>
               </view>
@@ -111,15 +115,14 @@
                 @click.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
                 @tap.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'remote' }, slot - 1)"
-                @touchstart.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
-                @mousedown.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
+                @pointerdown.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
               >{{ slotLabel(remoteInsert(slot - 1)) }}</view>
             </view>
             <view class="knob dim" />
             <view v-if="session.showSends" class="sends">
               <view v-for="send in remoteSends" :key="send.id" class="send">
                 <text class="send-id">{{ send.name }}</text>
-                <view class="send-bar" @mousedown.stop.prevent="beginRemoteSend(send, $event)" @touchstart.stop.prevent="beginRemoteSend(send, $event)">
+                <view class="send-bar" @pointerdown.stop.prevent="beginRemoteSend(send, $event)">
                   <view class="send-fill" :style="{ width: Math.round((send.level || 0) * 100) + '%' }" />
                 </view>
               </view>
@@ -160,8 +163,7 @@
                 @click.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
                 @tap.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'bus', id: bus.id }, slot - 1)"
-                @touchstart.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
-                @mousedown.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
+                @pointerdown.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
               >{{ slotLabel(busInsert(bus, slot - 1)) }}</view>
             </view>
             <view class="knob dim" />
@@ -206,9 +208,8 @@
             :class="slotClass(masterInsert(slot - 1))"
             @click.stop="onInsert({ type: 'master' }, slot - 1, $event)"
             @tap.stop="onInsert({ type: 'master' }, slot - 1, $event)"
-            @contextmenu.prevent.stop="onSlotMenu({ type: 'master' }, slot - 1)"
-            @touchstart.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
-            @mousedown.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
+                @contextmenu.prevent.stop="onSlotMenu({ type: 'master' }, slot - 1)"
+                @pointerdown.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
           >{{ slotLabel(masterInsert(slot - 1)) }}</view>
         </view>
       </view>
@@ -285,9 +286,10 @@ import {
   removeInsert,
   showToast
 } from '../store/session.js'
-import { laneInserts, MIXER_INSERT_SLOTS, fxMeterLaneKey } from '../model/web-mixer.js'
+import { laneInserts, MIXER_INSERT_SLOTS, fxMeterLaneKey, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { PLUGIN_SHORT, formatVolumeDb, formatPan, dbFromFader, faderFromDb, canAddInsert, defaultSends } from '../model/mixer-model.js'
 import { plugins } from '../dsp/registry.js'
+import { beginPointerDrag } from '../lib/pointer-drag.js'
 
 const picker = ref(null)
 const catalogue = computed(() => listPlugins())
@@ -296,6 +298,13 @@ const master = computed(() => session.tracks.find((track) => track.type === 'mas
 const lane = computed(() => session.mixerLane || { type: 'remote' })
 const remoteSends = computed(() => session.webMixer.remote.sends || defaultSends())
 const masterClip = computed(() => !!(session.webMixer.master && session.webMixer.master.clip) || fxPeak('master') >= 1 || (master.value && master.value.meterLevel > 0.99))
+
+/** Never hide a bypass behind an empty UI — say why FX are not being applied. */
+const routingNotice = computed(() => {
+  if (session.webMixer.loadError) return session.webMixer.loadError
+  const warnings = session.diagnostics.routingWarnings || []
+  return warnings.length ? warnings[0] : ''
+})
 
 function trackNum (index) {
   return String(index + 1).padStart(2, '0')
@@ -457,30 +466,62 @@ function toggleBusSolo (bus) {
   persistWebMixer()
 }
 
-function beginSendLevel (track, send, event) {
-  const startX = event.touches ? event.touches[0].clientX : event.clientX
+/** A send only does something when the browser owns this track's audio. */
+function sendsAvailable (track) {
+  return isBrowserOwnedTrack(track, { localPlayback: !session.remoteAudioOn })
+}
+
+function sendHint (track) {
+  if (sendsAvailable(track)) return ''
+  return (track.name || 'This track') + ' plays through the PC engine, which has no send bus yet'
+}
+
+function insertsReachAudio (track) {
+  if (sendsAvailable(track)) return true
+  return !!session.remoteAudioOn
+}
+
+function insertHint (track) {
+  if (insertsReachAudio(track)) return 'Inserts (5 slots)'
+  return 'Connect the PC engine to hear inserts on ' + (track.name || 'this track')
+}
+
+function dragSendLevel (send, event, onCommit) {
+  const bar = event.currentTarget
+  const rect = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : null
+  const startX = event.clientX
   const start = send.level || 0
-  const move = (ev) => {
-    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
-    send.level = Math.min(1, Math.max(0, start + (x - startX) / 90))
+  // Prefer absolute positioning inside the bar; fall back to relative dragging
+  // when the bar has not been laid out yet.
+  const apply = (clientX) => {
+    const next = rect && rect.width > 1
+      ? (clientX - rect.left) / rect.width
+      : start + (clientX - startX) / 90
+    send.level = Math.min(1, Math.max(0, next))
     send.enabled = send.level > 0.001
-    const mix = session.webMixer.tracks[String(track.id)]
-    if (mix) mix.sends = trackSends(track)
+    onCommit()
     persistWebMixer()
   }
-  bindDrag(move)
+  apply(startX)
+  beginPointerDrag(event, {
+    onMove: (ev) => apply(ev.clientX),
+    onEnd: () => flushTrackMix()
+  })
+}
+
+function beginSendLevel (track, send, event) {
+  if (!sendsAvailable(track)) {
+    showToast(sendHint(track))
+    return
+  }
+  dragSendLevel(send, event, () => {
+    const mix = session.webMixer.tracks[String(track.id)]
+    if (mix) mix.sends = trackSends(track)
+  })
 }
 
 function beginRemoteSend (send, event) {
-  const startX = event.touches ? event.touches[0].clientX : event.clientX
-  const start = send.level || 0
-  const move = (ev) => {
-    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
-    send.level = Math.min(1, Math.max(0, start + (x - startX) / 90))
-    send.enabled = send.level > 0.001
-    persistWebMixer()
-  }
-  bindDrag(move)
+  dragSendLevel(send, event, () => {})
 }
 
 let dragSlot = null
@@ -489,50 +530,28 @@ let longPress = 0
 function beginSlotDrag (nextLane, index, event) {
   const list = laneInserts(session.webMixer, nextLane)
   if (!list[index]) return
-  const isTouch = !!(event.touches && event.touches[0])
-  const startY = isTouch ? event.touches[0].clientY : event.clientY
-  const delay = isTouch ? 280 : 0
+  const startY = event.clientY
+  // Touch needs a long press so a tap still opens the plugin instead of dragging.
+  const delay = event.pointerType === 'mouse' ? 0 : 280
   longPress = setTimeout(() => {
     dragSlot = { lane: nextLane, index, startY }
   }, delay)
-  const move = (ev) => {
-    if (!dragSlot) return
-    const y = ev.touches ? ev.touches[0].clientY : ev.clientY
-    const delta = Math.round((y - dragSlot.startY) / 36)
-    const target = Math.min(MIXER_INSERT_SLOTS - 1, Math.max(0, dragSlot.index + delta))
-    if (target !== dragSlot.index) {
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      if (!dragSlot) return
+      const delta = Math.round((ev.clientY - dragSlot.startY) / 36)
+      const target = Math.min(MIXER_INSERT_SLOTS - 1, Math.max(0, dragSlot.index + delta))
+      if (target === dragSlot.index) return
       reorderInserts(dragSlot.lane, dragSlot.index, target)
       dragSlot.index = target
-      dragSlot.startY = y
+      dragSlot.startY = ev.clientY
+    },
+    onEnd: () => {
+      clearTimeout(longPress)
+      dragSlot = null
+      flushTrackMix()
     }
-  }
-  const end = () => {
-    clearTimeout(longPress)
-    dragSlot = null
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', end)
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', end)
-    flushTrackMix()
-  }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', end)
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', end)
-}
-
-function bindDrag (move) {
-  const end = () => {
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', end)
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', end)
-    flushTrackMix()
-  }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', end)
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', end)
+  })
 }
 </script>
 
@@ -642,8 +661,10 @@ function bindDrag (move) {
   align-items: center;
 }
 .strip-foot {
-  flex: 1 0 108px;
-  min-height: 108px;
+  /* Fader (72) + readout (18) + toggles (40) — anything less collapsed the
+     vertical fader to zero height and made it undraggable. */
+  flex: 1 0 132px;
+  min-height: 132px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -676,8 +697,8 @@ function bindDrag (move) {
   margin: 6px 0 4px;
 }
 .pan-row :deep(.knob) {
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
 }
 .pan-lab {
   font-size: 8px;
@@ -766,11 +787,13 @@ function bindDrag (move) {
 .sends { width: 100%; display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
 .send { display: flex; align-items: center; gap: 4px; }
 .send-id { font-size: 9px; color: #7a776f; width: 10px; }
-.send-bar { flex: 1; height: 10px; background: #1a1a1a; }
+.send-bar { flex: 1; height: 12px; background: #1a1a1a; touch-action: none; }
+.send-bar.off { opacity: 0.3; }
 .send-fill { height: 100%; background: #6a6a64; min-width: 0; }
+.slots.unrouted { opacity: 0.5; }
 .fader-row {
   flex: 1;
-  min-height: 56px;
+  min-height: 72px;
   width: 100%;
   display: flex;
   gap: 6px;
@@ -866,9 +889,16 @@ function bindDrag (move) {
 .mix.detail .strip { width: 92px; }
 .mix.detail .slot { min-height: 36px; height: 36px; font-size: 11px; }
 .mix.detail .tog { min-width: 40px; height: 40px; }
-@container (max-height: 200px) {
-  .inst, .pan-row, .knob, .sends { display: none; }
-  .strip-foot { flex-basis: 96px; min-height: 96px; }
+@container (max-height: 240px) {
+  .inst, .sends { display: none; }
+  .pan-row { margin: 2px 0; }
+  .pan-row .pan-lab { display: none; }
+}
+@container (max-height: 190px) {
+  /* Last resort: drop pan rather than starve the fader of height. */
+  .pan-row, .knob { display: none; }
+  .strip-foot { flex-basis: 110px; min-height: 110px; }
+  .fader-row { min-height: 56px; }
 }
 @media (max-width: 720px) {
   .strip, .strip.fx { width: 88px; }

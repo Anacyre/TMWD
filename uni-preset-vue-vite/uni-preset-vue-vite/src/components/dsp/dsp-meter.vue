@@ -1,25 +1,25 @@
 <template>
   <view
     class="meter"
-    :class="{ stereo, 'has-gain': gainEnabled, dim: disabled, fill }"
+    :class="{ stereo, 'has-gain': gainEnabled, dim: disabled, fill, horizontal }"
     :style="wrapStyle"
+    :title="label ? label + ' ' + dbText : dbText"
   >
     <text v-if="label" class="lab">{{ label }}</text>
     <view
       ref="body"
       class="body"
-      @mousedown.stop.prevent="beginGain"
-      @touchstart.stop.prevent="beginGain"
+      @pointerdown.stop.prevent="beginGain"
       @wheel.stop.prevent="onWheel"
       @dblclick.stop="resetGain"
     >
       <view class="scale">
         <text
-          v-for="mark in SCALE_TICKS"
+          v-for="mark in ticks"
           :key="mark"
           class="tick"
           :class="{ zero: mark === 0 }"
-          :style="{ bottom: dbMark(mark) }"
+          :style="tickStyle(mark)"
         >{{ mark > 0 ? '+' + mark : mark }}</text>
       </view>
       <view class="cols">
@@ -31,7 +31,7 @@
         </view>
       </view>
       <view v-if="gainEnabled" class="fader" :class="{ locked: gainDisabled }">
-        <view class="thumb" :style="{ bottom: (gainT * 100) + '%' }" />
+        <view class="thumb" :style="thumbStyle" />
       </view>
     </view>
     <text v-if="showDb" class="db">{{ dbText }}</text>
@@ -42,6 +42,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { fmtDb, peakToDb, peakToMeterT } from './dsp-theme.js'
+import { beginPointerDrag } from '../../lib/pointer-drag.js'
 
 const props = defineProps({
   level: { type: Number, default: 0 },
@@ -50,6 +51,9 @@ const props = defineProps({
   label: { type: String, default: '' },
   height: { type: Number, default: 160 },
   fill: { type: Boolean, default: false },
+  /* Mini strip that grows left to right, for phone-width single-column stages
+     where a vertical meter would eat a third of the graph. */
+  horizontal: { type: Boolean, default: false },
   showDb: { type: Boolean, default: true },
   color: { type: String, default: '' },
   disabled: { type: Boolean, default: false },

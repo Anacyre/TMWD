@@ -1,9 +1,18 @@
 <template>
   <view
+    ref="root"
     class="fader"
-    :class="orientation"
-    @mousedown.stop.prevent="onDown"
-    @touchstart.stop.prevent="onTouchStart"
+    :class="[orientation, { disabled }]"
+    :aria-label="label"
+    :aria-valuenow="Math.round(modelValue * 1000) / 1000"
+    :aria-valuemin="min"
+    :aria-valuemax="max"
+    :aria-disabled="disabled ? 'true' : 'false'"
+    role="slider"
+    :tabindex="disabled ? -1 : 0"
+    @pointerdown.stop.prevent="onPointerDown"
+    @keydown="onKeyDown"
+    @wheel.prevent="onWheel"
   >
     <view class="track">
       <view class="fill" :style="fillStyle" />
@@ -13,20 +22,25 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { beginPointerDrag, trackRatio, clamp } from '../lib/pointer-drag.js'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
   min: { type: Number, default: 0 },
   max: { type: Number, default: 1 },
-  orientation: { type: String, default: 'horizontal' }
+  orientation: { type: String, default: 'horizontal' },
+  step: { type: Number, default: 0 },
+  disabled: { type: Boolean, default: false },
+  label: { type: String, default: 'Level' }
 })
 const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
-const percent = computed(() => {
-  const span = props.max - props.min || 1
-  return Math.min(100, Math.max(0, ((props.modelValue - props.min) / span) * 100))
-})
+const root = ref(null)
+
+const span = computed(() => (props.max - props.min) || 1)
+
+const percent = computed(() => clamp(((props.modelValue - props.min) / span.value) * 100, 0, 100))
 
 const fillStyle = computed(() => (
   props.orientation === 'vertical'
@@ -40,46 +54,58 @@ const capStyle = computed(() => (
     : { left: `calc(${percent.value}% - 7px)` }
 ))
 
-function setFromEvent (clientX, clientY, el) {
-  const rect = el.getBoundingClientRect()
-  let t
-  if (props.orientation === 'vertical') {
-    t = 1 - Math.min(1, Math.max(0, (clientY - rect.top) / rect.height))
-  } else {
-    t = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width))
-  }
-  emit('update:modelValue', props.min + t * (props.max - props.min))
+function element () {
+  const node = root.value
+  if (!node) return null
+  return node.$el || node
 }
 
-function bindMove (target) {
+function commit (value) {
+  const next = clamp(value, props.min, props.max)
+  if (next === props.modelValue) return
+  emit('update:modelValue', next)
+}
+
+function nudge (steps) {
+  const increment = props.step > 0 ? props.step : span.value / 100
+  commit(props.modelValue + steps * increment)
+}
+
+function applyRatio (event, target) {
+  const t = trackRatio(event, target, props.orientation)
+  // A zero-height container used to yield NaN here and left the fader stuck.
+  if (t === null) return
+  commit(props.min + t * span.value)
+}
+
+function onPointerDown (event) {
+  if (props.disabled) return
+  const target = element() || event.currentTarget
+  applyRatio(event, target)
   emit('drag-start')
-  const move = (ev) => {
-    const pt = ev.touches ? ev.touches[0] : ev
-    if (ev.cancelable) ev.preventDefault()
-    setFromEvent(pt.clientX, pt.clientY, target)
-  }
-  const up = () => {
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', up)
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', up)
-    emit('drag-end')
-  }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', up)
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', up)
+  beginPointerDrag(event, {
+    onMove: (ev) => applyRatio(ev, target),
+    onEnd: () => emit('drag-end')
+  })
 }
 
-function onDown (e) {
-  setFromEvent(e.clientX, e.clientY, e.currentTarget)
-  bindMove(e.currentTarget)
+function onKeyDown (event) {
+  if (props.disabled) return
+  const key = event.key
+  const big = event.shiftKey ? 10 : 1
+  if (key === 'ArrowUp' || key === 'ArrowRight') nudge(big)
+  else if (key === 'ArrowDown' || key === 'ArrowLeft') nudge(-big)
+  else if (key === 'Home') commit(props.min)
+  else if (key === 'End') commit(props.max)
+  else if (key === 'PageUp') nudge(10)
+  else if (key === 'PageDown') nudge(-10)
+  else return
+  event.preventDefault()
 }
 
-function onTouchStart (e) {
-  const t = e.changedTouches[0]
-  setFromEvent(t.clientX, t.clientY, e.currentTarget)
-  bindMove(e.currentTarget)
+function onWheel (event) {
+  if (props.disabled) return
+  nudge(event.deltaY > 0 ? -1 : 1)
 }
 </script>
 
@@ -94,9 +120,21 @@ function onTouchStart (e) {
   position: relative;
   touch-action: none;
   user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.fader:focus-visible {
+  outline: 1px solid #d98b3a;
+  outline-offset: 2px;
+}
+.fader.disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
 }
 .fader.vertical {
   height: 100%;
+  /* Vertical faders need a floor: a zero-height parent made dragging a no-op. */
+  min-height: 48px;
   width: 28px;
   min-width: 28px;
   flex: none;

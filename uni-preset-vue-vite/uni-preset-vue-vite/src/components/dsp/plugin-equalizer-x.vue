@@ -122,30 +122,40 @@
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">Analyzer</text>
-      <view class="x-seg railed">
+      <text class="dsp-lab"><text class="x-lab-full">Analyzer</text><text class="x-lab-abbr">AN</text></text>
+      <view class="x-seg railed" title="Spectrum analyzer tap: before or after the filters">
         <view
           v-for="mode in EQ_ANALYZER_MODES"
           :key="mode"
           class="x-chip an"
           :class="{ on: analyzerMode === mode }"
+          :title="mode === 'pre' ? 'Analyze the input' : 'Analyze the filtered output'"
           @click="set('analyzerMode', mode)"
         >{{ mode }}</view>
       </view>
 
-      <text class="dsp-lab">Oversampling</text>
-      <view class="x-seg railed">
+      <text class="dsp-lab"><text class="x-lab-full">Oversampling</text><text class="x-lab-abbr">OS</text></text>
+      <view class="x-seg railed" title="Oversampling factor">
         <view
           v-for="factor in OVERSAMPLE_FACTORS"
           :key="factor"
           class="x-chip os"
           :class="{ on: oversampling === factor }"
+          :title="factor + '× oversampling'"
           @click="set('oversampling', factor)"
         >{{ factor }}×</view>
       </view>
 
       <view class="gap" />
-      <view class="x-chip" :class="{ on: state.autoGain }" @click="set('autoGain', !state.autoGain)">Auto Gain</view>
+      <view
+        class="x-chip"
+        :class="{ on: state.autoGain }"
+        title="Auto Gain — match output loudness to the input"
+        aria-label="Auto Gain"
+        @click="set('autoGain', !state.autoGain)"
+      >
+        <text class="x-lab-full">Auto Gain</text><text class="x-lab-abbr">AG</text>
+      </view>
     </view>
   </view>
 </template>
@@ -162,17 +172,20 @@ import {
 } from '../../dsp/registry.js'
 import { eqCurvePoints, nodeToCanvas, canvasToNode } from '../../dsp/eq-curve.js'
 import { showToast } from '../../store/session.js'
-import { canvasRect, prepareCanvas } from './canvas-util.js'
+import { canvasRect, prepareCanvas, observeCanvasResize } from './canvas-util.js'
 import {
   DSP_THEME, fmtHz, fmtDb, SHAPE_LABELS, SHAPE_LABELS_SHORT,
-  eqBandColor, drawFreqGrid, drawDbGrid, drawSpectrum
+  eqBandColor, drawFreqGrid, drawDbGrid, drawSpectrum, drawVisualNotice, visualFrameMs
 } from './dsp-theme.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
   spectrum: { type: Array, default: () => [] },
+  preSpectrum: { type: Array, default: () => [] },
   meters: { type: Object, default: () => ({}) },
+  visState: { type: String, default: '' },
+  visNotice: { type: String, default: '' },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['change'])
@@ -266,9 +279,23 @@ function draw () {
   ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
 
-  drawSpectrum(ctx, props.spectrum, w, h, DSP_THEME.eq.spec, DSP_THEME.eq.specLine)
+  // The Pre/Post switch now selects which curve is filled; the other stays as a
+  // reference outline so the filters' effect is visible in one glance.
+  const pre = props.preSpectrum || []
+  const post = props.spectrum || []
+  const wantPre = analyzerMode.value === 'pre'
+  const primary = wantPre && pre.length ? pre : post
+  const secondary = wantPre ? post : pre
+  const drewPrimary = drawSpectrum(ctx, primary, w, h, DSP_THEME.eq.spec, DSP_THEME.eq.specLine)
+  if (secondary && secondary.length) {
+    ctx.save()
+    ctx.globalAlpha = 0.4
+    drawSpectrum(ctx, secondary, w, h, 'rgba(0,0,0,0)', DSP_THEME.ink3, { floor: false })
+    ctx.restore()
+  }
   drawDbGrid(ctx, w, h, -DB_RANGE, DB_RANGE, DB_TICKS)
   drawFreqGrid(ctx, w, h)
+  if (!drewPrimary && props.visNotice) drawVisualNotice(ctx, props.visNotice, w / 2, h * 0.2)
 
   const list = nodes.value
 
@@ -334,15 +361,39 @@ function draw () {
 
 let raf = 0
 let lastDraw = 0
+let stopResize = null
+const FRAME_MS = visualFrameMs()
 function loop (t) {
-  if (!lastDraw || t - lastDraw >= 25) {
+  if (!lastDraw || t - lastDraw >= FRAME_MS) {
     draw()
     lastDraw = t
   }
   raf = requestAnimationFrame(loop)
 }
-onMounted(() => { raf = requestAnimationFrame(loop) })
-onUnmounted(() => cancelAnimationFrame(raf))
+function start () {
+  if (raf) return
+  lastDraw = 0
+  raf = requestAnimationFrame(loop)
+}
+function stop () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stop()
+  else start()
+}
+onMounted(() => {
+  start()
+  stopResize = observeCanvasResize(canvas, draw)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stop()
+  if (stopResize) stopResize()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
 watch(() => props.insert.state, draw, { deep: true })
 watch(() => nodes.value.length, (n) => {
   if (activeIndex.value >= n) activeIndex.value = Math.max(0, n - 1)
@@ -534,9 +585,26 @@ function onDown (e) {
 .gap { flex: 1; }
 
 @media (max-width: 720px) {
-  .stage { min-height: 110px; max-height: 24vh; }
-  .add-node { min-width: 34px; height: 34px; }
+  /* Single-column stage: the meter moves under the curve so the graph keeps the
+     full panel width instead of losing a third of it to a vertical meter. */
+  .stage { flex-direction: column; min-height: 0; }
+  .graph { min-height: 180px; }
+  .add-node { min-width: 40px; height: 40px; }
   .card { width: 210px; }
-  .x-chip.slope { min-width: 36px; height: 30px; font-size: 9px; }
+  .x-chip.slope { min-width: 40px; height: 34px; font-size: 9px; }
+  .strip { padding-bottom: 4px; }
+}
+@media (max-width: 430px) {
+  .graph { min-height: 168px; }
+  .card { width: 190px; }
+}
+@media (max-width: 390px) {
+  .graph { min-height: 152px; }
+  .card { width: 176px; }
+  .x-chip.slope { min-width: 36px; }
+}
+@media (max-width: 360px) {
+  .graph { min-height: 140px; }
+  .card { width: 164px; }
 }
 </style>

@@ -51,3 +51,42 @@ export function prepareCanvas (ref, fallbackW = 320, fallbackH = 248) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   return { el, ctx, w, h, dpr }
 }
+
+/**
+ * Re-run `onResize` whenever the canvas box changes. Plugin canvases are laid
+ * out inside sheets that open at zero size and then animate, so a single draw
+ * on mount left the first frame stretched or blank until the next repaint.
+ * Falls back to window resize/orientation events where ResizeObserver is absent.
+ */
+export function observeCanvasResize (refs, onResize) {
+  if (typeof window === 'undefined') return () => {}
+  const list = Array.isArray(refs) ? refs : [refs]
+  const handler = () => onResize()
+
+  if (typeof ResizeObserver === 'function') {
+    const observer = new ResizeObserver(handler)
+    let attached = 0
+    list.forEach((ref) => {
+      const el = resolveCanvas(ref)
+      const target = el && el.parentElement ? el.parentElement : el
+      if (!target) return
+      observer.observe(target)
+      attached++
+    })
+    if (attached) {
+      window.addEventListener('orientationchange', handler)
+      return () => {
+        observer.disconnect()
+        window.removeEventListener('orientationchange', handler)
+      }
+    }
+    observer.disconnect()
+  }
+
+  window.addEventListener('resize', handler)
+  window.addEventListener('orientationchange', handler)
+  return () => {
+    window.removeEventListener('resize', handler)
+    window.removeEventListener('orientationchange', handler)
+  }
+}

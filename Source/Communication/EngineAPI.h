@@ -182,6 +182,7 @@ private:
     juce::var makeOk (juce::DynamicObject* payload = nullptr) const;
     juce::var withOk (juce::var payload) const;
     juce::var instrumentStatusReply (int trackIndex) const;
+    void applyWebMixerInserts (const juce::var& webMixer);
     bool applyTrackMixerField (TrackData& track, const juce::String& parameter, const juce::var& value);
     juce::var describeTrackMixer (const TrackData& track) const;
 

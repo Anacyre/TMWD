@@ -66,16 +66,56 @@ export function pickPluginSpectrum (posted, analyser, insert) {
   const id = insert && insert.instanceId
   if (insert && insert.pluginId === 'dynamic-x' && id && meters.plugins && meters.plugins[id]) {
     const spec = meters.plugins[id].spectrum
-    if (spec && spec.length && spectrumMax(spec) > 0.008) return spec
+    // Any non-empty frame is preferable to falling through; a quiet band must
+    // read as quiet rather than as "no data", which used to blank the graph.
+    if (spec && spec.length) return spec
   }
   const eq = insert && insert.pluginId === 'equalizer-x' && meters.eqById
     ? meters.eqById[insert.instanceId]
     : null
   if (eq && eq.spectrum && eq.spectrum.length) return eq.spectrum
-  const fft = analyser ? readSpectrum(analyser, 96) : []
   const worklet = meters.spectrum && meters.spectrum.length ? meters.spectrum : []
   if (worklet.length >= 64) return worklet
-  return spectrumMax(fft) > 0.02 ? fft : (worklet.length ? worklet : fft)
+  const fft = analyser ? readSpectrum(analyser, 96) : []
+  if (fft.length) return fft
+  return worklet
+}
+
+/** Pre-EQ curve, when the worklet is publishing one for this instance. */
+export function pickPreSpectrum (posted, insert) {
+  const meters = posted || {}
+  if (!insert || insert.pluginId !== 'equalizer-x') return []
+  const eq = meters.eqById && meters.eqById[insert.instanceId]
+  const spec = eq && eq.spectrumPre
+  return spec && spec.length ? spec : []
+}
+
+export const VIS_UNATTACHED = 'unattached'
+export const VIS_BYPASS = 'bypass'
+export const VIS_SILENT = 'silent'
+export const VIS_LIVE = 'live'
+
+/**
+ * Why a visualization looks empty. An empty canvas on its own cannot tell a
+ * missing worklet apart from a silent input, which hid real routing faults.
+ */
+export function visualState (posted, insert, options = {}) {
+  if (options.error || !options.attached) return VIS_UNATTACHED
+  if (insert && insert.enabled === false) return VIS_BYPASS
+  const meters = posted || {}
+  const level = Math.max(
+    Number(meters.inPeak) || 0,
+    Number(meters.outPeak) || 0,
+    Number(meters.wetPeak) || 0
+  )
+  return level > 1e-4 ? VIS_LIVE : VIS_SILENT
+}
+
+export function visualStateLabel (state) {
+  if (state === VIS_UNATTACHED) return 'FX engine not attached'
+  if (state === VIS_BYPASS) return 'Bypassed'
+  if (state === VIS_SILENT) return 'No signal'
+  return ''
 }
 
 export function readSpectrum (analyser, bins = 96) {

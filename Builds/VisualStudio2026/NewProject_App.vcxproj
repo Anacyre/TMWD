@@ -214,6 +214,12 @@ exit /B 0</Command>
     <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraModel.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraEngine.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MOrchestra\MOrchestraInstance.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\EqualizerXCore.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\DynamicXCore.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\BoostXCore.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\LimiterXCore.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\ReverbXCore.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\XSeries\XSeriesInsert.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\InstrumentRegistry.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\PluginHost.cpp"/>
     <ClCompile Include="..\..\Source\Plugins\HostedPluginInstance.cpp"/>
@@ -223,6 +229,7 @@ exit /B 0</Command>
     <ClCompile Include="..\..\Source\Model\ProjectFile.cpp"/>
     <ClCompile Include="..\..\Source\Communication\EngineAPI.cpp"/>
     <ClCompile Include="..\..\Source\Communication\WebGateway.cpp"/>
+    <ClCompile Include="..\..\Source\Communication\WebMixerBridge.cpp"/>
     <ClCompile Include="..\..\Source\UI\MainComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\DawLookAndFeel.cpp"/>
     <ClCompile Include="..\..\Source\UI\DawSession.cpp"/>

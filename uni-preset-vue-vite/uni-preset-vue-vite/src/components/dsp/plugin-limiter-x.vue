@@ -10,8 +10,14 @@
       @reset="onReset"
     >
       <template #actions>
-        <view class="x-chip" :class="{ on: state.truePeak !== false }" @click="set('truePeak', state.truePeak === false)">
-          True Peak
+        <view
+          class="x-chip"
+          :class="{ on: state.truePeak !== false }"
+          title="True Peak — detect inter-sample peaks"
+          aria-label="True Peak detection"
+          @click="set('truePeak', state.truePeak === false)"
+        >
+          <text class="x-lab-full">True Peak</text><text class="x-lab-abbr">TP</text>
         </view>
       </template>
     </plugin-shell>
@@ -21,12 +27,12 @@
 
       <view class="graph x-panel">
         <view class="readout">
-          <view class="ro">
-            <text class="ro-lab">Gain Reduction</text>
+          <view class="ro" title="Gain reduction">
+            <text class="ro-lab"><text class="x-lab-full">Gain Reduction</text><text class="x-lab-abbr">GR</text></text>
             <text class="ro-val">{{ grText }}</text>
           </view>
-          <view class="ro">
-            <text class="ro-lab">True Peak</text>
+          <view class="ro" title="True peak level">
+            <text class="ro-lab"><text class="x-lab-full">True Peak</text><text class="x-lab-abbr">TP</text></text>
             <text class="ro-val" :class="{ over: peakOver }">{{ peakText }}</text>
           </view>
         </view>
@@ -81,17 +87,20 @@
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">Oversampling</text>
-      <view class="x-seg railed">
+      <text class="dsp-lab"><text class="x-lab-full">Oversampling</text><text class="x-lab-abbr">OS</text></text>
+      <view class="x-seg railed" title="Oversampling factor">
         <view
           v-for="factor in OVERSAMPLE_FACTORS"
           :key="factor"
           class="x-chip os"
           :class="{ on: state.oversampling === factor }"
+          :title="factor + '× oversampling'"
           @click="set('oversampling', factor)"
         >{{ factor }}×</view>
       </view>
-      <text class="hint">{{ latencyText }}</text>
+      <text class="hint" :title="latencyText">
+        <text class="x-lab-full">{{ latencyText }}</text><text class="x-lab-abbr">{{ latencyShort }}</text>
+      </text>
     </view>
   </view>
 </template>
@@ -104,13 +113,15 @@ import DspMeter from './dsp-meter.vue'
 import DspCanvas from './dsp-canvas.vue'
 import { plugins, applyPreset, resetInsert, OVERSAMPLE_FACTORS } from '../../dsp/registry.js'
 import { limiterLinToDb, LIMITER_X_PEAK_HOLD_MS } from '../../dsp/limiter-x.js'
-import { prepareCanvas } from './canvas-util.js'
-import { DSP_THEME, fmtDb, axisText } from './dsp-theme.js'
+import { prepareCanvas, observeCanvasResize } from './canvas-util.js'
+import { DSP_THEME, fmtDb, axisText, drawVisualNotice, visualFrameMs } from './dsp-theme.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
-  meters: { type: Object, default: () => ({}) }
+  meters: { type: Object, default: () => ({}) },
+  visState: { type: String, default: '' },
+  visNotice: { type: String, default: '' }
 })
 const emit = defineEmits(['change'])
 const canvas = ref(null)
@@ -146,6 +157,10 @@ const peakText = computed(() => shownPeak.value > -90 ? fmtDb(shownPeak.value, 1
 const latencyText = computed(() => {
   const ms = num(state.value.lookaheadMs, 0)
   return ms > 0 ? 'Latency ' + ms.toFixed(2) + ' ms, reported to the host' : 'Zero latency'
+})
+const latencyShort = computed(() => {
+  const ms = num(state.value.lookaheadMs, 0)
+  return ms > 0 ? ms.toFixed(2) + ' ms' : '0 ms'
 })
 
 function num (value, fallback = 0) {
@@ -268,19 +283,46 @@ function draw () {
   }
 
   axisText(ctx, 'dB GR', 4, padT - 8, 'left')
+  if (live.peakDb <= -90 && props.visNotice) {
+    drawVisualNotice(ctx, props.visNotice, (w - 26) / 2, padT + gh / 2)
+  }
 }
 
 let raf = 0
 let lastDraw = 0
+let stopResize = null
+const FRAME_MS = visualFrameMs()
 function loop (t) {
-  if (!lastDraw || t - lastDraw >= 33) {
+  if (!lastDraw || t - lastDraw >= FRAME_MS) {
     draw()
     lastDraw = t
   }
   raf = requestAnimationFrame(loop)
 }
-onMounted(() => { raf = requestAnimationFrame(loop) })
-onUnmounted(() => cancelAnimationFrame(raf))
+function start () {
+  if (raf) return
+  lastDraw = 0
+  raf = requestAnimationFrame(loop)
+}
+function stop () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stop()
+  else start()
+}
+onMounted(() => {
+  start()
+  stopResize = observeCanvasResize(canvas, draw)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stop()
+  if (stopResize) stopResize()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
 </script>
 
 <style scoped>

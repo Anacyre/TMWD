@@ -1,28 +1,36 @@
 <template>
   <view class="bar">
     <view class="left">
-      <view class="hit" @click.stop="saveProjectLocal">
-        <daw-icon name="save" />
+      <view class="hit" title="Save project" aria-label="Save project" @click.stop="saveProjectLocal">
+        <daw-icon name="save" :size="24" />
+      </view>
+      <view class="hit" title="Projects" aria-label="Projects" @click.stop="openProjects">
+        <daw-icon name="folder" :size="24" />
       </view>
     </view>
     <view class="center">
-      <view class="hit" :class="{ dim: !session.canUndo }" @click.stop="undoEdit">
-        <daw-icon name="undo" />
+      <view class="hit" :class="{ dim: !session.canUndo }" title="Undo" aria-label="Undo" @click.stop="undoEdit">
+        <daw-icon name="undo" :size="24" />
       </view>
-      <view class="hit" :class="{ dim: !session.canRedo }" @click.stop="redoEdit">
-        <daw-icon name="redo" />
+      <view class="hit" :class="{ dim: !session.canRedo }" title="Redo" aria-label="Redo" @click.stop="redoEdit">
+        <daw-icon name="redo" :size="24" />
       </view>
-      <view class="hit play" :class="{ on: session.playing }" @click.stop="togglePlay">
-        <view class="glyph">
-          <daw-icon
-            :name="session.playing ? 'pause' : 'play'"
-            :active="session.playing"
-            :color="session.playing ? '#2ea44f' : '#e6e6e6'"
-          />
-        </view>
+      <view
+        class="hit play"
+        :class="{ on: session.playing }"
+        :title="session.playing ? 'Pause' : 'Play'"
+        :aria-label="session.playing ? 'Pause' : 'Play'"
+        @click.stop="togglePlay"
+      >
+        <daw-icon
+          :name="session.playing ? 'pause' : 'play'"
+          :active="session.playing"
+          :size="26"
+          :color="session.playing ? '#2ea44f' : '#e6e6e6'"
+        />
       </view>
-      <view class="hit" @click.stop="stop">
-        <daw-icon name="stop" />
+      <view class="hit" title="Stop" aria-label="Stop" @click.stop="stop">
+        <daw-icon name="stop" :size="24" />
       </view>
       <view class="read" @click.stop="toggleFormat">
         <text class="pos">{{ positionDisplay }}</text>
@@ -33,8 +41,8 @@
       <view class="status" @click.stop="openSettings">
         <view class="led" :class="engineState()" />
       </view>
-      <view class="hit" @click.stop="openSettings">
-        <daw-icon name="settings" />
+      <view class="hit" title="Audio settings" aria-label="Audio settings" @click.stop="openSettings">
+        <daw-icon name="settings" :size="24" />
       </view>
     </view>
   </view>
@@ -54,7 +62,8 @@ import {
   setPositionFormat,
   openSettings,
   engineState,
-  saveProjectLocal
+  saveProjectLocal,
+  openProjects
 } from '../store/session.js'
 
 const positionDisplay = computed(() => (
@@ -84,8 +93,8 @@ function toggleFormat () {
   flex-shrink: 0;
   z-index: 1;
 }
-.left { width: 48px; }
-.right { width: 72px; justify-content: flex-end; }
+.left { width: 92px; }
+.right { width: 76px; justify-content: flex-end; }
 .center {
   flex: 1;
   min-width: 0;
@@ -104,12 +113,6 @@ function toggleFormat () {
 }
 .hit.dim { opacity: 0.35; }
 .hit.play :deep(.icon) { color: #e6e6e6; }
-.glyph {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  position: relative;
-}
 .read {
   min-width: 88px;
   display: flex;

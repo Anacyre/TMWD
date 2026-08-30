@@ -11,7 +11,16 @@ import {
   isTrackAudible,
   defaultSends
 } from './mixer-model.js'
-import { remoteProcessInserts, samplerProcessInserts, laneInserts, setLaneInserts, defaultWebMixer } from './web-mixer.js'
+import {
+  remoteProcessInserts,
+  trackLaneInserts,
+  unassignedProcessInserts,
+  fxMeterLaneKey,
+  isBrowserOwnedTrack,
+  laneInserts,
+  setLaneInserts,
+  defaultWebMixer
+} from './web-mixer.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins } from '../dsp/registry.js'
 
@@ -74,21 +83,28 @@ const mix = {
     t1: { inserts: [{ pluginId: 'dynamic-x' }, null, null, null, null] }
   }
 }
-const vstTracks = [{ id: 't1', type: 'midi', source: 'vst' }]
-const mixChain = remoteProcessInserts(mix, vstTracks, { localPlayback: false })
-assert(mixChain.length === 2, 'remote chain includes VST track inserts + Mix strip')
-assert(mixChain[0].pluginId === 'dynamic-x', 'VST track inserts run on summed tap')
-assert(mixChain[1].pluginId === 'equalizer-x', 'Mix strip inserts follow track inserts')
+const mixChain = remoteProcessInserts(mix)
+assert(mixChain.length === 1, 'summed native tap carries the Mix strip only')
+assert(mixChain[0].pluginId === 'equalizer-x', 'Mix strip insert stays on the tap')
+assert(!mixChain.some((item) => item.pluginId === 'dynamic-x'),
+  'per-track insert must never run on an already summed stereo mix')
+assert(unassignedProcessInserts(mix).length === 0, 'fallback bus carries no inserts')
 
-const localTracks = [{ id: 't1', type: 'midi', source: 'empty' }, { id: 't2', type: 'midi', source: 'web-sampler' }]
-const localSamplerChain = samplerProcessInserts(mix, localTracks, { localPlayback: true })
-assert(localSamplerChain.length === 1, 'local playback routes all track inserts to sampler chain')
-assert(localSamplerChain[0].pluginId === 'dynamic-x', 'local track EQ on sampler chain')
-assert(remoteProcessInserts(mix, localTracks, { localPlayback: true }).length === 1, 'local remote chain is Mix-only')
+const t1Chain = trackLaneInserts(mix, { id: 't1' })
+assert(t1Chain.length === 1 && t1Chain[0].pluginId === 'dynamic-x', 'track strip owns its own inserts')
 
-const samplerTracks = [{ id: 't1', type: 'midi', source: 'web-sampler' }]
-const samplerChain = samplerProcessInserts(mix, samplerTracks, { localPlayback: false })
-assert(samplerChain.filter(Boolean)[0].pluginId === 'dynamic-x', 'web sampler keeps a per-track chain')
+const orchTrack = { id: 7, type: 'midi', source: 'm-orchestra' }
+const vstTrack = { id: 8, type: 'midi', source: 'remote-vst' }
+assert(isBrowserOwnedTrack(orchTrack), 'M Orchestra track is browser owned')
+assert(!isBrowserOwnedTrack(vstTrack), 'remote VST track is engine owned')
+assert(isBrowserOwnedTrack({ id: 9, type: 'midi', source: 'empty' }, { localPlayback: true }),
+  'browser-only playback owns plain tracks')
+assert(fxMeterLaneKey({ laneType: 'track', laneId: 7 }, [orchTrack]) === 'track:7',
+  'browser track meters use a per-track lane key')
+assert(fxMeterLaneKey({ laneType: 'track', laneId: 8 }, [vstTrack]) === 'remote',
+  'engine track meters fall back to the summed tap')
+assert(fxMeterLaneKey({ laneType: 'bus', laneId: 'bus_delay' }, []) === 'delay', 'delay bus lane key')
+assert(fxMeterLaneKey('track:12', []) === 'track:12', 'explicit track lane key passes through')
 
 const wm = defaultWebMixer()
 const live = createInsert('equalizer-x', plugins, { state: { outputGainDb: 0 } })

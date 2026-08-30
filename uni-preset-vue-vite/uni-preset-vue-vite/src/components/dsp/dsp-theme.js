@@ -65,6 +65,16 @@ export function eqBandColor (index) {
 export const AXIS_FONT = '9px Inter, "Segoe UI", sans-serif'
 export const LABEL_FONT = '10px Inter, "Segoe UI", sans-serif'
 
+/* Redraw budget. Phones repaint at 25 fps to keep the battery cost of a live
+   spectrum reasonable; desktops get 40 fps. */
+export function visualFrameMs () {
+  if (typeof window === 'undefined') return 25
+  const narrow = window.innerWidth && window.innerWidth <= 720
+  const coarse = typeof window.matchMedia === 'function' &&
+    window.matchMedia('(pointer: coarse)').matches
+  return (narrow || coarse) ? 40 : 25
+}
+
 /* ── Formatters ──────────────────────────────────────────────────────── */
 
 export function fmtHz (freq) {
@@ -315,27 +325,38 @@ export function drawTransferGrid (ctx, w, h, minDb = -60, maxDb = 0, outMin = -3
 
 /* Filled area with a thin top line — reads better on a light panel than the
    1.x bar chart, and costs one path instead of N rects. */
-export function drawSpectrum (ctx, spectrum, w, h, fill, line) {
+/* Visible at very low level, but never rescaled so far that dither reads as
+   full scale: the old unbounded boost turned -100 dBFS into a solid block. */
+export const SPEC_DRAW_FLOOR = 2e-5
+const SPEC_MAX_BOOST = 8
+
+export function drawSpectrum (ctx, spectrum, w, h, fill, line, options = {}) {
   const spec = spectrum || []
   const n = spec.length
-  if (!n) return
+  if (n < 2) return false
   let max = 0
   for (let i = 0; i < n; i++) {
     const v = Number(spec[i]) || 0
     if (v > max) max = v
   }
-  if (max < 0.0008) return
-  const boost = max < 0.14 ? 0.14 / max : 1
   const fillStyle = fill || DSP_THEME.eq.spec
   const lineStyle = line || DSP_THEME.eq.specLine
+  if (max < SPEC_DRAW_FLOOR) {
+    if (options.floor !== false) drawSpectrumFloor(ctx, w, h, lineStyle)
+    return false
+  }
+  const target = options.target || 0.14
+  const boost = max < target ? Math.min(SPEC_MAX_BOOST, target / max) : 1
+  const top = h * (1 - (options.headroom == null ? 0.1 : options.headroom))
+  const yAt = (i) => {
+    const v = Math.min(1, Math.pow(Math.max(0, Number(spec[i]) || 0) * boost, 0.58))
+    return h - v * top
+  }
 
   ctx.save()
   ctx.beginPath()
   ctx.moveTo(0, h)
-  for (let i = 0; i < n; i++) {
-    const v = Math.min(1, Math.pow(Math.max(0, Number(spec[i]) || 0) * boost, 0.58))
-    ctx.lineTo((i / (n - 1)) * w, h - v * h * 0.9)
-  }
+  for (let i = 0; i < n; i++) ctx.lineTo((i / (n - 1)) * w, yAt(i))
   ctx.lineTo(w, h)
   ctx.closePath()
   ctx.fillStyle = fillStyle
@@ -343,14 +364,41 @@ export function drawSpectrum (ctx, spectrum, w, h, fill, line) {
 
   ctx.beginPath()
   for (let i = 0; i < n; i++) {
-    const v = Math.min(1, Math.pow(Math.max(0, Number(spec[i]) || 0) * boost, 0.58))
     const x = (i / (n - 1)) * w
-    const y = h - v * h * 0.9
+    const y = yAt(i)
     if (i === 0) ctx.moveTo(x, y)
     else ctx.lineTo(x, y)
   }
   ctx.strokeStyle = lineStyle
   ctx.lineWidth = 1
   ctx.stroke()
+  ctx.restore()
+  return true
+}
+
+/* A hairline at the bottom so an idle analyzer still looks connected. */
+export function drawSpectrumFloor (ctx, w, h, color) {
+  ctx.save()
+  ctx.strokeStyle = color || DSP_THEME.eq.specLine
+  ctx.globalAlpha = 0.45
+  ctx.lineWidth = 1
+  const y = Math.round(h - 1) + 0.5
+  ctx.beginPath()
+  ctx.moveTo(0, y)
+  ctx.lineTo(w, y)
+  ctx.stroke()
+  ctx.restore()
+}
+
+/* Say why a graph is empty instead of letting it look broken.
+   `cx`/`cy` are the centre of the label, in canvas CSS pixels. */
+export function drawVisualNotice (ctx, text, cx, cy) {
+  if (!text) return
+  ctx.save()
+  ctx.fillStyle = DSP_THEME.ink3
+  ctx.font = LABEL_FONT
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(text, cx, cy)
   ctx.restore()
 }

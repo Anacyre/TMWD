@@ -71,7 +71,7 @@ int RemoteAudioOutput::getBufferDepthMs() const
     return juce::roundToInt (1000.0 * (double) getAvailableFrames() / sr);
 }
 
-void RemoteAudioOutput::pushMaster (const juce::AudioBuffer<float>& master, int numSamples)
+void RemoteAudioOutput::pushPreMaster (const juce::AudioBuffer<float>& master, int numSamples)
 {
     if (! enabled.load() || numSamples <= 0)
         return;
@@ -113,6 +113,11 @@ void RemoteAudioOutput::pushMaster (const juce::AudioBuffer<float>& master, int 
         storage[offset + 1] = 0.95f;
         injectedClick.store (clickToken);
     }
+}
+
+void RemoteAudioOutput::pushMaster (const juce::AudioBuffer<float>& master, int numSamples)
+{
+    pushPreMaster (master, numSamples);
 }
 
 void RemoteAudioOutput::writeHeader (char* dest, juce::uint32 flags, juce::uint32 frameCount,

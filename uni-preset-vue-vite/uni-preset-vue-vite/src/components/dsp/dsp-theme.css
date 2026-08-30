@@ -358,22 +358,36 @@ uni-view.x-knobs {
 
 /* ── Mobile ───────────────────────────────────────────────────────────── */
 
+/* ── Responsive labels ───────────────────────────────────────────────────
+   Desktop shows the full wording; narrow screens show the abbreviation and
+   keep the full text in `title`/`aria-label` for a long press. */
+.x-lab-abbr { display: none; }
+
+/* ── Mobile ──────────────────────────────────────────────────────────────
+   Graded at 720 / 430 / 390 / 360 instead of one breakpoint. The stage keeps a
+   real minimum height (an earlier `max-height: 24vh` squashed every graph until
+   the spectrum was invisible) and the controls below it scroll instead. */
 @media (max-width: 720px) {
   .dsp-skin { font-size: 12px; }
-  .dsp-hit { min-height: 36px; min-width: 36px; }
+  .dsp-hit { min-height: 44px; min-width: 44px; }
   .dsp-lab { font-size: 8px; }
-  .x-plug { padding: 0 10px 18px; }
+  .x-plug {
+    padding: 0 10px 18px;
+    /* Single column stage + scrollable controls, with the shell pinned. */
+    display: flex;
+    flex-direction: column;
+  }
   .x-chip {
-    min-height: 36px;
-    min-width: 48px;
-    padding: 0 12px;
+    min-height: 40px;
+    min-width: 44px;
+    padding: 0 10px;
     font-size: 10px;
   }
   .x-dot {
-    width: 30px;
-    height: 30px;
+    width: 32px;
+    height: 32px;
   }
-  .x-sel { height: 34px; font-size: 11px; }
+  .x-sel { height: 40px; font-size: 11px; }
   .x-footer {
     flex-wrap: wrap;
     min-height: 44px;
@@ -395,8 +409,53 @@ uni-view.x-knobs {
   .x-plug .stage,
   .x-viz,
   .x-plug > .stage {
-    min-height: 110px !important;
-    max-height: 24vh !important;
-    flex: 0 1 auto !important;
+    /* Enough height for a readable curve; the rest of the panel scrolls. */
+    min-height: 180px !important;
+    max-height: none !important;
+    flex: 0 0 auto !important;
+  }
+  .x-lab-full { display: none; }
+  .x-lab-abbr { display: inline; }
+}
+
+@media (max-width: 430px) {
+  .x-plug { padding: 0 8px 18px; }
+  .x-plug .stage,
+  .x-viz,
+  .x-plug > .stage {
+    min-height: 168px !important;
+  }
+  .x-footer { gap: 6px; font-size: 8px; letter-spacing: 0.1em; }
+  .x-chip { min-width: 40px; padding: 0 8px; }
+}
+
+@media (max-width: 390px) {
+  .x-plug .stage,
+  .x-viz,
+  .x-plug > .stage {
+    min-height: 152px !important;
+  }
+  .x-knobs,
+  uni-view.x-knobs {
+    gap: 6px 4px;
+  }
+}
+
+@media (max-width: 360px) {
+  .x-plug { padding: 0 6px 16px; }
+  .x-plug .stage,
+  .x-viz,
+  .x-plug > .stage {
+    min-height: 140px !important;
+  }
+  .x-chip { min-width: 36px; padding: 0 6px; font-size: 9px; }
+}
+
+/* Short landscape phones: keep the graph but shrink it rather than the trays. */
+@media (max-height: 480px) and (orientation: landscape) {
+  .x-plug .stage,
+  .x-viz,
+  .x-plug > .stage {
+    min-height: 120px !important;
   }
 }

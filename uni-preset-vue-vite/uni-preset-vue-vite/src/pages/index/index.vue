@@ -51,6 +51,7 @@
     <daw-instrument-browser />
     <daw-diagnostics />
     <daw-lite-settings />
+    <daw-project-manager />
     <view v-if="session.toast" class="toast">{{ session.toast }}</view>
     </view>
     <plugin-host v-if="!lite" />
@@ -70,6 +71,7 @@ import DawDiagnostics from '../../components/daw-diagnostics.vue'
 import PluginHost from '../../components/dsp/plugin-host.vue'
 import DawLiteApp from '../../components/daw-lite-app.vue'
 import DawLiteSettings from '../../components/daw-lite-settings.vue'
+import DawProjectManager from '../../components/daw-project-manager.vue'
 import {
   session,
   closeMenus,

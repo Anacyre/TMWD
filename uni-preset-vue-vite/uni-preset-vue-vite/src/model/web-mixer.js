@@ -41,6 +41,8 @@ function trackKey (id) {
   return id == null || id === '' ? '' : String(id)
 }
 
+export { trackKey as trackLaneKey }
+
 function hydrateInsert (item) {
   if (!item) return null
   const pluginId = item.pluginId || item.type || nameToPluginId(item.name)
@@ -250,9 +252,9 @@ export function syncNativeInsertsToWebMixer (webMixer, tracks = []) {
   return webMixer
 }
 
-function trackLaneInserts (webMixer, track) {
+export function trackLaneInserts (webMixer, track) {
   if (!webMixer || !webMixer.tracks || !track) return []
-  const key = trackKey(track.id)
+  const key = trackKey(track.id != null ? track.id : track)
   if (!webMixer.tracks[key] && !webMixer.tracks[track.id]) {
     webMixer.tracks[key] = defaultTrackMix(track)
   }
@@ -261,40 +263,17 @@ function trackLaneInserts (webMixer, track) {
 }
 
 /**
- * PC stereo tap FX chain: orchestra/VST track inserts (pre-mix metadata slots)
- * plus Mix-strip inserts. Browser receives one summed tap, so per-track inserts
- * run in series on that tap.
- *
- * When localPlayback is true (browser-only preview), track inserts are routed on
- * the sampler chain instead — remoteChain only carries Mix-strip inserts.
+ * FX for the summed native VST tap. This carries the Mix strip only — per-track
+ * inserts belong to their own strip (native for VST tracks, per-track Web Audio
+ * lane for browser tracks) and must never be chained onto an already summed mix.
  */
-export function remoteProcessInserts (webMixer, tracks = [], options = {}) {
-  const remote = ((webMixer && webMixer.remote && webMixer.remote.inserts) || []).filter(Boolean)
-  if (options.localPlayback) return remote
-  const trackInserts = []
-  const ordered = (tracks || []).filter((track) =>
-    track.type !== 'master' && track.type !== 'group' && track.source !== 'web-sampler')
-  ordered.forEach((track) => {
-    trackInserts.push(...trackLaneInserts(webMixer, track))
-  })
-  return trackInserts.concat(remote)
+export function remoteProcessInserts (webMixer) {
+  return ((webMixer && webMixer.remote && webMixer.remote.inserts) || []).filter(Boolean)
 }
 
-export function samplerProcessInserts (webMixer, tracks = [], options = {}) {
-  if (!webMixer || !webMixer.tracks) return []
-  if (options.localPlayback) {
-    const list = []
-    ;(tracks || []).filter((track) => track.type !== 'master' && track.type !== 'group').forEach((track) => {
-      list.push(...trackLaneInserts(webMixer, track))
-    })
-    return list
-  }
-  const samplers = (tracks || []).filter((track) => track.source === 'web-sampler' && track.type !== 'master')
-  const list = []
-  samplers.forEach((track) => {
-    list.push(...trackLaneInserts(webMixer, track))
-  })
-  return list
+/** Shared fallback bus for voices with no resolvable track id. Carries no inserts. */
+export function unassignedProcessInserts () {
+  return []
 }
 
 export function demoWebMixer () {
@@ -329,10 +308,19 @@ export function laneFromOpen (open) {
   }
 }
 
+/** True when the browser generates this track's audio and therefore owns its strip. */
+export function isBrowserOwnedTrack (track, options = {}) {
+  if (!track || track.type === 'master' || track.type === 'group') return false
+  if (track.source === 'web-sampler' || track.source === 'm-orchestra') return true
+  if (String(track.definitionId || '').startsWith('m_orch_')) return true
+  return !!options.localPlayback && track.source !== 'remote-vst'
+}
+
 export function fxMeterLaneKey (openOrKey, tracks = [], options = {}) {
   if (openOrKey == null || openOrKey === '') return 'remote'
   const localPlayback = !!options.localPlayback
   if (typeof openOrKey === 'string') {
+    if (openOrKey.startsWith('track:')) return openOrKey
     if (openOrKey === 'master' || openOrKey.startsWith('master')) return 'master'
     if (openOrKey === 'bus' || openOrKey.startsWith('bus')) return 'bus'
     if (openOrKey === 'delay' || openOrKey.startsWith('delay')) return 'delay'
@@ -344,8 +332,9 @@ export function fxMeterLaneKey (openOrKey, tracks = [], options = {}) {
   if (lane.type === 'master') return 'master'
   if (lane.type === 'bus') return lane.id === BUS_DELAY ? 'delay' : 'bus'
   if (lane.type === 'track') {
-    const track = (tracks || []).find((item) => trackKey(item.id) === trackKey(lane.id))
-    if (localPlayback || (track && track.source === 'web-sampler')) return 'sampler'
+    const key = trackKey(lane.id)
+    const track = (tracks || []).find((item) => trackKey(item.id) === key)
+    if (isBrowserOwnedTrack(track, { localPlayback })) return 'track:' + key
     return 'remote'
   }
   return localPlayback ? 'sampler' : 'remote'

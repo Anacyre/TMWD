@@ -4,6 +4,7 @@ import bundled from './manifest.json'
 import { playbackFrom } from './playback.js'
 import { pickLayer, pickSample as pickFromManifest } from './pick.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
+import { trackInputNode } from '../mixer-graph.js'
 
 const TECHNIQUE_ARTIC = {
   m_orch_long: 'long',
@@ -162,20 +163,31 @@ async function fetchSampleBytes (sample) {
   return bytes
 }
 
+export const MANIFEST_LOOP_FORMAT = 3
+const DECODE_CACHE_TAG = '|object-v3'
+
+function acceptManifestLoop (sample) {
+  const format = Number(manifest && manifest.formatVersion) || 0
+  if (format < MANIFEST_LOOP_FORMAT) return false
+  if (!sample || !sample.loop) return false
+  if (!(sample.loopEnd > sample.loopStart)) return false
+  const rules = pb()
+  if ((sample.loopEnd - sample.loopStart) < (rules.minLoopSec || 1.45)) return false
+  if (sample.loopScore != null && sample.loopScore < (rules.minLoopCorrelation || 0.38)) return false
+  return true
+}
+
 /** Applies only the short equal-power seam described by the manifest. The expensive
  * loop search is performed by the publisher, never while transport is running. */
 function applyManifestLoop (audio, sample) {
-  if (!sample.loop) {
+  if (!acceptManifestLoop(sample)) {
     return { loop: false, loopStart: 0, loopEnd: 0 }
   }
   const started = nowMs()
   const sr = audio.sampleRate
-  const duration = audio.duration || (audio.length / sr)
-  const loopStart = sample.loopEnd > sample.loopStart ? sample.loopStart : Math.max(0.18, duration * 0.28)
-  const loopEnd = sample.loopEnd > sample.loopStart
-    ? sample.loopEnd
-    : Math.min(duration - 0.08, loopStart + Math.min(3.2, Math.max(1.15, duration * 0.52)))
-  if (loopEnd - loopStart < 0.8) return { loop: false, loopStart: 0, loopEnd: 0 }
+  const loopStart = sample.loopStart
+  const loopEnd = sample.loopEnd
+  if (loopEnd - loopStart < (pb().minLoopSec || 1.45)) return { loop: false, loopStart: 0, loopEnd: 0 }
   const start = Math.max(0, Math.min(audio.length - 2, Math.round(loopStart * sr)))
   const end = Math.max(start + 2, Math.min(audio.length - 1, Math.round(loopEnd * sr)))
   const maxCrossfade = Math.floor((end - start) * 0.1)
@@ -196,7 +208,7 @@ function applyManifestLoop (audio, sample) {
 }
 
 async function decodeSample (context, sample, priority = true) {
-  const key = sample.pack + '|' + sample.entry + '|object-v2'
+  const key = sample.pack + '|' + sample.entry + DECODE_CACHE_TAG
   const cached = bufferCache.get(key)
   if (cached) {
     profile.cacheHits += 1
@@ -339,8 +351,13 @@ function releaseVoice (key) {
   voices.delete(key)
 }
 
-function orchestraDest (graph) {
+function orchestraDest (graph, track) {
   if (!graph) return null
+  const trackId = track && track.id != null ? track.id : null
+  if (trackId != null) {
+    const input = trackInputNode(graph, trackId)
+    if (input) return input
+  }
   return graph.samplerGain || graph.master || graph.context.destination
 }
 
@@ -492,12 +509,18 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   pending.delete(key)
 
   prefetchSilent(graph.context, spec, artic, pitch, velocityMidi, dynamics)
+  const maxVoices = (manifest && manifest.globalMaxVoices) || 64
+  while (voices.size >= maxVoices) {
+    const oldest = voices.keys().next().value
+    if (!oldest) break
+    releaseVoice(oldest)
+  }
   if (voices.has(key)) releaseVoice(key)
   resolveVoiceKeys(id || pitch, track.id).forEach((existingKey) => {
     if (existingKey !== key) releaseVoice(existingKey)
   })
 
-  const dest = orchestraDest(graph)
+  const dest = orchestraDest(graph, track)
   const ctx = graph.context
   const voiceGain = ctx.createGain()
   const filter = ctx.createBiquadFilter()

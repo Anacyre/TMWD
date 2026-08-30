@@ -6,74 +6,47 @@ MixerEngine::MixerEngine()
     masterChannel.currentGain = masterChannel.targetGain.load();
 }
 
-MixerEngine::InsertKind MixerEngine::kindFromSlot (const PluginSlot& slot)
+MixerEngine::InsertKind MixerEngine::kindFromId (const juce::String& pluginId, const juce::String& displayName)
 {
-    if (slot.bypassed || slot.isEmpty())
-        return InsertKind::none;
+    const auto id = pluginId.toLowerCase();
 
-    const auto id = slot.instrumentId.toLowerCase();
-    const auto name = slot.name;
-
-    if (id == "equalizer-x" || name.containsIgnoreCase ("equalizer"))
+    if (id == "equalizer-x" || displayName.containsIgnoreCase ("equalizer"))
         return InsertKind::equalizer;
-    if (id == "reverb-x" || name.containsIgnoreCase ("reverb"))
+    if (id == "reverb-x" || displayName.containsIgnoreCase ("reverb"))
         return InsertKind::reverb;
-    if (id == "boost-x" || name.containsIgnoreCase ("boost"))
+    if (id == "boost-x" || displayName.containsIgnoreCase ("boost"))
         return InsertKind::boost;
-    if (id == "dynamic-x" || name.containsIgnoreCase ("dynamic"))
+    if (id == "dynamic-x" || displayName.containsIgnoreCase ("dynamic"))
         return InsertKind::dynamics;
-    if (id == "limiter-x" || name.containsIgnoreCase ("limiter"))
+    if (id == "limiter-x" || displayName.containsIgnoreCase ("limiter"))
         return InsertKind::limiter;
 
     return InsertKind::none;
 }
 
+MixerEngine::InsertKind MixerEngine::kindFromSlot (const PluginSlot& slot)
+{
+    if (slot.bypassed || slot.isEmpty())
+        return InsertKind::none;
+
+    return kindFromId (slot.instrumentId, slot.name);
+}
+
 void MixerEngine::prepareChain (InsertChain& chain)
 {
-    const auto sr = currentSampleRate > 0.0 ? currentSampleRate : 44100.0;
-    chain.cachedHighPassHz = -1.0f;
-    chain.cachedHighShelfDb = -1000.0f;
-    chain.cachedReverbWet = -1.0f;
-    chain.cachedReverbRoom = -1.0f;
-    chain.cachedReverbDamp = -1.0f;
-
-    for (int i = 0; i < 2; ++i)
-    {
-        chain.highPass[i].reset();
-        chain.highShelf[i].reset();
-        chain.env[i] = 0.0f;
-    }
-
-    chain.reverb.setSampleRate (sr);
-    chain.reverb.reset();
-}
-
-MixerEngine::FxInsertParams* MixerEngine::getFxParamsForTrack (int trackIndex) noexcept
-{
-    if (trackIndex == 0)
-        return &masterChannel.inserts.params;
-
-    if (! juce::isPositiveAndBelow (trackIndex, maxChannels))
-        return nullptr;
-
-    return &channels[(size_t) trackIndex].inserts.params;
-}
-
-const MixerEngine::FxInsertParams* MixerEngine::getFxParamsForTrack (int trackIndex) const noexcept
-{
-    return const_cast<MixerEngine*> (this)->getFxParamsForTrack (trackIndex);
+    for (auto& slot : chain)
+        slot.prepare (currentSampleRate, currentBlockSize);
 }
 
 void MixerEngine::prepare (double sampleRate, int numChannelsInUse, int maximumBlockSize)
 {
     currentSampleRate = sampleRate > 0.0 ? sampleRate : 44100.0;
+    currentBlockSize = juce::jmax (64, maximumBlockSize);
     numChannels.store (juce::jlimit (0, maxChannels, numChannelsInUse));
     work.setSize (2, juce::jmax (2048, maximumBlockSize), false, false, true);
 
     smoothingCoefficient = (float) juce::jlimit (0.05, 1.0, 1.0 - std::exp (-64.0 / (0.012 * currentSampleRate)));
     meterDecay = (float) juce::jlimit (0.5, 0.999, std::exp (-64.0 / (0.25 * currentSampleRate)));
-    compressorAttack = (float) juce::jlimit (0.002, 0.5, 1.0 - std::exp (-1.0 / (0.012 * currentSampleRate)));
-    compressorRelease = (float) juce::jlimit (0.0005, 0.5, 1.0 - std::exp (-1.0 / (0.12 * currentSampleRate)));
 
     for (auto& channel : channels)
     {
@@ -93,6 +66,17 @@ void MixerEngine::setNumChannels (int count)
     numChannels.store (juce::jlimit (0, maxChannels, count));
 }
 
+MixerEngine::Channel* MixerEngine::channelFor (int index) noexcept
+{
+    if (index == 0)
+        return &masterChannel;
+
+    if (! juce::isPositiveAndBelow (index, maxChannels))
+        return nullptr;
+
+    return &channels[(size_t) index];
+}
+
 void MixerEngine::setChannelParameters (int index, float gainPosition, float pan, bool audible)
 {
     if (! juce::isPositiveAndBelow (index, maxChannels))
@@ -103,14 +87,34 @@ void MixerEngine::setChannelParameters (int index, float gainPosition, float pan
     channel.targetPan.store (juce::jlimit (-1.0f, 1.0f, pan));
 }
 
-void MixerEngine::setChannelInserts (int index, InsertKind slotA, InsertKind slotB)
+void MixerEngine::setChannelInsertKind (int index, int slot, InsertKind kind)
 {
-    if (! juce::isPositiveAndBelow (index, maxChannels))
+    if (! juce::isPositiveAndBelow (index, maxChannels) || ! juce::isPositiveAndBelow (slot, insertSlots))
         return;
 
-    auto& chain = channels[(size_t) index].inserts;
-    chain.slotA.store ((int) slotA);
-    chain.slotB.store ((int) slotB);
+    channels[(size_t) index].inserts[(size_t) slot].setKind (kind);
+}
+
+void MixerEngine::setChannelInsertValue (int index, int slot, int valueIndex, float value)
+{
+    if (! juce::isPositiveAndBelow (index, maxChannels) || ! juce::isPositiveAndBelow (slot, insertSlots))
+        return;
+
+    channels[(size_t) index].inserts[(size_t) slot].setValue (valueIndex, value);
+}
+
+void MixerEngine::clearChannelInsertValues (int index, int slot)
+{
+    if (! juce::isPositiveAndBelow (index, maxChannels) || ! juce::isPositiveAndBelow (slot, insertSlots))
+        return;
+
+    channels[(size_t) index].inserts[(size_t) slot].clearValues();
+}
+
+void MixerEngine::setChannelInserts (int index, InsertKind slotA, InsertKind slotB)
+{
+    setChannelInsertKind (index, 0, slotA);
+    setChannelInsertKind (index, 1, slotB);
 }
 
 void MixerEngine::setMasterGain (float gainPosition)
@@ -118,10 +122,34 @@ void MixerEngine::setMasterGain (float gainPosition)
     masterChannel.targetGain.store (DawUnits::faderToGain (gainPosition));
 }
 
+void MixerEngine::setMasterInsertKind (int slot, InsertKind kind)
+{
+    if (! juce::isPositiveAndBelow (slot, insertSlots))
+        return;
+
+    masterChannel.inserts[(size_t) slot].setKind (kind);
+}
+
+void MixerEngine::setMasterInsertValue (int slot, int valueIndex, float value)
+{
+    if (! juce::isPositiveAndBelow (slot, insertSlots))
+        return;
+
+    masterChannel.inserts[(size_t) slot].setValue (valueIndex, value);
+}
+
+void MixerEngine::clearMasterInsertValues (int slot)
+{
+    if (! juce::isPositiveAndBelow (slot, insertSlots))
+        return;
+
+    masterChannel.inserts[(size_t) slot].clearValues();
+}
+
 void MixerEngine::setMasterInserts (InsertKind slotA, InsertKind slotB)
 {
-    masterChannel.inserts.slotA.store ((int) slotA);
-    masterChannel.inserts.slotB.store ((int) slotB);
+    setMasterInsertKind (0, slotA);
+    setMasterInsertKind (1, slotB);
 }
 
 float MixerEngine::getChannelLevel (int index) const
@@ -135,6 +163,24 @@ float MixerEngine::getChannelLevel (int index) const
 float MixerEngine::getMasterLevel() const
 {
     return masterChannel.meterLevel.load();
+}
+
+int MixerEngine::getActiveInsertCount() const
+{
+    int total = 0;
+
+    for (const auto& slot : masterChannel.inserts)
+        if (slot.isActive())
+            ++total;
+
+    const auto used = juce::jlimit (0, maxChannels, numChannels.load());
+
+    for (int i = 0; i < used; ++i)
+        for (const auto& slot : channels[(size_t) i].inserts)
+            if (slot.isActive())
+                ++total;
+
+    return total;
 }
 
 void MixerEngine::clearLevels()
@@ -152,16 +198,16 @@ void MixerEngine::updateMeter (std::atomic<float>& meter, float peak, float deca
     meter.store (peak > previous ? peak : previous * decay);
 }
 
-void MixerEngine::applyKind (InsertChain& chain, InsertKind kind, juce::AudioBuffer<float>& buffer, int numSamples)
-{
-    // X-series DSP, including Limiter X, runs in the browser AudioWorklet.
-    juce::ignoreUnused (chain, kind, buffer, numSamples);
-}
-
 void MixerEngine::processInserts (InsertChain& chain, juce::AudioBuffer<float>& buffer, int numSamples)
 {
-    applyKind (chain, (InsertKind) chain.slotA.load(), buffer, numSamples);
-    applyKind (chain, (InsertKind) chain.slotB.load(), buffer, numSamples);
+    if (buffer.getNumChannels() < 2 || numSamples <= 0)
+        return;
+
+    auto* left = buffer.getWritePointer (0);
+    auto* right = buffer.getWritePointer (1);
+
+    for (auto& slot : chain)
+        slot.process (left, right, numSamples);
 }
 
 void MixerEngine::mixChannel (int index, const juce::AudioBuffer<float>& source,

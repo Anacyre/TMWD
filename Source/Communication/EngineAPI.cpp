@@ -1,4 +1,5 @@
 #include "EngineAPI.h"
+#include "WebMixerBridge.h"
 #include "../Audio/SessionDiagnostics.h"
 #include "../Audio/MOrchestra/MOrchestraEngine.h"
 #include "../Model/ProjectFile.h"
@@ -313,6 +314,80 @@ void EngineAPI::setMetronomeEnabled (bool enabled)
 //==============================================================================
 void EngineAPI::syncTempo()      { tempoDirty = true; }
 void EngineAPI::syncMixer()      { mixerDirty = true; }
+
+/*  Mirrors the browser's per-track and master insert chains into native X-series
+    slots. The `remote` lane is deliberately skipped: it is the already summed tap
+    that the browser owns, so running it here would double-process the mix.
+*/
+void EngineAPI::applyWebMixerInserts (const juce::var& webMixer)
+{
+    auto& mixer = engine.getMixer();
+
+    const auto pushLane = [&] (int channelIndex, const juce::var& lane)
+    {
+        const auto inserts = lane.getProperty ("inserts", juce::var());
+        auto* array = inserts.getArray();
+
+        for (int slot = 0; slot < MixerEngine::insertSlots; ++slot)
+        {
+            const auto item = (array != nullptr && slot < array->size()) ? array->getReference (slot)
+                                                                        : juce::var();
+            auto* object = item.getDynamicObject();
+
+            if (object == nullptr)
+            {
+                WebMixerBridge::clearSlot (mixer, channelIndex, slot);
+                continue;
+            }
+
+            const auto bypassed = object->getProperty ("enabled").isBool()
+                                  && ! (bool) object->getProperty ("enabled");
+
+            if (bypassed || (bool) object->getProperty ("bypassed"))
+            {
+                WebMixerBridge::clearSlot (mixer, channelIndex, slot);
+                continue;
+            }
+
+            auto pluginId = object->getProperty ("pluginId").toString();
+
+            if (pluginId.isEmpty())
+                pluginId = object->getProperty ("type").toString();
+            if (pluginId.isEmpty())
+                pluginId = object->getProperty ("name").toString();
+
+            auto state = object->getProperty ("state");
+
+            if (state.getDynamicObject() == nullptr)
+                state = object->getProperty ("parameters");
+
+            WebMixerBridge::applyInsertState (mixer, channelIndex, slot, pluginId, state);
+        }
+    };
+
+    auto* root = webMixer.getDynamicObject();
+
+    if (root == nullptr)
+        return;
+
+    pushLane (0, root->getProperty ("master"));
+
+    const auto tracks = root->getProperty ("tracks");
+
+    if (auto* trackObject = tracks.getDynamicObject())
+    {
+        for (const auto& property : trackObject->getProperties())
+        {
+            const auto trackId = property.name.toString().getIntValue();
+            const auto index = project.indexOfTrack ((TrackId) trackId);
+
+            if (index <= 0)
+                continue;
+
+            pushLane (index, property.value);
+        }
+    }
+}
 void EngineAPI::invalidateSequence() { sequenceDirty = true; }
 
 bool EngineAPI::flushPendingUpdates()
@@ -3637,6 +3712,7 @@ juce::var EngineAPI::handleMessage (const juce::var& message)
     {
         const auto webMixer = message.getProperty ("webMixer", juce::var());
         project.setWebMixer (webMixer);
+        applyWebMixerInserts (webMixer);
         notify (mixerChanged | projectChanged);
         const auto insertError = validateWebMixerInsertLimit (webMixer);
         if (insertError.isNotEmpty())

@@ -95,6 +95,7 @@ TopBar::TopBar (DawSession& sessionToUse)
     addAndMakeVisible (masterVolume);
     addAndMakeVisible (transport);
 
+    loadRecentFiles();
     refresh();
 }
 
@@ -444,6 +445,36 @@ void TopBar::saveProject (bool saveAs)
     });
 }
 
+juce::PropertiesFile::Options TopBar::recentOptions()
+{
+    juce::PropertiesFile::Options options;
+    options.applicationName = "DawWeb";
+    options.filenameSuffix = "settings";
+    options.osxLibrarySubFolder = "Application Support";
+    options.folderName = "DawWeb";
+    options.storageFormat = juce::PropertiesFile::storeAsXML;
+    return options;
+}
+
+void TopBar::loadRecentFiles()
+{
+    juce::PropertiesFile props (recentOptions());
+    recentFiles.clear();
+    const auto stored = props.getValue ("recentProjects");
+    if (stored.isNotEmpty())
+        recentFiles.addTokens (stored, ";", {});
+    for (int i = recentFiles.size(); --i >= 0;)
+        if (! juce::File (recentFiles[i]).existsAsFile())
+            recentFiles.remove (i);
+}
+
+void TopBar::persistRecentFiles() const
+{
+    juce::PropertiesFile props (recentOptions());
+    props.setValue ("recentProjects", recentFiles.joinIntoString (";"));
+    props.saveIfNeeded();
+}
+
 void TopBar::rememberRecent (const juce::File& file)
 {
     if (! file.existsAsFile())
@@ -455,4 +486,6 @@ void TopBar::rememberRecent (const juce::File& file)
 
     while (recentFiles.size() > 8)
         recentFiles.remove (recentFiles.size() - 1);
+
+    persistRecentFiles();
 }

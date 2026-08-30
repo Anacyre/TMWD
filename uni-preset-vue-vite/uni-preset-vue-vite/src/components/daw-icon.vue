@@ -1,61 +1,87 @@
 <template>
-  <view class="icon" :class="{ on: active }" :style="{ color: color }">
-    <view v-if="name === 'play'" class="play" />
-    <view v-else-if="name === 'pause'" class="pause">
-      <view /><view />
+  <view class="icon" :class="{ on: active }" :style="boxStyle" :aria-hidden="true">
+    <view class="glyph">
+      <view v-if="name === 'play'" class="play" />
+      <view v-else-if="name === 'pause'" class="pause">
+        <view /><view />
+      </view>
+      <view v-else-if="name === 'stop'" class="stop" />
+      <view v-else-if="name === 'record'" class="record" />
+      <view v-else-if="name === 'to-start'" class="to-start">
+        <view class="bar" /><view class="tri" />
+      </view>
+      <view v-else-if="name === 'loop'" class="loop" />
+      <view v-else-if="name === 'metronome'" class="metronome" />
+      <view v-else-if="name === 'speaker'" class="speaker">
+        <view class="box" /><view class="horn" />
+      </view>
+      <view v-else-if="name === 'magnet'" class="magnet" />
+      <view v-else-if="name === 'plus'" class="plus" />
+      <view v-else-if="name === 'wave'" class="wave">
+        <view /><view /><view /><view />
+      </view>
+      <view v-else-if="name === 'bell'" class="bell" />
+      <view v-else-if="name === 'save'" class="save" />
+      <view v-else-if="name === 'folder'" class="folder" />
+      <view v-else-if="name === 'grid'" class="grid" />
+      <view v-else-if="name === 'piano'" class="piano" />
+      <view v-else-if="name === 'menu'" class="hamburger">
+        <view /><view /><view />
+      </view>
+      <view v-else-if="name === 'min'" class="win min" />
+      <view v-else-if="name === 'max'" class="win max" />
+      <view v-else-if="name === 'close'" class="win close" />
+      <view v-else-if="name === 'undo'" class="undo" />
+      <view v-else-if="name === 'redo'" class="redo" />
+      <view v-else-if="name === 'settings'" class="settings" />
+      <view v-else-if="name === 'note'" class="note">
+        <view class="head" /><view class="stem" /><view class="flag" />
+      </view>
+      <view v-else-if="name === 'mixer'" class="mixer">
+        <view /><view /><view />
+      </view>
+      <view v-else-if="name === 'inspector'" class="inspector">
+        <view class="pane left" /><view class="pane right" />
+      </view>
+      <view v-else-if="name === 'chevron'" class="chevron" />
+      <view v-else-if="name === 'chevron-right'" class="chevron right" />
+      <view v-else-if="name === 'more'" class="more">
+        <view /><view /><view />
+      </view>
+      <view v-else-if="name === 'arrange'" class="arrange">
+        <view /><view /><view />
+      </view>
+      <view v-else-if="name === 'trash'" class="trash" />
+      <view v-else-if="name === 'copy'" class="copy">
+        <view class="back" /><view class="front" />
+      </view>
+      <view v-else-if="name === 'download'" class="download" />
+      <view v-else-if="name === 'upload'" class="download up" />
+      <view v-else-if="name === 'power'" class="power" />
+      <view v-else-if="name === 'dot'" class="status-dot" />
     </view>
-    <view v-else-if="name === 'stop'" class="stop" />
-    <view v-else-if="name === 'record'" class="record" />
-    <view v-else-if="name === 'to-start'" class="to-start">
-      <view class="bar" /><view class="tri" />
-    </view>
-    <view v-else-if="name === 'loop'" class="loop" />
-    <view v-else-if="name === 'metronome'" class="metronome" />
-    <view v-else-if="name === 'speaker'" class="speaker">
-      <view class="box" /><view class="horn" />
-    </view>
-    <view v-else-if="name === 'magnet'" class="magnet" />
-    <view v-else-if="name === 'plus'" class="plus" />
-    <view v-else-if="name === 'wave'" class="wave" />
-    <view v-else-if="name === 'bell'" class="bell" />
-    <view v-else-if="name === 'save'" class="save" />
-    <view v-else-if="name === 'grid'" class="grid" />
-    <view v-else-if="name === 'piano'" class="piano" />
-    <view v-else-if="name === 'menu'" class="hamburger">
-      <view /><view /><view />
-    </view>
-    <view v-else-if="name === 'min'" class="win min" />
-    <view v-else-if="name === 'max'" class="win max" />
-    <view v-else-if="name === 'close'" class="win close" />
-    <view v-else-if="name === 'undo'" class="undo" />
-    <view v-else-if="name === 'redo'" class="redo" />
-    <view v-else-if="name === 'settings'" class="settings" />
-    <view v-else-if="name === 'note'" class="note">
-      <view class="head" /><view class="stem" /><view class="flag" />
-    </view>
-    <view v-else-if="name === 'mixer'" class="mixer">
-      <view /><view /><view />
-    </view>
-    <view v-else-if="name === 'inspector'" class="inspector">
-      <view class="pane left" /><view class="pane right" />
-    </view>
-    <view v-else-if="name === 'chevron'" class="chevron" />
-    <view v-else-if="name === 'chevron-right'" class="chevron right" />
-    <view v-else-if="name === 'more'" class="more">
-      <view /><view /><view />
-    </view>
-    <view v-else-if="name === 'arrange'" class="arrange">
-      <view /><view /><view />
-    </view>
-    <view v-else-if="name === 'dot'" class="status-dot" />
   </view>
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+
+const props = defineProps({
   name: { type: String, required: true },
   active: { type: Boolean, default: false },
-  color: { type: String, default: 'currentColor' }
+  color: { type: String, default: 'currentColor' },
+  /* Pixels of ink, normally 16 / 20 / 24. The parent owns the hit target (32 or
+     44 px); the glyph never inherits it, which is what made icons look
+     mismatched between a 22 px row button and a 44 px transport button. */
+  size: { type: [Number, String], default: 20 }
+})
+
+const boxStyle = computed(() => {
+  const px = Number(props.size)
+  return {
+    color: props.color,
+    fontSize: (Number.isFinite(px) && px > 0 ? px : 20) + 'px'
+  }
 })
 </script>
 
@@ -63,124 +89,139 @@ defineProps({
 .icon {
   width: 100%;
   height: 100%;
-  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   color: #8d8d8d;
+  pointer-events: none;
 }
+/* Every glyph is drawn inside this 1em square, so all metrics below are a
+   fraction of the requested icon size rather than of the button. */
+.glyph {
+  position: relative;
+  width: 1em;
+  height: 1em;
+  flex: none;
+}
+.glyph > view { position: absolute; }
+
 .play {
-  position: absolute;
-  left: 50%;
+  left: 56%;
   top: 50%;
   width: 0;
   height: 0;
-  border-top: 7px solid transparent;
-  border-bottom: 7px solid transparent;
-  border-left: 12px solid currentColor;
-  transform: translate(-30%, -50%);
+  border-top: 0.3em solid transparent;
+  border-bottom: 0.3em solid transparent;
+  border-left: 0.52em solid currentColor;
+  transform: translate(-50%, -50%);
 }
 .pause {
-  position: absolute;
   left: 50%;
   top: 50%;
-  width: 14px;
-  height: 16px;
+  width: 0.6em;
+  height: 0.72em;
   transform: translate(-50%, -50%);
 }
 .pause view {
   position: absolute;
   top: 0;
-  width: 4px;
-  height: 16px;
-  border-radius: 1px;
+  width: 0.2em;
+  height: 100%;
+  border-radius: 0.05em;
   background: currentColor;
 }
 .pause view:first-child { left: 0; }
-.pause view:last-child { left: auto; right: 0; }
+.pause view:last-child { right: 0; }
 .stop {
-  position: absolute;
-  left: 28%;
-  top: 28%;
-  width: 44%;
-  height: 44%;
-  border-radius: 2px;
+  left: 50%;
+  top: 50%;
+  width: 0.58em;
+  height: 0.58em;
+  border-radius: 0.08em;
   background: currentColor;
+  transform: translate(-50%, -50%);
 }
 .record {
-  position: absolute;
-  left: 24%;
-  top: 24%;
-  width: 52%;
-  height: 52%;
+  left: 50%;
+  top: 50%;
+  width: 0.6em;
+  height: 0.6em;
   border-radius: 50%;
   background: currentColor;
+  transform: translate(-50%, -50%);
 }
+.to-start { left: 50%; top: 50%; width: 0.7em; height: 0.6em; transform: translate(-50%, -50%); }
 .to-start .bar {
   position: absolute;
-  left: 24%;
-  top: 24%;
-  width: 2px;
-  height: 52%;
+  left: 0;
+  top: 0;
+  width: 0.11em;
+  height: 100%;
+  border-radius: 0.05em;
   background: currentColor;
 }
 .to-start .tri {
   position: absolute;
-  left: 30%;
-  top: 24%;
+  right: 0;
+  top: 50%;
   width: 0;
   height: 0;
-  border-top: 8px solid transparent;
-  border-bottom: 8px solid transparent;
-  border-right: 12px solid currentColor;
+  border-top: 0.3em solid transparent;
+  border-bottom: 0.3em solid transparent;
+  border-right: 0.5em solid currentColor;
+  transform: translateY(-50%);
 }
 .loop {
-  position: absolute;
-  left: 22%;
-  top: 22%;
-  width: 56%;
-  height: 56%;
-  border: 2px solid currentColor;
-  border-radius: 4px;
+  left: 50%;
+  top: 50%;
+  width: 0.62em;
+  height: 0.62em;
+  border: 0.1em solid currentColor;
+  border-radius: 0.18em;
+  transform: translate(-50%, -50%);
 }
 .metronome {
-  position: absolute;
   left: 50%;
-  top: 18%;
+  top: 50%;
   width: 0;
   height: 0;
-  border-left: 8px solid transparent;
-  border-right: 8px solid transparent;
-  border-bottom: 18px solid currentColor;
-  transform: translateX(-50%);
-  opacity: 0.9;
+  border-left: 0.36em solid transparent;
+  border-right: 0.36em solid transparent;
+  border-bottom: 0.72em solid currentColor;
+  transform: translate(-50%, -50%);
 }
+.speaker { left: 50%; top: 50%; width: 0.72em; height: 0.6em; transform: translate(-50%, -50%); }
 .speaker .box {
   position: absolute;
-  left: 22%;
-  top: 36%;
-  width: 22%;
-  height: 28%;
-  border-radius: 1px;
+  left: 0;
+  top: 30%;
+  width: 0.24em;
+  height: 40%;
+  border-radius: 0.04em;
   background: currentColor;
 }
 .speaker .horn {
   position: absolute;
-  left: 42%;
-  top: 24%;
+  left: 0.2em;
+  top: 50%;
   width: 0;
   height: 0;
-  border-top: 10px solid transparent;
-  border-bottom: 10px solid transparent;
-  border-left: 10px solid currentColor;
+  border-top: 0.3em solid transparent;
+  border-bottom: 0.3em solid transparent;
+  border-left: 0.34em solid currentColor;
+  transform: translateY(-50%);
 }
 .magnet {
-  position: absolute;
-  left: 28%;
-  top: 28%;
-  width: 44%;
-  height: 40%;
-  border: 2px solid currentColor;
+  left: 50%;
+  top: 50%;
+  width: 0.56em;
+  height: 0.5em;
+  border: 0.1em solid currentColor;
   border-top: none;
-  border-radius: 0 0 10px 10px;
+  border-radius: 0 0 0.28em 0.28em;
+  transform: translate(-50%, -50%);
 }
+.plus { left: 50%; top: 50%; width: 0.64em; height: 0.64em; transform: translate(-50%, -50%); }
 .plus::before,
 .plus::after {
   content: '';
@@ -188,47 +229,58 @@ defineProps({
   background: currentColor;
   left: 50%;
   top: 50%;
+  border-radius: 0.05em;
   transform: translate(-50%, -50%);
 }
-.plus::before { width: 12px; height: 2px; }
-.plus::after { width: 2px; height: 12px; }
-.wave {
+.plus::before { width: 100%; height: 0.11em; }
+.plus::after { width: 0.11em; height: 100%; }
+.wave { left: 50%; top: 50%; width: 0.76em; height: 0.62em; transform: translate(-50%, -50%); }
+.wave view {
   position: absolute;
-  left: 18%;
-  right: 18%;
-  top: 48%;
-  height: 2px;
+  bottom: 0;
+  width: 0.11em;
+  border-radius: 0.05em;
   background: currentColor;
-  box-shadow: 4px -6px 0 currentColor, 8px 5px 0 currentColor, 12px -4px 0 currentColor;
 }
+.wave view:nth-child(1) { left: 0; height: 45%; }
+.wave view:nth-child(2) { left: 0.22em; height: 100%; }
+.wave view:nth-child(3) { left: 0.44em; height: 62%; }
+.wave view:nth-child(4) { left: 0.66em; height: 30%; }
 .bell {
-  position: absolute;
-  left: 30%;
-  top: 22%;
-  width: 40%;
-  height: 42%;
-  border: 2px solid currentColor;
+  left: 50%;
+  top: 42%;
+  width: 0.5em;
+  height: 0.46em;
+  border: 0.1em solid currentColor;
   border-bottom: none;
-  border-radius: 10px 10px 0 0;
+  border-radius: 0.26em 0.26em 0 0;
+  transform: translate(-50%, -50%);
 }
 .bell::after {
   content: '';
   position: absolute;
   left: 50%;
-  bottom: -6px;
-  width: 4px;
-  height: 4px;
+  bottom: -0.24em;
+  width: 0.16em;
+  height: 0.16em;
   border-radius: 50%;
   background: currentColor;
   transform: translateX(-50%);
+}
+.save {
+  left: 50%;
+  top: 50%;
+  width: 0.6em;
+  height: 0.6em;
+  transform: translate(-50%, -50%);
 }
 .save::before {
   content: '';
   position: absolute;
   left: 50%;
-  top: 22%;
-  width: 2px;
-  height: 10px;
+  top: 0;
+  width: 0.11em;
+  height: 0.4em;
   background: currentColor;
   transform: translateX(-50%);
 }
@@ -236,231 +288,258 @@ defineProps({
   content: '';
   position: absolute;
   left: 50%;
-  top: 28%;
+  bottom: 0;
   width: 0;
   height: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-top: 6px solid currentColor;
+  border-left: 0.22em solid transparent;
+  border-right: 0.22em solid transparent;
+  border-top: 0.26em solid currentColor;
   transform: translateX(-50%);
 }
-.grid {
+.folder {
+  left: 50%;
+  top: 52%;
+  width: 0.68em;
+  height: 0.5em;
+  border: 0.1em solid currentColor;
+  border-radius: 0.06em;
+  transform: translate(-50%, -50%);
+}
+.folder::before {
+  content: '';
   position: absolute;
-  left: 24%;
-  top: 24%;
-  width: 52%;
-  height: 52%;
-  border: 1px solid currentColor;
+  left: -0.02em;
+  top: -0.2em;
+  width: 0.3em;
+  height: 0.12em;
+  border: 0.1em solid currentColor;
+  border-bottom: none;
+  border-radius: 0.06em 0.06em 0 0;
+}
+.grid {
+  left: 50%;
+  top: 50%;
+  width: 0.6em;
+  height: 0.6em;
+  border: 0.07em solid currentColor;
+  transform: translate(-50%, -50%);
   background:
-    linear-gradient(currentColor, currentColor) center / 1px 100% no-repeat,
-    linear-gradient(currentColor, currentColor) center / 100% 1px no-repeat;
+    linear-gradient(currentColor, currentColor) center / 0.07em 100% no-repeat,
+    linear-gradient(currentColor, currentColor) center / 100% 0.07em no-repeat;
 }
 .piano {
-  position: absolute;
-  left: 20%;
-  top: 26%;
-  width: 60%;
-  height: 48%;
-  border: 1px solid currentColor;
+  left: 50%;
+  top: 50%;
+  width: 0.68em;
+  height: 0.54em;
+  border: 0.07em solid currentColor;
+  transform: translate(-50%, -50%);
   background:
-    linear-gradient(currentColor, currentColor) 25% / 1px 100% no-repeat,
-    linear-gradient(currentColor, currentColor) 50% / 1px 100% no-repeat,
-    linear-gradient(currentColor, currentColor) 75% / 1px 100% no-repeat;
+    linear-gradient(currentColor, currentColor) 25% / 0.07em 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 50% / 0.07em 100% no-repeat,
+    linear-gradient(currentColor, currentColor) 75% / 0.07em 100% no-repeat;
 }
+.hamburger { left: 50%; top: 50%; width: 0.66em; height: 0.5em; transform: translate(-50%, -50%); }
 .hamburger view {
   position: absolute;
-  left: 26%;
-  right: 26%;
-  height: 2px;
+  left: 0;
+  width: 100%;
+  height: 0.1em;
+  border-radius: 0.05em;
   background: currentColor;
 }
-.hamburger view:nth-child(1) { top: 30%; }
-.hamburger view:nth-child(2) { top: 48%; }
-.hamburger view:nth-child(3) { top: 66%; }
+.hamburger view:nth-child(1) { top: 0; }
+.hamburger view:nth-child(2) { top: 50%; transform: translateY(-50%); }
+.hamburger view:nth-child(3) { bottom: 0; }
 .win {
-  position: absolute;
-  left: 28%;
-  top: 42%;
-  width: 44%;
-  height: 2px;
+  left: 50%;
+  top: 50%;
+  width: 0.56em;
+  height: 0.1em;
   background: currentColor;
+  transform: translate(-50%, -50%);
 }
 .max {
-  top: 30%;
-  height: 40%;
+  height: 0.5em;
   background: transparent;
-  border: 1.5px solid currentColor;
+  border: 0.08em solid currentColor;
+  border-radius: 0.04em;
 }
-.close {
-  top: 48%;
-  transform: rotate(45deg);
-}
+.close { transform: translate(-50%, -50%) rotate(45deg); }
 .close::after {
   content: '';
   position: absolute;
   left: 0;
   top: 0;
   width: 100%;
-  height: 2px;
+  height: 100%;
   background: currentColor;
   transform: rotate(90deg);
 }
 .undo, .redo {
-  position: absolute;
-  left: 22%;
-  top: 28%;
-  width: 52%;
-  height: 44%;
-  border: 1.6px solid currentColor;
+  left: 50%;
+  top: 50%;
+  width: 0.56em;
+  height: 0.5em;
+  border: 0.09em solid currentColor;
   border-bottom-color: transparent;
   border-radius: 50%;
 }
-.undo { transform: rotate(-28deg); border-right-color: transparent; }
-.redo { transform: rotate(28deg); border-left-color: transparent; }
+.undo { transform: translate(-50%, -50%) rotate(-28deg); border-right-color: transparent; }
+.redo { transform: translate(-50%, -50%) rotate(28deg); border-left-color: transparent; }
 .undo::after, .redo::after {
   content: '';
   position: absolute;
   width: 0;
   height: 0;
-  border-top: 3.5px solid transparent;
-  border-bottom: 3.5px solid transparent;
+  border-top: 0.16em solid transparent;
+  border-bottom: 0.16em solid transparent;
 }
 .undo::after {
-  left: -1px;
-  bottom: -1px;
-  border-right: 6px solid currentColor;
+  left: -0.04em;
+  bottom: -0.04em;
+  border-right: 0.28em solid currentColor;
 }
 .redo::after {
-  right: -1px;
-  bottom: -1px;
-  border-left: 6px solid currentColor;
+  right: -0.04em;
+  bottom: -0.04em;
+  border-left: 0.28em solid currentColor;
 }
 .settings {
-  position: absolute;
-  left: 28%;
-  top: 28%;
-  width: 44%;
-  height: 44%;
-  border: 1.6px solid currentColor;
+  left: 50%;
+  top: 50%;
+  width: 0.48em;
+  height: 0.48em;
+  border: 0.09em solid currentColor;
   border-radius: 50%;
+  transform: translate(-50%, -50%);
 }
 .settings::before {
   content: '';
   position: absolute;
-  left: -18%;
-  top: 38%;
-  width: 136%;
-  height: 24%;
+  left: -20%;
+  top: 34%;
+  width: 140%;
+  height: 32%;
   background: currentColor;
   clip-path: polygon(18% 0, 82% 0, 100% 50%, 82% 100%, 18% 100%, 0 50%);
 }
 .chevron {
-  position: absolute;
-  left: 32%;
-  top: 38%;
-  width: 36%;
-  height: 36%;
-  border-right: 1.8px solid currentColor;
-  border-bottom: 1.8px solid currentColor;
-  transform: rotate(45deg);
+  left: 50%;
+  top: 46%;
+  width: 0.36em;
+  height: 0.36em;
+  border-right: 0.1em solid currentColor;
+  border-bottom: 0.1em solid currentColor;
+  transform: translate(-50%, -50%) rotate(45deg);
 }
 .chevron.right {
-  left: 28%;
-  top: 30%;
-  transform: rotate(-45deg);
+  top: 50%;
+  transform: translate(-50%, -50%) rotate(-45deg);
 }
+.more { left: 50%; top: 50%; width: 0.16em; height: 0.62em; transform: translate(-50%, -50%); }
 .more view {
   position: absolute;
-  left: 50%;
-  width: 3px;
-  height: 3px;
+  left: 0;
+  width: 0.16em;
+  height: 0.16em;
   border-radius: 50%;
+  background: currentColor;
+}
+.more view:nth-child(1) { top: 0; }
+.more view:nth-child(2) { top: 50%; transform: translateY(-50%); }
+.more view:nth-child(3) { bottom: 0; }
+.arrange { left: 50%; top: 50%; width: 0.66em; height: 0.5em; transform: translate(-50%, -50%); }
+.arrange view {
+  position: absolute;
+  height: 0.1em;
+  border-radius: 0.05em;
+  background: currentColor;
+}
+.arrange view:nth-child(1) { top: 0; left: 0; width: 100%; }
+.arrange view:nth-child(2) { top: 50%; left: 18%; width: 64%; transform: translateY(-50%); }
+.arrange view:nth-child(3) { bottom: 0; left: 0; width: 82%; }
+.trash {
+  left: 50%;
+  top: 54%;
+  width: 0.46em;
+  height: 0.5em;
+  border: 0.09em solid currentColor;
+  border-top: none;
+  border-radius: 0 0 0.08em 0.08em;
+  transform: translate(-50%, -50%);
+}
+.trash::before {
+  content: '';
+  position: absolute;
+  left: -0.12em;
+  top: -0.16em;
+  width: 0.7em;
+  height: 0.09em;
+  background: currentColor;
+  border-radius: 0.05em;
+}
+.copy { left: 50%; top: 50%; width: 0.62em; height: 0.62em; transform: translate(-50%, -50%); }
+.copy .back, .copy .front {
+  position: absolute;
+  width: 0.42em;
+  height: 0.42em;
+  border: 0.09em solid currentColor;
+  border-radius: 0.06em;
+}
+.copy .back { left: 0; top: 0; }
+.copy .front { right: 0; bottom: 0; background: currentColor; opacity: 0.28; }
+.download { left: 50%; top: 50%; width: 0.56em; height: 0.62em; transform: translate(-50%, -50%); }
+.download::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 0;
+  width: 0.1em;
+  height: 0.36em;
   background: currentColor;
   transform: translateX(-50%);
 }
-.more view:nth-child(1) { top: 26%; }
-.more view:nth-child(2) { top: 48%; }
-.more view:nth-child(3) { top: 70%; }
-.arrange view {
-  position: absolute;
-  left: 22%;
-  right: 22%;
-  height: 2px;
-  background: currentColor;
-}
-.arrange view:nth-child(1) { top: 30%; width: 56%; }
-.arrange view:nth-child(2) { top: 48%; width: 40%; left: 30%; }
-.arrange view:nth-child(3) { top: 66%; width: 50%; }
-.status-dot {
-  position: absolute;
-  left: 34%;
-  top: 34%;
-  width: 32%;
-  height: 32%;
-  border-radius: 50%;
-  background: currentColor;
-}
-.note .head {
-  position: absolute;
-  left: 24%;
-  bottom: 22%;
-  width: 42%;
-  height: 34%;
-  border-radius: 50%;
-  background: currentColor;
-}
-.note .stem {
-  position: absolute;
-  left: 58%;
-  top: 18%;
-  width: 2px;
-  height: 62%;
-  background: currentColor;
-}
-.note .flag {
-  position: absolute;
-  left: 60%;
-  top: 18%;
-  width: 28%;
-  height: 2px;
-  background: currentColor;
-}
-.mixer view {
-  position: absolute;
-  top: 18%;
-  bottom: 18%;
-  width: 1.5px;
-  background: currentColor;
-}
-.mixer view:nth-child(1) { left: 28%; }
-.mixer view:nth-child(2) { left: 50%; }
-.mixer view:nth-child(3) { left: 72%; }
-.mixer view::after {
+.download::after {
   content: '';
   position: absolute;
-  left: -2.5px;
-  top: 38%;
-  width: 6px;
-  height: 3px;
-  border-radius: 1px;
-  background: currentColor;
+  left: 50%;
+  bottom: 0.06em;
+  width: 0;
+  height: 0;
+  border-left: 0.2em solid transparent;
+  border-right: 0.2em solid transparent;
+  border-top: 0.24em solid currentColor;
+  transform: translateX(-50%);
 }
-.inspector .pane {
+.download.up { transform: translate(-50%, -50%) rotate(180deg); }
+.power {
+  left: 50%;
+  top: 52%;
+  width: 0.5em;
+  height: 0.5em;
+  border: 0.09em solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+.power::after {
+  content: '';
   position: absolute;
-  top: 22%;
-  bottom: 22%;
-  border: 1.5px solid currentColor;
+  left: 50%;
+  top: -0.22em;
+  width: 0.09em;
+  height: 0.3em;
+  background: currentColor;
+  transform: translateX(-50%);
 }
-.inspector .left {
-  left: 22%;
-  width: 34%;
-  border-right: none;
-  border-radius: 1px 0 0 1px;
-}
-.inspector .right {
-  right: 22%;
-  width: 34%;
-  border-left: none;
-  border-radius: 0 1px 1px 0;
+.status-dot {
+  left: 50%;
+  top: 50%;
+  width: 0.4em;
+  height: 0.4em;
+  border-radius: 50%;
+  background: currentColor;
+  transform: translate(-50%, -50%);
 }
 </style>

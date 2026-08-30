@@ -10,7 +10,15 @@
       @reset="onReset"
     >
       <template #actions>
-        <view class="x-chip wet-btn" :class="{ on: state.wetProcess }" @click="toggleWet">Wet Process</view>
+        <view
+          class="x-chip wet-btn"
+          :class="{ on: state.wetProcess }"
+          title="Wet Process — insert an effect into the reverb tail only"
+          aria-label="Wet Process"
+          @click="toggleWet"
+        >
+          <text class="x-lab-full">Wet Process</text><text class="x-lab-abbr">WET FX</text>
+        </view>
       </template>
     </plugin-shell>
 
@@ -120,9 +128,32 @@
           <text class="caret">⇄</text>
         </view>
       </view>
-      <plugin-equalizer-x v-if="wetInsert.pluginId === 'equalizer-x'" embedded :insert="wetInsert" @change="onWetChange" />
-      <plugin-dynamic-x v-else-if="wetInsert.pluginId === 'dynamic-x'" embedded :insert="wetInsert" @change="onWetChange" />
-      <plugin-boost-x v-else-if="wetInsert.pluginId === 'boost-x'" :insert="wetInsert" @change="onWetChange" />
+      <plugin-equalizer-x
+        v-if="wetInsert.pluginId === 'equalizer-x'"
+        embedded
+        :insert="wetInsert"
+        :meters="wetMeters"
+        :vis-state="visState"
+        :vis-notice="wetNotice"
+        @change="onWetChange"
+      />
+      <plugin-dynamic-x
+        v-else-if="wetInsert.pluginId === 'dynamic-x'"
+        embedded
+        :insert="wetInsert"
+        :meters="wetMeters"
+        :vis-state="visState"
+        :vis-notice="wetNotice"
+        @change="onWetChange"
+      />
+      <plugin-boost-x
+        v-else-if="wetInsert.pluginId === 'boost-x'"
+        :insert="wetInsert"
+        :meters="wetMeters"
+        :vis-state="visState"
+        :vis-notice="wetNotice"
+        @change="onWetChange"
+      />
     </view>
   </view>
 </template>
@@ -142,13 +173,19 @@ import {
 } from '../../dsp/registry.js'
 import { createInsert } from '../../dsp/plugin.js'
 import { getReverbVisualization } from '../../dsp/reverb-x.js'
-import { prepareCanvas } from './canvas-util.js'
-import { DSP_THEME, drawLogTimeGrid, drawDecadeGrid, timeToX, ampToY, axisText } from './dsp-theme.js'
+import { prepareCanvas, observeCanvasResize } from './canvas-util.js'
+import {
+  DSP_THEME, drawLogTimeGrid, drawDecadeGrid, timeToX, ampToY, axisText,
+  drawVisualNotice, visualFrameMs, peakToDb
+} from './dsp-theme.js'
+import { beginPointerDrag } from '../../lib/pointer-drag.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
-  meters: { type: Object, default: () => ({}) }
+  meters: { type: Object, default: () => ({}) },
+  visState: { type: String, default: '' },
+  visNotice: { type: String, default: '' }
 })
 const emit = defineEmits(['change'])
 const canvas = ref(null)
@@ -166,6 +203,19 @@ const outLevel = computed(() => {
   return m.outPeak != null ? m.outPeak : 0
 })
 const activeMode = computed(() => reverbModeForVenue(state.value.venue))
+
+/* The wet chain runs inside this reverb, so it has no lane of its own. Feeding
+   it the wet tap keeps its meters alive instead of showing a dead panel. */
+const wetMeters = computed(() => {
+  const m = props.meters || {}
+  const wet = Number(m.wetPeak) || 0
+  return { ...m, inPeak: wet, outPeak: wet, inPeakR: wet, outPeakR: wet }
+})
+const wetNotice = computed(() => (
+  props.visState === 'unattached' || props.visState === 'bypass' || props.visState === 'silent'
+    ? props.visNotice
+    : ''
+))
 const venueName = computed(() => {
   const found = REVERB_VENUES.find((venue) => venue.id === state.value.venue)
   return found ? found.name : 'Concert Hall'
@@ -320,35 +370,75 @@ function draw () {
     ctx.lineTo(Math.round(x) + 0.5, y)
     ctx.stroke()
   })
+  // Live wet tail on the same amplitude decades, so the drawn envelope can be
+  // compared against what the reverb is actually putting out.
+  const wet = Number((props.meters || {}).wetPeak) || 0
+  if (wet > 1e-4) {
+    const y = ampToY(Math.min(1, wet), gh, FLOOR_DB)
+    ctx.strokeStyle = DSP_THEME.rev.accent
+    ctx.setLineDash([2, 3])
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.moveTo(0, Math.round(y) + 0.5)
+    ctx.lineTo(gw, Math.round(y) + 0.5)
+    ctx.stroke()
+    ctx.setLineDash([])
+    axisText(ctx, Math.round(peakToDb(wet)) + ' dB wet', gw - 4, Math.max(8, y - 7), 'right')
+  }
   ctx.restore()
 
   axisText(ctx, 'Time', w - padR - 22, padT + 8, 'right')
+  if (wet <= 1e-4 && props.visNotice) drawVisualNotice(ctx, props.visNotice, (w - padR) / 2, padT + 26)
 }
 
-let vizTimer = 0
-onMounted(() => { draw(); vizTimer = setInterval(draw, 60) })
-onUnmounted(() => clearInterval(vizTimer))
+let raf = 0
+let lastDraw = 0
+let stopResize = null
+const FRAME_MS = visualFrameMs()
+function loop (t) {
+  if (!lastDraw || t - lastDraw >= FRAME_MS) {
+    draw()
+    lastDraw = t
+  }
+  raf = requestAnimationFrame(loop)
+}
+function start () {
+  if (raf) return
+  lastDraw = 0
+  raf = requestAnimationFrame(loop)
+}
+function stop () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stop()
+  else start()
+}
+onMounted(() => {
+  draw()
+  start()
+  stopResize = observeCanvasResize(canvas, draw)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stop()
+  if (stopResize) stopResize()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
 watch(() => props.insert.state, draw, { deep: true })
 
-function dragTime (e) {
-  const startX = e.touches ? e.touches[0].clientX : e.clientX
+function dragTime (event) {
+  const startX = event.clientX
   const start = props.insert.state.decay
-  const move = (ev) => {
-    const x = ev.touches ? ev.touches[0].clientX : ev.clientX
-    // Horizontal drag is a ratio so it feels even across the log time axis.
-    props.insert.state.decay = Math.min(12, Math.max(0.15, start * Math.pow(2, (x - startX) / 140)))
-    commit()
-  }
-  const end = () => {
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', end)
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', end)
-  }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', end)
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', end)
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      // Horizontal drag is a ratio so it feels even across the log time axis.
+      props.insert.state.decay = Math.min(12, Math.max(0.15, start * Math.pow(2, (ev.clientX - startX) / 140)))
+      commit()
+    }
+  })
 }
 </script>
 

@@ -10,7 +10,15 @@
       @reset="onReset"
     >
       <template #actions>
-        <view class="x-chip split-btn" :class="{ on: state.splitBands }" @click.stop="toggleSplit">Split Bands</view>
+        <view
+          class="x-chip split-btn"
+          :class="{ on: state.splitBands }"
+          title="Split Bands — separate gain computers for low, mid and high"
+          aria-label="Split Bands"
+          @click.stop="toggleSplit"
+        >
+          <text class="x-lab-full">Split Bands</text><text class="x-lab-abbr">3 BAND</text>
+        </view>
       </template>
     </plugin-shell>
 
@@ -119,13 +127,14 @@
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">Detector</text>
-      <view class="x-seg railed">
+      <text class="dsp-lab"><text class="x-lab-full">Detector</text><text class="x-lab-abbr">DET</text></text>
+      <view class="x-seg railed" title="Level detector">
         <view
           v-for="mode in DYNAMIC_DETECTORS"
           :key="mode"
           class="x-chip det"
           :class="{ on: detector === mode }"
+          :title="mode + ' detector'"
           @click="set('detector', mode)"
         >{{ mode }}</view>
       </view>
@@ -140,8 +149,24 @@
         @update:model-value="set('rmsMs', $event)"
       />
       <view class="gap" />
-      <view class="x-chip" :class="{ on: state.autoRelease }" @click="toggleAutoRel">Auto Rel</view>
-      <view class="x-chip" :class="{ on: state.autoGain }" @click="toggleAutoGain">Auto Gain</view>
+      <view
+        class="x-chip"
+        :class="{ on: state.autoRelease }"
+        title="Auto Release — release time follows the programme"
+        aria-label="Auto Release"
+        @click="toggleAutoRel"
+      >
+        <text class="x-lab-full">Auto Rel</text><text class="x-lab-abbr">AR</text>
+      </view>
+      <view
+        class="x-chip"
+        :class="{ on: state.autoGain }"
+        title="Auto Gain — make-up gain tracks the reduction"
+        aria-label="Auto Gain"
+        @click="toggleAutoGain"
+      >
+        <text class="x-lab-full">Auto Gain</text><text class="x-lab-abbr">AG</text>
+      </view>
     </view>
 
     <view v-if="state.splitBands" class="bands">
@@ -185,17 +210,20 @@ import DspSlider from './dsp-slider.vue'
 import DspCanvas from './dsp-canvas.vue'
 import { plugins, applyPreset, resetInsert, DYNAMIC_DETECTORS } from '../../dsp/registry.js'
 import { compressorCurve, grMeterAmount } from '../../dsp/dynamic-x.js'
-import { canvasRect, prepareCanvas } from './canvas-util.js'
+import { canvasRect, prepareCanvas, observeCanvasResize } from './canvas-util.js'
 import {
   DSP_THEME, fmtDb, fmtMs, fmtHz, freqToX, xToFreq,
-  drawSpectrum, drawTransferGrid, dbToY, axisText
+  drawSpectrum, drawTransferGrid, dbToY, axisText, drawVisualNotice, visualFrameMs
 } from './dsp-theme.js'
+import { beginPointerDrag } from '../../lib/pointer-drag.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
   meters: { type: Object, default: () => ({}) },
   spectrum: { type: Array, default: () => [] },
+  visState: { type: String, default: '' },
+  visNotice: { type: String, default: '' },
   embedded: { type: Boolean, default: false }
 })
 const emit = defineEmits(['change'])
@@ -317,6 +345,44 @@ function tracePath (ctx, pts, w, h) {
   })
 }
 
+/* Rolling input-level histogram. A transfer curve alone cannot show where the
+   material actually sits, so the threshold was being set blind. Bins are on the
+   same dB axis as the curve, decaying so old peaks fade out. */
+const HIST_BINS = 64
+const histogram = new Float32Array(HIST_BINS)
+
+function pushHistogram (inDb) {
+  for (let i = 0; i < HIST_BINS; i++) histogram[i] *= 0.985
+  if (inDb == null || !Number.isFinite(inDb) || inDb <= IN_MIN_DB) return
+  const t = (Math.min(IN_MAX_DB, inDb) - IN_MIN_DB) / (IN_MAX_DB - IN_MIN_DB)
+  const bin = Math.min(HIST_BINS - 1, Math.max(0, Math.round(t * (HIST_BINS - 1))))
+  histogram[bin] = Math.min(1, histogram[bin] + 0.12)
+}
+
+function drawHistogram (ctx, w, h) {
+  let max = 0
+  for (let i = 0; i < HIST_BINS; i++) if (histogram[i] > max) max = histogram[i]
+  if (max < 0.01) return false
+  const bw = w / HIST_BINS
+  ctx.save()
+  ctx.fillStyle = DSP_THEME.dyn.fill
+  for (let i = 0; i < HIST_BINS; i++) {
+    const v = histogram[i] / max
+    if (v <= 0.01) continue
+    const bh = v * h * 0.45
+    ctx.fillRect(i * bw, h - bh, Math.max(1, bw - 0.5), bh)
+  }
+  ctx.restore()
+  return true
+}
+
+function inputDb () {
+  const meters = props.meters || {}
+  if (meters.inputPeakDb != null) return num(meters.inputPeakDb, null)
+  const peak = num(meters.inPeak)
+  return peak > 0 ? 20 * Math.log10(Math.max(1e-5, peak)) : null
+}
+
 function draw () {
   const prepared = prepareCanvas(canvas, 520, 230)
   if (!prepared) return
@@ -325,6 +391,8 @@ function draw () {
   ctx.fillStyle = DSP_THEME.panel
   ctx.fillRect(0, 0, w, h)
 
+  pushHistogram(inputDb())
+  const liveHistogram = drawHistogram(ctx, w, h)
   drawTransferGrid(ctx, w, h, IN_MIN_DB, IN_MAX_DB, OUT_MIN_DB, OUT_MAX_DB)
 
   // Unity reference.
@@ -390,9 +458,7 @@ function draw () {
   ctx.stroke()
 
   const meters = props.meters || {}
-  const inDb = meters.inputPeakDb != null
-    ? num(meters.inputPeakDb, -120)
-    : (meters.inPeak ? 20 * Math.log10(Math.max(1e-5, num(meters.inPeak))) : null)
+  const inDb = inputDb()
   const grDb = num(meters.gainReductionDb)
   if (inDb != null && inDb > -90) {
     const outDb = inDb + grDb
@@ -404,6 +470,7 @@ function draw () {
   }
 
   axisText(ctx, 'Input', 6, 10, 'left')
+  if (!liveHistogram && props.visNotice) drawVisualNotice(ctx, props.visNotice, w / 2, 20)
 }
 
 function drawSplit () {
@@ -451,60 +518,73 @@ function drawSplit () {
 
 let raf = 0
 let lastDraw = 0
+let stopResize = null
+const FRAME_MS = visualFrameMs()
+function redraw () {
+  draw()
+  drawSplit()
+}
 function loop (t) {
-  if (!lastDraw || t - lastDraw >= 33) {
-    draw()
-    drawSplit()
+  if (!lastDraw || t - lastDraw >= FRAME_MS) {
+    redraw()
     lastDraw = t
   }
   raf = requestAnimationFrame(loop)
 }
-onMounted(() => { raf = requestAnimationFrame(loop) })
-onUnmounted(() => cancelAnimationFrame(raf))
-watch(() => props.insert.state, () => { draw(); drawSplit() }, { deep: true })
+function start () {
+  if (raf) return
+  lastDraw = 0
+  raf = requestAnimationFrame(loop)
+}
+function stop () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stop()
+  else start()
+}
+onMounted(() => {
+  start()
+  stopResize = observeCanvasResize([canvas, splitCanvas], redraw)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stop()
+  if (stopResize) stopResize()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
+watch(() => props.insert.state, redraw, { deep: true })
 
-function onGraph (e) {
-  const startY = e.touches ? e.touches[0].clientY : e.clientY
-  const startX = e.touches ? e.touches[0].clientX : e.clientX
+function onGraph (event) {
+  const startY = event.clientY
+  const startX = event.clientX
   const startT = target.value.threshold
   const startR = target.value.ratio
-  const move = (ev) => {
-    const p = ev.touches ? ev.touches[0] : ev
-    setTarget('threshold', Math.min(0, Math.max(-48, startT - (p.clientY - startY) * 0.15)))
-    setTarget('ratio', Math.min(20, Math.max(1, startR * Math.pow(2, (p.clientX - startX) / 160))))
-  }
-  bindDrag(move)
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      setTarget('threshold', Math.min(0, Math.max(-48, startT - (ev.clientY - startY) * 0.15)))
+      setTarget('ratio', Math.min(20, Math.max(1, startR * Math.pow(2, (ev.clientX - startX) / 160))))
+    }
+  })
 }
 
-function onXo (e) {
+function onXo (event) {
   const rect = canvasRect(splitCanvas)
   if (!rect.width) return
-  const p0 = e.touches ? e.touches[0] : e
-  const x0 = p0.clientX - rect.left
+  const x0 = event.clientX - rect.left
   const x1 = freqToX(num(state.value.xo1, 180), rect.width)
   const x2 = freqToX(num(state.value.xo2, 3500), rect.width)
   const which = Math.abs(x0 - x1) <= Math.abs(x0 - x2) ? 'xo1' : 'xo2'
-  const move = (ev) => {
-    const p = ev.touches ? ev.touches[0] : ev
-    const hz = xToFreq(p.clientX - rect.left, rect.width)
-    if (which === 'xo1') props.insert.state.xo1 = Math.min(800, Math.max(40, hz))
-    else props.insert.state.xo2 = Math.min(12000, Math.max(800, hz))
-    commit()
-  }
-  bindDrag(move)
-}
-
-function bindDrag (move) {
-  const end = () => {
-    window.removeEventListener('mousemove', move)
-    window.removeEventListener('mouseup', end)
-    window.removeEventListener('touchmove', move)
-    window.removeEventListener('touchend', end)
-  }
-  window.addEventListener('mousemove', move)
-  window.addEventListener('mouseup', end)
-  window.addEventListener('touchmove', move, { passive: false })
-  window.addEventListener('touchend', end)
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      const hz = xToFreq(ev.clientX - rect.left, rect.width)
+      if (which === 'xo1') props.insert.state.xo1 = Math.min(800, Math.max(40, hz))
+      else props.insert.state.xo2 = Math.min(12000, Math.max(800, hz))
+      commit()
+    }
+  })
 }
 </script>
 

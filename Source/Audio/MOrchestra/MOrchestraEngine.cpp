@@ -71,10 +71,10 @@ namespace
         }
 
         if (lower.contains ("very-long")) return 4;
+        if (lower.contains ("_15_"))      return 3;
         if (lower.contains ("_long_"))    return 3;
-        if (lower.contains ("_15_"))      return 2;
-        if (lower.contains ("_1_"))       return 1;
-        return 0;
+        if (lower.contains ("_1_"))       return 0;
+        return 1;
     }
 
     int mixedDynamics (int cc1, int velocity, float mix)
@@ -690,6 +690,11 @@ const SampleRef* Engine::pickRanked (const InstrumentSpec& spec, Articulation ar
             continue;
 
         const auto quality = durationQuality (sample.entry, artic);
+        const auto entryLower = sample.entry.toLowerCase();
+        const auto oneShot = entryLower.contains ("_1_") && ! entryLower.contains ("_15_")
+                             && ! entryLower.contains ("very-long") && ! entryLower.contains ("_long_");
+        if ((artic == Articulation::longArt || artic == Articulation::sustain) && oneShot)
+            continue;
         if (artic == Articulation::shortArt && quality < 2)
             continue;
 

@@ -41,6 +41,19 @@
         <FILE id="mor004" name="MOrchestraEngine.cpp" compile="1" resource="0" file="Source/Audio/MOrchestra/MOrchestraEngine.cpp"/>
         <FILE id="mor005" name="MOrchestraInstance.h" compile="0" resource="0" file="Source/Audio/MOrchestra/MOrchestraInstance.h"/>
         <FILE id="mor006" name="MOrchestraInstance.cpp" compile="1" resource="0" file="Source/Audio/MOrchestra/MOrchestraInstance.cpp"/>
+        <FILE id="xsr000" name="XCommon.h" compile="0" resource="0" file="Source/Audio/XSeries/XCommon.h"/>
+        <FILE id="xsr001" name="EqualizerXCore.h" compile="0" resource="0" file="Source/Audio/XSeries/EqualizerXCore.h"/>
+        <FILE id="xsr002" name="EqualizerXCore.cpp" compile="1" resource="0" file="Source/Audio/XSeries/EqualizerXCore.cpp"/>
+        <FILE id="xsr003" name="DynamicXCore.h" compile="0" resource="0" file="Source/Audio/XSeries/DynamicXCore.h"/>
+        <FILE id="xsr004" name="DynamicXCore.cpp" compile="1" resource="0" file="Source/Audio/XSeries/DynamicXCore.cpp"/>
+        <FILE id="xsr005" name="BoostXCore.h" compile="0" resource="0" file="Source/Audio/XSeries/BoostXCore.h"/>
+        <FILE id="xsr006" name="BoostXCore.cpp" compile="1" resource="0" file="Source/Audio/XSeries/BoostXCore.cpp"/>
+        <FILE id="xsr007" name="LimiterXCore.h" compile="0" resource="0" file="Source/Audio/XSeries/LimiterXCore.h"/>
+        <FILE id="xsr008" name="LimiterXCore.cpp" compile="1" resource="0" file="Source/Audio/XSeries/LimiterXCore.cpp"/>
+        <FILE id="xsr009" name="ReverbXCore.h" compile="0" resource="0" file="Source/Audio/XSeries/ReverbXCore.h"/>
+        <FILE id="xsr010" name="ReverbXCore.cpp" compile="1" resource="0" file="Source/Audio/XSeries/ReverbXCore.cpp"/>
+        <FILE id="xsr011" name="XSeriesInsert.h" compile="0" resource="0" file="Source/Audio/XSeries/XSeriesInsert.h"/>
+        <FILE id="xsr012" name="XSeriesInsert.cpp" compile="1" resource="0" file="Source/Audio/XSeries/XSeriesInsert.cpp"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000003}" name="Plugins">
         <FILE id="plg001" name="PluginDescriptor.h" compile="0" resource="0" file="Source/Plugins/PluginDescriptor.h"/>
@@ -64,6 +77,8 @@
         <FILE id="com002" name="EngineAPI.cpp" compile="1" resource="0" file="Source/Communication/EngineAPI.cpp"/>
         <FILE id="com003" name="WebGateway.h" compile="0" resource="0" file="Source/Communication/WebGateway.h"/>
         <FILE id="com004" name="WebGateway.cpp" compile="1" resource="0" file="Source/Communication/WebGateway.cpp"/>
+        <FILE id="com005" name="WebMixerBridge.h" compile="0" resource="0" file="Source/Communication/WebMixerBridge.h"/>
+        <FILE id="com006" name="WebMixerBridge.cpp" compile="1" resource="0" file="Source/Communication/WebMixerBridge.cpp"/>
       </GROUP>
       <GROUP id="{1A000000-0000-0000-0000-000000000005}" name="UI">
         <FILE id="h3xMWI" name="MainComponent.h" compile="0" resource="0" file="Source/UI/MainComponent.h"/>

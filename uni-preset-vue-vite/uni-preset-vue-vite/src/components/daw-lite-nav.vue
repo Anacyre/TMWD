@@ -1,15 +1,15 @@
 <template>
   <view class="nav">
     <view class="item" :class="{ on: session.workspaceView === 'arrangement' }" @click.stop="go('arrangement')">
-      <daw-icon name="arrange" :color="session.workspaceView === 'arrangement' ? '#e6e6e6' : ''" />
+      <daw-icon name="arrange" :size="22" :color="session.workspaceView === 'arrangement' ? '#e6e6e6' : ''" />
       <text>Arrange</text>
     </view>
     <view class="item" :class="{ on: session.workspaceView === 'piano' }" @click.stop="go('piano')">
-      <daw-icon name="piano" :color="session.workspaceView === 'piano' ? '#e6e6e6' : ''" />
+      <daw-icon name="piano" :size="22" :color="session.workspaceView === 'piano' ? '#e6e6e6' : ''" />
       <text>Piano</text>
     </view>
     <view class="item" :class="{ on: session.workspaceView === 'mixer' }" @click.stop="go('mixer')">
-      <daw-icon name="mixer" :color="session.workspaceView === 'mixer' ? '#e6e6e6' : ''" />
+      <daw-icon name="mixer" :size="22" :color="session.workspaceView === 'mixer' ? '#e6e6e6' : ''" />
       <text>Mixer</text>
     </view>
   </view>
@@ -50,6 +50,6 @@ function go (view) {
   box-sizing: border-box;
 }
 .item.on { color: #e6e6e6; }
-.item :deep(.icon) { width: 22px; height: 22px; flex-shrink: 0; }
+.item :deep(.icon) { width: 24px; height: 24px; flex-shrink: 0; }
 .item text { line-height: 1; }
 </style>

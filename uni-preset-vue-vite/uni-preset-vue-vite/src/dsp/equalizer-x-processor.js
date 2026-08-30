@@ -493,6 +493,7 @@ var EQX_API = (function () {
     this._yr = 0
     this._node = { shape: 'bell', freq: 1000, gain: 0, q: 0.9, slope: 12, enabled: true }
     this.analyzer = new SpectrumAnalyzer(this.sr, FFT_SIZE, VIZ_BINS, VIZ_FPS)
+    this.analyzerPre = new SpectrumAnalyzer(this.sr, FFT_SIZE, VIZ_BINS, VIZ_FPS)
     var i, s
     for (i = 0; i < MAX_NODES; i++) {
       this.params.push(makeParams())
@@ -660,6 +661,8 @@ var EQX_API = (function () {
 
   EqualizerXProcessor.prototype.process = function (l, r, n) {
     this.updateCoeffs(n)
+    // Pre curve must be sampled before the filters touch the buffer in place.
+    this.analyzerPre.push(l, r, n)
     var solo = -1
     var i, s
     for (i = 0; i < MAX_NODES; i++) {
@@ -750,6 +753,10 @@ var EQX_API = (function () {
 
   EqualizerXProcessor.prototype.getSpectrumArray = function () {
     return this.analyzer.getArray()
+  }
+
+  EqualizerXProcessor.prototype.getPreSpectrumArray = function () {
+    return this.analyzerPre.getArray()
   }
 
   return {

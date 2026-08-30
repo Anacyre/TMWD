@@ -238,14 +238,9 @@ void AudioEngine::syncMixerFromProject (const Project& project)
     mixer.setMasterGain (project.getMasterGainPosition());
     mixer.setNumChannels (numTracks);
 
-    if (const auto* master = project.getTrack (0))
-    {
-        const auto slotA = master->inserts.size() > 0 ? MixerEngine::kindFromSlot (master->inserts[0])
-                                                      : MixerEngine::InsertKind::none;
-        const auto slotB = master->inserts.size() > 1 ? MixerEngine::kindFromSlot (master->inserts[1])
-                                                      : MixerEngine::InsertKind::none;
-        mixer.setMasterInserts (slotA, slotB);
-    }
+    // Insert kinds and parameters are owned by mixer.setWebMixer /
+    // applyWebMixerInserts. Overwriting them from the two Project slots here
+    // used to wipe the 5-slot web mixer chain on every project sync.
     transport.setBpm (project.getBpm());
     setTimeSignature (project.getTimeSigNumerator(), project.getTimeSigDenominator());
 
@@ -265,12 +260,6 @@ void AudioEngine::syncMixerFromProject (const Project& project)
 
         const auto audible = project.isTrackAudible (i);
         mixer.setChannelParameters (i, track->volume, track->pan, audible);
-
-        const auto slotA = track->inserts.size() > 0 ? MixerEngine::kindFromSlot (track->inserts[0])
-                                                     : MixerEngine::InsertKind::none;
-        const auto slotB = track->inserts.size() > 1 ? MixerEngine::kindFromSlot (track->inserts[1])
-                                                     : MixerEngine::InsertKind::none;
-        mixer.setChannelInserts (i, slotA, slotB);
 
         auto& node = nodes[(size_t) i];
         node.midiChannel.store (juce::jlimit (1, 16, track->midiChannel));
@@ -648,8 +637,10 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const*,
         mixer.mixChannel (i, view, masterBuffer, numSamples);
     }
 
+    // Pre-master tap: the browser owns master FX and the master fader, so the
+    // stream must leave here before the local master strip is applied.
+    remoteAudio.pushPreMaster (masterBuffer, numSamples);
     mixer.processMaster (masterBuffer, numSamples);
-    remoteAudio.pushMaster (masterBuffer, numSamples);
 
     for (int channel = 0; channel < numOutputChannels; ++channel)
     {

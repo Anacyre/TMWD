@@ -5,6 +5,7 @@
       <text class="hint">Swipe for more</text>
       <text class="fx" :class="{ on: session.diagnostics.browserFxAttached }">{{ fxLabel }}</text>
     </view>
+    <text v-if="routingWarning" class="warn">{{ routingWarning }}</text>
     <view class="body">
       <scroll-view
         class="rack"
@@ -115,6 +116,7 @@ import {
   ensureMixerAttached
 } from '../store/session.js'
 import { formatVolumeDb, formatPan, dbFromFader } from '../model/mixer-model.js'
+import { fxMeterLaneKey } from '../model/web-mixer.js'
 
 const laneChannels = computed(() => (
   session.tracks.filter((track) => track.type !== 'master')
@@ -122,9 +124,15 @@ const laneChannels = computed(() => (
 const master = computed(() => session.tracks.find((track) => track.type === 'master') || null)
 const rowWidth = computed(() => Math.max(320, laneChannels.value.length * 96 + 24))
 
-const fxLabel = computed(() => (
-  session.diagnostics.browserFxAttached ? 'FX on' : 'FX off'
-))
+const fxLabel = computed(() => {
+  if (!session.diagnostics.browserFxAttached) return 'FX off'
+  const mode = session.diagnostics.routingMode
+  return mode === 'fallback' ? 'FX bypassed' : 'FX on'
+})
+const routingWarning = computed(() => {
+  const list = session.diagnostics.routingWarnings || []
+  return list.length ? list[0] : ''
+})
 
 function trackIndex (track) {
   return session.tracks.indexOf(track)
@@ -138,16 +146,20 @@ function stripClass (track) {
   }
 }
 
+function lanePeak (key) {
+  const posted = (session.fxMeters || {})[key]
+  return posted ? (posted.outPeak || posted.inPeak || 0) : 0
+}
+
 function meterOf (track) {
-  const posted = session.fxMeters || {}
   if (!track) return 0
-  if (track.type === 'master') {
-    return Math.max(track.meterLevel || 0, (posted.master && (posted.master.outPeak || posted.master.inPeak)) || 0)
-  }
-  const local = !session.remoteAudioOn
-  const sampler = Math.max((posted.sampler && (posted.sampler.outPeak || posted.sampler.inPeak)) || 0)
-  const remote = Math.max((posted.remote && (posted.remote.outPeak || posted.remote.inPeak)) || 0)
-  return Math.max(track.meterLevel || 0, local ? sampler : (track.source === 'web-sampler' ? sampler : remote))
+  if (track.type === 'master') return Math.max(track.meterLevel || 0, lanePeak('master'))
+  // Each browser-owned track has its own strip now, so read that lane instead
+  // of the summed sampler/remote taps.
+  const key = fxMeterLaneKey({ laneType: 'track', laneId: track.id }, session.tracks, {
+    localPlayback: !session.remoteAudioOn
+  })
+  return Math.max(track.meterLevel || 0, lanePeak(key))
 }
 
 function volumeLabel (track) {
@@ -218,6 +230,14 @@ onMounted(() => {
   flex-shrink: 0;
 }
 .fx.on { color: #4da3ff; }
+.warn {
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: #2a1c14;
+  color: #e0a06a;
+  font-size: 10px;
+  line-height: 1.4;
+}
 .body {
   flex: 1;
   min-width: 0;

@@ -1,4 +1,4 @@
-import { durationQuality, playbackFrom, targetDynamics } from './playback.js'
+import { durationQuality, isOneShotDuration, playbackFrom, targetDynamics } from './playback.js'
 
 function matchesPack (sample, spec) {
   if (!sample || !spec || sample.pack !== spec.pack) return false
@@ -24,6 +24,7 @@ export function scoreSample (sample, spec, artic, midiNote, velocity, dynamics, 
   const delta = noteDelta(sample, midiNote)
   if (!sample.unpitched && delta > stretch) return null
   const quality = durationQuality(sample.entry, artic)
+  if ((artic === 'long' || artic === 'sustain') && isOneShotDuration(sample.entry)) return null
   if ((artic === 'short') && quality < 2) return null
   const ranged = inNoteRange(sample, midiNote)
   const target = targetDynamics(dynamics, velocity, pb.dynamicsVelocityMix)
@@ -60,9 +61,13 @@ function pickRoundRobin (rankedList, rrIndex) {
   return list[Math.abs(rrIndex || 0) % list.length].sample
 }
 
-export function pickSample (samples, spec, artic, midiNote, velocity, dynamics, rrIndex, manifest) {
+export function pickRanked (samples, spec, artic, midiNote, velocity, dynamics, rrIndex, manifest, extraFilter) {
   const pb = playbackFrom(manifest)
-  return pickRoundRobin(ranked(samples, spec, artic, midiNote, velocity, dynamics, pb), rrIndex)
+  return pickRoundRobin(ranked(samples, spec, artic, midiNote, velocity, dynamics, pb, extraFilter), rrIndex)
+}
+
+export function pickSample (samples, spec, artic, midiNote, velocity, dynamics, rrIndex, manifest) {
+  return pickRanked(samples, spec, artic, midiNote, velocity, dynamics, rrIndex, manifest)
 }
 
 export function pickLayer (samples, spec, artic, midiNote, velocity, dynamics, excludeLayer, rrIndex, manifest) {
@@ -342,7 +347,8 @@ export function prepareLoop (audioBuffer, pb) {
     loopStart: wrapStart,
     loopEnd: best.end / sr,
     wrapStart,
-    crossfade: xfade / sr
+    crossfade: xfade / sr,
+    score: best.score
   }
 }
 

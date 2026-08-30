@@ -92,7 +92,7 @@ class DawFxChain extends AudioWorkletProcessor {
     this.dyns = new Map()
     this.lims = new Map()
     this.pluginMeters = {}
-    this.meters = { inPeak: 0, outPeak: 0, wetPeak: 0, gr: 0, grBands: [0,0,0], boostWidth: 0, boostCorr: 1, boostGr: 0, boostActivity: 0 }
+    this.meters = { inPeak: 0, outPeak: 0, inPeakL: 0, inPeakR: 0, outPeakL: 0, outPeakR: 0, wetPeak: 0, gr: 0, grBands: [0,0,0], boostWidth: 0, boostCorr: 1, boostGr: 0, boostActivity: 0 }
     this.chainFft = new EQX_API.SpectrumAnalyzer(this.sr)
     this.block = 0
     this.cpuEma = 0
@@ -132,6 +132,7 @@ class DawFxChain extends AudioWorkletProcessor {
     mem.setState(state)
     mem.process(l, r, n)
     this.meters.wetPeak = mem.lastWetPeak
+    mem.reportedWetPeak = mem.lastWetPeak
   }
 
   processBoost (mem, l, r, n, state) {
@@ -176,22 +177,33 @@ class DawFxChain extends AudioWorkletProcessor {
     const srcR = input && input[1] ? input[1] : (srcL)
     const l = output[0]
     const r = output[1] || output[0]
-    let inPeak = 0
+    let inL = 0
+    let inR = 0
     for (let i = 0; i < n; i++) {
       const xL = srcL ? srcL[i] : 0
       const xR = srcR ? srcR[i] : xL
       l[i] = xL; r[i] = xR
-      const p = Math.max(Math.abs(xL), Math.abs(xR))
-      if (p > inPeak) inPeak = p
+      const aL = Math.abs(xL)
+      const aR = Math.abs(xR)
+      if (aL > inL) inL = aL
+      if (aR > inR) inR = aR
     }
     for (let p = 0; p < this.chain.length; p++) this.processOne(this.chain[p], l, r, n)
-    let outPeak = 0
+    let outL = 0
+    let outR = 0
     for (let i = 0; i < n; i++) {
-      const p = Math.max(Math.abs(l[i]), Math.abs(r[i]))
-      if (p > outPeak) outPeak = p
+      const aL = Math.abs(l[i])
+      const aR = Math.abs(r[i])
+      if (aL > outL) outL = aL
+      if (aR > outR) outR = aR
     }
-    this.meters.inPeak = Math.max(this.meters.inPeak * 0.9, inPeak)
-    this.meters.outPeak = Math.max(this.meters.outPeak * 0.9, outPeak)
+    const m = this.meters
+    m.inPeakL = Math.max(m.inPeakL * 0.9, inL)
+    m.inPeakR = Math.max(m.inPeakR * 0.9, inR)
+    m.outPeakL = Math.max(m.outPeakL * 0.9, outL)
+    m.outPeakR = Math.max(m.outPeakR * 0.9, outR)
+    m.inPeak = Math.max(m.inPeakL, m.inPeakR)
+    m.outPeak = Math.max(m.outPeakL, m.outPeakR)
     this.chainFft.push(l, r, n)
     this.block++
     if (this.block % 16 === 0) {
@@ -200,6 +212,7 @@ class DawFxChain extends AudioWorkletProcessor {
       this.eqs.forEach((proc, id) => {
         eqById[id] = {
           spectrum: proc.getSpectrumArray(),
+          spectrumPre: proc.getPreSpectrumArray ? proc.getPreSpectrumArray() : null,
           autoGainDb: proc.autoGainDb,
           autoGain: proc.autoOn
         }
@@ -207,6 +220,10 @@ class DawFxChain extends AudioWorkletProcessor {
       const plugins = {}
       this.dyns.forEach((proc, id) => {
         if (proc && proc.meters) plugins[id] = proc.meters
+      })
+      this.reverbs.forEach((proc, id) => {
+        if (!proc) return
+        plugins[id] = { wetPeak: proc.reportedWetPeak || proc.lastWetPeak || 0 }
       })
       this.boosts.forEach((proc, id) => {
         if (!proc) return
@@ -224,6 +241,11 @@ class DawFxChain extends AudioWorkletProcessor {
         type: 'meters',
         inPeak: this.meters.inPeak,
         outPeak: this.meters.outPeak,
+        inPeakL: this.meters.inPeakL,
+        inPeakR: this.meters.inPeakR,
+        outPeakL: this.meters.outPeakL,
+        outPeakR: this.meters.outPeakR,
+        active: this.chain.length,
         wetPeak: this.meters.wetPeak,
         gr: this.meters.gr,
         grBands: this.meters.grBands,

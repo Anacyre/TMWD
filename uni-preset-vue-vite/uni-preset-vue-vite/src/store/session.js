@@ -10,10 +10,27 @@ import {
   connectEngineAudio
 } from '../bridge/engine.js'
 import { canAddInsert, dbFromFader, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix } from '../model/mixer-model.js'
-import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts } from '../model/web-mixer.js'
+import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
-import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting } from '../audio/mixer-graph.js'
+import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts } from '../audio/mixer-graph.js'
+import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
+import {
+  putProject,
+  getProject,
+  listProjects,
+  deleteProject,
+  duplicateProject,
+  renameProject,
+  rememberRecent as rememberRecentEntry,
+  readRecent,
+  putAsset,
+  getAsset,
+  hashBlob,
+  setActiveProject,
+  getActiveProjectId,
+  FALLBACK_KEYS
+} from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/engine.js'
@@ -105,7 +122,9 @@ export function sendCommandSafe (type, payload) {
 }
 
 export const session = reactive({
+  projectId: '',
   projectName: starterDemo.projectName,
+  projectManagerOpen: false,
   userName: 'xiaofish',
   unsaved: false,
   playing: false,
@@ -179,6 +198,13 @@ export const session = reactive({
     browserPlugins: 0,
     browserFxAttached: false,
     browserFxError: '',
+    routingMode: 'direct',
+    routingLanes: [],
+    routingWarnings: [],
+    routingMuted: false,
+    bypassReason: '',
+    lanePeaks: {},
+    fxAttached: false,
     limiterNsPerSample: null,
     mOrchestra: null
   },
@@ -222,9 +248,10 @@ export function snapBeat (beat) {
 }
 
 function mapTrack (track) {
-  const existing = session.tracks.find((item) => item.id === track.trackId) || {}
+  const id = track.trackId != null ? track.trackId : track.id
+  const existing = session.tracks.find((item) => item.id === id) || {}
   return {
-    id: track.trackId,
+    id,
     name: track.name,
     type: track.type,
     parentId: track.parentId || 0,
@@ -302,17 +329,19 @@ function normalizeClipNotes (clip) {
 
 function applyProject (project) {
   if (!project) return
-  session.projectName = project.name || session.projectName
+  const data = migrateProject(project)
+  if (data.id) session.projectId = data.id
+  session.projectName = data.name || project.name || session.projectName
   if (project.userName) session.userName = project.userName
-  session.bpm = project.bpm || session.bpm
-  session.timeSigNum = project.timeSigNumerator || session.timeSigNum
-  session.timeSigDen = project.timeSigDenominator || session.timeSigDen
+  session.bpm = data.tempo || project.bpm || session.bpm
+  session.timeSigNum = data.timeSigNumerator || project.timeSigNumerator || session.timeSigNum
+  session.timeSigDen = data.timeSigDenominator || project.timeSigDenominator || session.timeSigDen
   session.positionBeats = project.positionBeats != null ? project.positionBeats : session.positionBeats
   session.playing = !!project.playing
-  session.looping = !!project.looping
+  session.looping = project.looping != null ? !!project.looping : session.looping
   session.loopStart = project.loopStart != null ? project.loopStart : session.loopStart
   session.loopEnd = project.loopEnd != null ? project.loopEnd : session.loopEnd
-  session.metronome = !!project.metronome
+  session.metronome = project.metronome != null ? !!project.metronome : session.metronome
   if (project.masterGain != null) {
     session.masterGain = project.masterGain
     if (session.tracks[0] && session.tracks[0].type === 'master') session.tracks[0].volume = project.masterGain
@@ -323,7 +352,7 @@ function applyProject (project) {
   if (project.tracks) {
     const selectedId = (session.tracks[session.selectedTrack] || {}).id
     const prevById = new Map(session.tracks.map((track) => [track.id, track]))
-    session.tracks = project.tracks.map(mapTrack).map((track) => {
+    session.tracks = data.tracks.map(mapTrack).map((track) => {
       const locks = mixDragLocks.get(track.id)
       if (!locks || !locks.size) return track
       const prev = prevById.get(track.id)
@@ -344,7 +373,7 @@ function applyProject (project) {
   if (project.clips) {
     const selectedClipId = (session.clips[session.selectedClip] || {}).id
     clearClipPreviewCache()
-    session.clips = project.clips.map(mapClip)
+    session.clips = data.clips.map(mapClip)
     session.clipPreviewRevision++
     const nextClip = session.clips.findIndex((clip) => clip.id === selectedClipId)
     session.selectedClip = nextClip >= 0 ? nextClip : (session.clips.length ? 0 : -1)
@@ -365,8 +394,8 @@ function applyProject (project) {
     key: (project.score && project.score.key) || session.score.key,
     scale: (project.score && project.score.scale) || session.score.scale
   })
-  if (project.webMixer) {
-    applyWebMixer(project.webMixer)
+  if (data.webMixer) {
+    applyWebMixer(data.webMixer)
   }
   if (project.pixelsPerBeat) session.pixelsPerBeat = project.pixelsPerBeat
   if (project.trackHeight) session.trackHeight = project.trackHeight
@@ -380,6 +409,45 @@ function mixerGraphOptions () {
 
 function refreshMixerGraph () {
   if (audioGraph) syncMixerGraph(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+  publishRoutingDiagnostics(audioGraph)
+}
+
+/**
+ * Surface where each strip is processed. Inserts on a track with no reachable
+ * audio stem would otherwise look active while doing nothing.
+ */
+function publishRoutingDiagnostics (graph) {
+  const snap = routingSnapshot(graph)
+  const diag = session.diagnostics
+  diag.routingMode = snap.mode
+  diag.routingLanes = snap.lanes
+  diag.fxAttached = !!snap.fxAttached
+  diag.routingMuted = !!snap.muted
+  diag.bypassReason = snap.bypassReason || ''
+  const peaks = {}
+  Object.keys(session.fxMeters || {}).forEach((key) => {
+    const meters = session.fxMeters[key] || {}
+    peaks[key] = { inPeak: meters.inPeak || 0, outPeak: meters.outPeak || 0 }
+  })
+  diag.lanePeaks = peaks
+  const warnings = []
+  if (snap.error) warnings.push('Routing: ' + snap.error)
+  if (snap.muted) warnings.push('Mixer muted: inserts are offline')
+  const localPlayback = !session.remoteAudioOn
+  session.tracks.forEach((track) => {
+    if (!track || track.type === 'master' || track.type === 'group') return
+    const filled = trackLaneInserts(session.webMixer, track).filter((item) => item && item.enabled !== false)
+    if (!filled.length) return
+    if (isBrowserOwnedTrack(track, { localPlayback })) return
+    if (session.remoteAudioOn) return
+    warnings.push((track.name || 'Track ' + track.id) + ': inserts need the PC engine (no browser stem)')
+  })
+  diag.routingWarnings = warnings
+}
+
+/** Where a browser voice for this track must connect. */
+export function trackAudioInput (trackId) {
+  return trackInputNode(audioGraph, trackId)
 }
 
 function applyWebMixer (raw) {
@@ -1055,11 +1123,13 @@ export function moveClip (clip, startBeat, trackIndex) {
 
 export function newProject () {
   stop()
+  session.projectId = ''
   session.projectName = 'New Project'
   session.selectedTrack = 0
   session.selectedClip = -1
   session.markers = []
   session.selectedClipIds = []
+  setActiveProject('').catch(() => {})
   if (isEngineConnected()) {
     fire('project.new')
     return
@@ -2118,21 +2188,8 @@ export function engineStateLabel () {
 }
 
 async function autosaveProject () {
-  if (typeof localStorage === 'undefined') return
-  session.saveStatus = 'Saving…'
   try {
-    if (isEngineConnected()) {
-      const reply = await fire('project.export')
-      if (reply && reply.json) localStorage.setItem('dawweb.autosave', reply.json)
-    } else {
-      localStorage.setItem('dawweb.autosave', JSON.stringify(serializeProject()))
-    }
-    session.unsaved = false
-    session.saveStatus = 'Saved'
-    rememberRecentProject()
-    setTimeout(() => {
-      if (session.saveStatus === 'Saved') session.saveStatus = ''
-    }, 1400)
+    await saveCurrentProject()
   } catch (err) {
     session.saveStatus = ''
   }
@@ -2141,21 +2198,16 @@ async function autosaveProject () {
 export { isGroupTrack, isPlayableTrack }
 
 function loadRecentProjects () {
-  if (typeof localStorage === 'undefined') return
-  try {
-    session.recentProjects = JSON.parse(localStorage.getItem('dawweb.recent') || '[]') || []
-  } catch (err) {
-    session.recentProjects = []
-  }
+  session.recentProjects = readRecent()
 }
 
 export function rememberRecentProject () {
-  if (typeof localStorage === 'undefined') return
-  const entry = { name: session.projectName || 'Untitled', at: Date.now() }
-  session.recentProjects = [entry].concat(
-    (session.recentProjects || []).filter((item) => item.name !== entry.name)
-  ).slice(0, 8)
-  localStorage.setItem('dawweb.recent', JSON.stringify(session.recentProjects))
+  const entry = {
+    id: session.projectId || '',
+    name: session.projectName || 'Untitled',
+    at: Date.now()
+  }
+  session.recentProjects = rememberRecentEntry(entry)
 }
 
 export function restoreAutosave () {
@@ -2163,7 +2215,7 @@ export function restoreAutosave () {
     showToast('No autosave')
     return
   }
-  const json = localStorage.getItem('dawweb.autosave')
+  const json = localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE)
   if (!json) {
     showToast('No autosave')
     return
@@ -2186,54 +2238,112 @@ function downloadText (filename, text) {
 }
 
 export function serializeProject () {
-  return {
-    version: 1,
-    name: session.projectName,
-    bpm: session.bpm,
-    timeSigNumerator: session.timeSigNum,
-    timeSigDenominator: session.timeSigDen,
-    positionBeats: session.positionBeats,
-    looping: session.looping,
-    loopStart: session.loopStart,
-    loopEnd: session.loopEnd,
-    metronome: session.metronome,
-    tracks: session.tracks,
-    clips: session.clips,
-    markers: session.markers,
-    webMixer: session.webMixer,
-    pixelsPerBeat: session.pixelsPerBeat,
-    trackHeight: session.trackHeight
+  const data = serializeSession(session)
+  session.projectId = data.id
+  return data
+}
+
+async function persistSamplerAssets (project) {
+  for (const track of session.tracks || []) {
+    if (!track || track.source !== 'web-sampler' || !track.webSampler) continue
+    const sampler = track.webSampler
+    const url = sampler.sampleUrl
+    if (!url || !(url.startsWith('blob:') || url.startsWith('data:'))) continue
+    try {
+      const response = await fetch(url)
+      const blob = await response.blob()
+      const hash = await hashBlob(blob)
+      await putAsset(hash, blob, { name: sampler.sampleName || 'sample', bytes: blob.size })
+      sampler.assetHash = hash
+      const dest = (project.tracks || []).find((item) => String(item.id) === String(track.id))
+      if (dest && dest.webSampler) {
+        dest.webSampler.assetHash = hash
+        dest.webSampler.sampleUrl = ''
+      }
+    } catch (err) {
+      console.warn('[project] sampler asset persist failed', err)
+    }
   }
 }
 
-export async function saveProjectLocal () {
+async function restoreSamplerAssets (project) {
+  for (const track of session.tracks || []) {
+    const hash = track.webSampler && track.webSampler.assetHash
+    if (!hash) continue
+    const asset = await getAsset(hash)
+    if (!asset || !asset.blob) continue
+    try {
+      const url = URL.createObjectURL(asset.blob)
+      track.webSampler.sampleUrl = url
+      const graph = ensureGraph()
+      if (graph) {
+        const buffer = await decodeSampleFile(graph.context, asset.blob)
+        samplerBuffers.set(track.id, buffer)
+      }
+    } catch (err) {
+      console.warn('[project] sampler asset restore failed', err)
+    }
+  }
+}
+
+async function buildSavePayload () {
+  let data = serializeProject()
+  if (isEngineConnected()) {
+    const reply = await fire('project.export')
+    if (reply && reply.json) data = mergeNativeExport(data, reply.json)
+  }
+  await persistSamplerAssets(data)
+  return serializeSession({ ...session, projectId: data.id, webMixer: data.webMixer, tracks: data.tracks })
+}
+
+function markSaved () {
+  session.unsaved = false
+  session.saveStatus = 'Saved'
+  rememberRecentProject()
+  setActiveProject(session.projectId).catch(() => {})
+  setTimeout(() => {
+    if (session.saveStatus === 'Saved') session.saveStatus = ''
+  }, 1400)
+}
+
+export async function saveCurrentProject () {
   session.saveStatus = 'Saving…'
   try {
-    const data = serializeProject()
-    const json = JSON.stringify(data)
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem('dawweb.autosave', json)
-      localStorage.setItem('dawweb.project.last', json)
-    }
-    if (isEngineConnected()) {
-      await fire('project.save', { json }).catch(() => {})
-    }
-    downloadText((session.projectName || 'project') + '.dawweb', json)
-    session.unsaved = false
-    session.saveStatus = 'Saved'
-    rememberRecentProject()
+    const data = await buildSavePayload()
+    const saved = await putProject(data)
+    session.projectId = saved.id
+    markSaved()
     showToast('Project saved')
-    setTimeout(() => {
-      if (session.saveStatus === 'Saved') session.saveStatus = ''
-    }, 1400)
+    return saved
   } catch (err) {
     session.saveStatus = ''
     showToast(err.message || 'Save failed')
+    return null
   }
 }
 
+export async function saveProjectAs (name) {
+  const nextName = (name || '').trim()
+  if (nextName) session.projectName = nextName
+  session.projectId = ''
+  return saveCurrentProject()
+}
+
+export async function saveProjectLocal () {
+  return saveCurrentProject()
+}
+
 export async function exportProject () {
-  await saveProjectLocal()
+  session.saveStatus = 'Saving…'
+  try {
+    const data = await buildSavePayload()
+    downloadText((session.projectName || 'project') + '.dawweb', JSON.stringify(data, null, 2))
+    markSaved()
+    showToast('Project exported')
+  } catch (err) {
+    session.saveStatus = ''
+    showToast(err.message || 'Export failed')
+  }
 }
 
 export async function importProjectJson (json) {
@@ -2245,15 +2355,63 @@ export async function importProjectJson (json) {
       return
     }
   }
+  const migrated = migrateProject(data)
   if (isEngineConnected()) {
-    const reply = await fire('project.import', { json: typeof json === 'string' ? json : JSON.stringify(data) })
-    if (reply) showToast('Project loaded')
+    await fire('project.import', { json: JSON.stringify(migrated) })
   }
-  applyProject(data)
-  if (data.webMixer) applyWebMixer(data.webMixer)
+  applyProject(migrated)
+  await restoreSamplerAssets(migrated)
   session.unsaved = false
+  rememberRecentProject()
+  setActiveProject(session.projectId).catch(() => {})
   showToast('Project loaded')
 }
+
+export async function openStoredProject (id) {
+  const row = await getProject(id)
+  if (!row) {
+    showToast('Project not found')
+    return
+  }
+  await importProjectJson(row)
+}
+
+export async function listStoredProjects () {
+  return listProjects()
+}
+
+export async function deleteStoredProject (id) {
+  await deleteProject(id)
+  session.recentProjects = readRecent()
+}
+
+export async function duplicateStoredProject (id) {
+  const copy = await duplicateProject(id)
+  session.recentProjects = readRecent()
+  return copy
+}
+
+export async function renameStoredProject (id, name) {
+  const row = await renameProject(id, name)
+  if (row && row.id === session.projectId) session.projectName = row.name
+  session.recentProjects = readRecent()
+  return row
+}
+
+export function openProjectManager () {
+  session.projectManagerOpen = true
+  session.openMenu = ''
+}
+
+export const openProjects = openProjectManager
+
+export function closeProjectManager () {
+  session.projectManagerOpen = false
+}
+
+getActiveProjectId().then((id) => {
+  if (id && !session.projectId) session.projectId = id
+}).catch(() => {})
 
 let audioGraph = null
 let audioUnsub = null
@@ -2287,6 +2445,19 @@ async function ensureClickBuffer () {
   return clickLoadPromise
 }
 
+/** Dedicated click bus. Default bypasses master FX; set graph.clickThroughMaster
+ *  to route the click through the master chain on purpose. */
+function clickBus (graph) {
+  if (!graph) return null
+  if (!graph.clickBus) {
+    const bus = graph.context.createGain()
+    bus.gain.value = 0.9
+    bus.connect(graph.clickThroughMaster ? graph.master : graph.context.destination)
+    graph.clickBus = bus
+  }
+  return graph.clickBus
+}
+
 function tickLocalMetronome (positionBeats) {
   if (!session.metronome || !audioGraph || !clickBuffer) return
   const beat = Math.floor(positionBeats)
@@ -2294,7 +2465,7 @@ function tickLocalMetronome (positionBeats) {
   lastMetroBeat = beat
   const src = audioGraph.context.createBufferSource()
   src.buffer = clickBuffer
-  const dest = audioGraph.master || audioGraph.context.destination
+  const dest = clickBus(audioGraph) || audioGraph.context.destination
   src.connect(dest)
   try { src.start() } catch (err) { /* already started */ }
 }
@@ -2306,6 +2477,36 @@ function ensureGraph () {
   return audioGraph
 }
 
+export async function rebuildAudioGraph () {
+  const old = audioGraph
+  if (old) {
+    detachMixerGraph(old)
+    try { await old.context.close() } catch (err) { /* already closed */ }
+  }
+  audioGraph = null
+  mixerAttachPromise = null
+  clickBuffer = null
+  clickLoadPromise = null
+  lastMetroBeat = -1
+  return unlockAudio()
+}
+
+if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
+  navigator.mediaDevices.addEventListener('devicechange', () => {
+    rebuildAudioGraph().catch(() => {})
+  })
+}
+
+if (typeof import.meta !== 'undefined' && import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    if (audioGraph) {
+      detachMixerGraph(audioGraph)
+      audioGraph.context.close().catch(() => {})
+      audioGraph = null
+    }
+  })
+}
+
 async function unlockAudio () {
   const graph = ensureGraph()
   if (!graph) return null
@@ -2315,7 +2516,7 @@ async function unlockAudio () {
   ensureClickBuffer()
   try {
     await ensureMixerAttached()
-    ensureOutputRouting(graph)
+    ensureOutputRouting(graph, session.webMixer)
     refreshMixerGraph()
     session.tracks.forEach((track) => {
       if (track.source === 'm-orchestra' && track.definitionId) {
@@ -2323,7 +2524,7 @@ async function unlockAudio () {
       }
     })
   } catch (err) {
-    ensureOutputRouting(graph)
+    ensureOutputRouting(graph, session.webMixer)
     showToast(err.message || 'Browser audio failed to start')
   }
   return graph
@@ -2370,20 +2571,16 @@ async function doEnsureMixerAttached () {
     graph.mixerNodes = null
     session.diagnostics.browserFxAttached = false
     session.diagnostics.browserFxError = err.message || String(err)
-    try {
-      graph.remoteGain.disconnect()
-      graph.samplerGain.disconnect()
-      graph.master.disconnect()
-    } catch (disconnectErr) { /* already disconnected */ }
-    graph.remoteGain.connect(graph.master)
-    graph.samplerGain.connect(graph.master)
-    graph.master.connect(graph.context.destination)
-    ensureOutputRouting(graph)
+    ensureOutputRouting(graph, session.webMixer)
     if (!dryMixToast) {
       dryMixToast = true
-      showToast('Browser FX unavailable — dry mix')
+      const muted = mixerHasInserts(session.webMixer)
+      showToast(muted
+        ? 'Mixer FX failed to load — inserts are offline and the mix is muted'
+        : 'Mixer FX failed to load')
     }
   }
+  publishRoutingDiagnostics(graph)
   session.tracks.forEach((track) => {
     if (track.source === 'm-orchestra' && track.definitionId) {
       mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
@@ -2567,12 +2764,13 @@ function previewWebSampler (track, pitch, velocity, id) {
   ensureMixerAttached().then((graph) => {
     if (!graph) return
     graph.context.resume()
+    // Level belongs to the track strip now; baking it in here would double-apply.
     const patch = createWebSamplerInstrument({
       ...(track && track.webSampler),
       name: track && track.name,
-      gain: track && track.volume != null ? 0.35 + track.volume * 0.45 : 0.7
+      gain: 0.7
     })
-    const voice = new WebSamplerVoice(graph.context, graph.samplerGain)
+    const voice = new WebSamplerVoice(graph.context, trackInputNode(graph, track && track.id))
     const buffer = track ? samplerBuffers.get(track.id) : null
     voice.noteOn(pitch, velocity, patch, buffer || null)
     samplerVoices.set(key, voice)
@@ -2729,24 +2927,26 @@ function tickBrowserMeters () {
   }
 
   const local = !session.remoteAudioOn
-  const samplerPeak = Math.max(fxLanePeak('sampler'), peakFromAnalyser(nodes.analyserSampler))
-  const remotePeak = Math.max(fxLanePeak('remote'), peakFromAnalyser(nodes.analyserRemote))
+  const samplerPeak = Math.max(fxLanePeak('sampler'), peakFromAnalyser(nodes.sampler && nodes.sampler.analyser))
+  const remotePeak = Math.max(fxLanePeak('remote'), peakFromAnalyser(nodes.remote && nodes.remote.analyser))
   const masterPeak = Math.max(fxLanePeak('master'), peakFromAnalyser(nodes.analyserMaster))
 
-  session.tracks.forEach((track, index) => {
+  session.tracks.forEach((track) => {
     if (track.type === 'master') {
       if (local || masterPeak > 0) track.meterLevel = masterPeak
+      return
+    }
+    const laneKey = 'track:' + String(track.id)
+    const lane = graph.trackLanes && graph.trackLanes.get(String(track.id))
+    if (lane) {
+      track.meterLevel = Math.max(fxLanePeak(laneKey), peakFromAnalyser(lane.analyser))
       return
     }
     if (local) {
       track.meterLevel = samplerPeak
       return
     }
-    if (track.source === 'web-sampler' || isMOrchestraTrack(track)) {
-      track.meterLevel = samplerPeak
-    } else if (remotePeak > 0) {
-      track.meterLevel = remotePeak
-    }
+    if (remotePeak > 0) track.meterLevel = remotePeak
   })
 
   if (graph.mixerNodes) {
@@ -2757,7 +2957,15 @@ function tickBrowserMeters () {
 function startBrowserMeterLoop () {
   if (browserMeterRaf) return
   if (typeof requestAnimationFrame === 'undefined') return
+  if (typeof document !== 'undefined' && document.hidden) return
   browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopBrowserMeterLoop()
+    else if (audioGraph && audioGraph.mixerNodes) startBrowserMeterLoop()
+  })
 }
 
 function stopBrowserMeterLoop () {

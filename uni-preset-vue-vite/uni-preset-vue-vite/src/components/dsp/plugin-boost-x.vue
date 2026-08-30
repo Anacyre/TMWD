@@ -79,7 +79,7 @@
     </view>
 
     <view class="x-footer">
-      <text class="dsp-lab">Oversampling</text>
+      <text class="dsp-lab"><text class="x-lab-full">Oversampling</text><text class="x-lab-abbr">OS</text></text>
       <view class="x-seg railed">
         <view
           v-for="factor in OVERSAMPLE_FACTORS"
@@ -101,13 +101,15 @@ import DspKnob from './dsp-knob.vue'
 import DspMeter from './dsp-meter.vue'
 import DspCanvas from './dsp-canvas.vue'
 import { plugins, BOOST_MODES, OVERSAMPLE_FACTORS, resetInsert } from '../../dsp/registry.js'
-import { prepareCanvas } from './canvas-util.js'
-import { DSP_THEME } from './dsp-theme.js'
+import { prepareCanvas, observeCanvasResize } from './canvas-util.js'
+import { DSP_THEME, drawVisualNotice, visualFrameMs } from './dsp-theme.js'
 import './dsp-theme.css'
 
 const props = defineProps({
   insert: { type: Object, required: true },
-  meters: { type: Object, default: () => ({}) }
+  meters: { type: Object, default: () => ({}) },
+  visState: { type: String, default: '' },
+  visNotice: { type: String, default: '' }
 })
 const emit = defineEmits(['change'])
 const inCanvas = ref(null)
@@ -160,7 +162,7 @@ function onMode (id) {
 
 /* Two scopes share one shape generator: the output copy is driven harder and, in
    `drive`, clipped, so the pair reads as a before/after of the current mode. */
-function drawScope (canvasRef, color, amp, phase, harmonics, clip) {
+function drawScope (canvasRef, color, amp, phase, harmonics, clip, notice) {
   const prepared = prepareCanvas(canvasRef, 180, 200)
   if (!prepared) return
   const { ctx, w, h } = prepared
@@ -196,6 +198,7 @@ function drawScope (canvasRef, color, amp, phase, harmonics, clip) {
   ctx.strokeStyle = color
   ctx.lineWidth = 1.4
   ctx.stroke()
+  if (notice) drawVisualNotice(ctx, notice, w / 2, h - 10)
 }
 
 function draw () {
@@ -217,21 +220,48 @@ function draw () {
     : mode === 'ott' ? Math.min(1, amount * 0.5 + gr * 0.7) : amount * 0.2
   const spread = mode === 'expander' ? Math.min(1, width * 1.3 + amount * 0.3) : 0
 
-  drawScope(inCanvas, DSP_THEME.boost.in, inAmp, phase, harmonics * 0.3, 0)
-  drawScope(outCanvas, DSP_THEME.boost.out, outAmp, phase + spread, harmonics, mode === 'drive' ? amount : 0)
+  // The scopes are synthetic, so without a notice a dead input looks identical
+  // to a live one; label the pair when nothing is reaching the plugin.
+  const notice = num(meters.inPeak) <= 1e-4 && num(meters.outPeak) <= 1e-4 ? props.visNotice : ''
+  drawScope(inCanvas, DSP_THEME.boost.in, inAmp, phase, harmonics * 0.3, 0, notice)
+  drawScope(outCanvas, DSP_THEME.boost.out, outAmp, phase + spread, harmonics, mode === 'drive' ? amount : 0, '')
 }
 
 let raf = 0
 let lastDraw = 0
+let stopResize = null
+const FRAME_MS = visualFrameMs()
 function loop (t) {
-  if (!lastDraw || t - lastDraw >= 33) {
+  if (!lastDraw || t - lastDraw >= FRAME_MS) {
     draw()
     lastDraw = t
   }
   raf = requestAnimationFrame(loop)
 }
-onMounted(() => { raf = requestAnimationFrame(loop) })
-onUnmounted(() => cancelAnimationFrame(raf))
+function start () {
+  if (raf) return
+  lastDraw = 0
+  raf = requestAnimationFrame(loop)
+}
+function stop () {
+  cancelAnimationFrame(raf)
+  raf = 0
+}
+function onVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) stop()
+  else start()
+}
+onMounted(() => {
+  start()
+  stopResize = observeCanvasResize([inCanvas, outCanvas], draw)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
+})
+onUnmounted(() => {
+  stop()
+  if (stopResize) stopResize()
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
+})
 </script>
 
 <style scoped>

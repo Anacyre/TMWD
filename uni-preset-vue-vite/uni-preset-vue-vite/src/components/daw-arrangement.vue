@@ -453,8 +453,8 @@ function onDrop (e) {
   z-index: 4;
 }
 .icon-btn {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 4px;
   display: flex;
   align-items: center;

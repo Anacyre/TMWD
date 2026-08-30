@@ -4,15 +4,17 @@
 #include <atomic>
 #include <vector>
 
-/*  One mixed stereo tap of the PC master bus, for remote playback.
+/*  One mixed stereo tap of the PC *pre-master* bus, for remote playback.
 
-    This is NOT per-track PCM.  BBCSO / Synchron / metronome have already been
-    summed by MixerEngine before anything is pushed here.
+    This is NOT per-track PCM and it is NOT the local master strip. Native VST
+    tracks have already been summed (gain, pan and track inserts) by
+    MixerEngine; the browser then applies return FX, the Mix-strip inserts and
+    the single master fader. Calling this after processMaster() would double-
+    apply master.
 
     Transport is deliberately not hard-coded.  WebGateway currently packs these
-    frames as WebSocket binary for the Phase 6 prototype; WebRTC (or another
-    browser-native path) can consume the same pullPacket() without changing
-    the audio thread.
+    frames as WebSocket binary; WebRTC (or another browser-native path) can
+    consume the same pullPacket() without changing the audio thread.
 */
 class RemoteAudioOutput
 {
@@ -30,7 +32,10 @@ public:
     void setEnabled (bool shouldBeEnabled) noexcept { enabled.store (shouldBeEnabled); }
     bool isEnabled() const noexcept                 { return enabled.load(); }
 
-    /** Audio thread.  Copies the mixed master bus.  Never allocates. */
+    /** Audio thread. Copies the pre-master summed bus. Never allocates. */
+    void pushPreMaster (const juce::AudioBuffer<float>& mix, int numSamples);
+
+    /** Alias kept so existing call sites compile; forwards to pushPreMaster. */
     void pushMaster (const juce::AudioBuffer<float>& master, int numSamples);
 
     /** Network / message thread.  Builds one packet; returns false if idle. */

@@ -37,6 +37,9 @@ private:
     void openProject();
     void saveProject (bool saveAs);
     void rememberRecent (const juce::File& file);
+    void loadRecentFiles();
+    void persistRecentFiles() const;
+    static juce::PropertiesFile::Options recentOptions();
     static void showStub (const juce::String& title, const juce::String& message);
 
     DawSession& session;

@@ -43,14 +43,19 @@
     </view>
 
     <view v-if="menu" class="drop menu-drop" @click.stop>
-      <view class="drop-item" @click="emitChange">Change plugin</view>
-      <view class="drop-item" @click="doReset">Reset</view>
+      <view class="drop-item" title="Change plugin" aria-label="Change plugin" @click="emitChange">
+        <daw-icon name="copy" :size="16" />
+      </view>
+      <view class="drop-item" title="Reset" aria-label="Reset" @click="doReset">
+        <daw-icon name="undo" :size="16" />
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
+import DawIcon from '../daw-icon.vue'
 import { session, closePlugin, openLiteSheet, isLite } from '../../store/session.js'
 import { laneFromOpen } from '../../model/web-mixer.js'
 
@@ -229,10 +234,12 @@ function emitChange () {
   height: 32px;
   display: flex;
   align-items: center;
+  justify-content: center;
   padding: 0 12px;
   font-size: 12px;
   color: var(--x-ink-2);
   cursor: pointer;
+  min-width: 44px;
 }
 .drop-item:hover { background: var(--x-panel-2); color: var(--x-ink); }
 .drop-item.on { color: var(--x-accent); }
@@ -251,5 +258,20 @@ function emitChange () {
   .preset { min-width: 0; max-width: none; flex: 1; height: 34px; }
   .ico { width: 34px; height: 34px; }
   .preset-drop { right: 0; left: 0; min-width: 0; }
+}
+
+@media (max-width: 430px) {
+  .name { letter-spacing: 0.1em; font-size: 12px; }
+  .ico { width: 40px; height: 40px; }
+}
+
+@media (max-width: 390px) {
+  .mark { font-size: 20px; }
+  .preset { height: 36px; }
+}
+
+@media (max-width: 360px) {
+  .bar { gap: 8px; }
+  .ico { width: 44px; height: 44px; }
 }
 </style>
