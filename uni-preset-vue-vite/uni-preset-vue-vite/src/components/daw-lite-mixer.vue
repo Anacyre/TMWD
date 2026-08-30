@@ -9,7 +9,8 @@
     <view class="body">
       <scroll-view
         class="rack"
-        scroll-x
+        :class="{ lock: mixDragging }"
+        :scroll-x="!mixDragging"
         :enable-flex="true"
         :show-scrollbar="true"
       >
@@ -30,8 +31,8 @@
                 orientation="vertical"
                 :model-value="track.volume"
                 @update:model-value="onVolume(track, $event)"
-                @drag-start="beginMixDrag(track, 'volume')"
-                @drag-end="endMixDrag(track, 'volume')"
+                @drag-start="onMixDragStart(track, 'volume')"
+                @drag-end="onMixDragEnd(track, 'volume')"
               />
             </view>
             <text class="db">{{ volumeLabel(track) }}</text>
@@ -43,8 +44,8 @@
                 :max="1"
                 title="Pan"
                 @update:model-value="onPan(track, $event)"
-                @drag-start="beginMixDrag(track, 'pan')"
-                @drag-end="endMixDrag(track, 'pan')"
+                @drag-start="onMixDragStart(track, 'pan')"
+                @drag-end="onMixDragEnd(track, 'pan')"
               />
               <text class="pan-lab">{{ formatPan(track.pan) }}</text>
             </view>
@@ -60,7 +61,17 @@
                 @click.stop="setTrackParameter(track, 'solo', !track.solo)"
               >S</view>
             </view>
-            <view class="fx-btn" @click.stop="openFx(track)">FX</view>
+            <view class="fx-block">
+              <view class="fx-btn" @click.stop="openFx(track)">FX</view>
+              <view class="dots">
+                <view
+                  v-for="n in 5"
+                  :key="'d' + track.id + n"
+                  class="dot"
+                  :class="{ on: slotLit(track, n - 1) }"
+                />
+              </view>
+            </view>
           </view>
         </view>
       </scroll-view>
@@ -93,14 +104,24 @@
             @click.stop="setTrackParameter(master, 'mute', !master.mute)"
           >M</view>
         </view>
-        <view class="fx-btn" @click.stop="openFx(master)">FX</view>
+        <view class="fx-block">
+          <view class="fx-btn" @click.stop="openFx(master)">FX</view>
+          <view class="dots">
+            <view
+              v-for="n in 5"
+              :key="'md' + n"
+              class="dot"
+              :class="{ on: slotLit(master, n - 1) }"
+            />
+          </view>
+        </view>
       </view>
     </view>
   </view>
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import DawFader from './daw-fader.vue'
 import DawKnob from './daw-knob.vue'
 import DawMeter from './daw-meter.vue'
@@ -116,7 +137,9 @@ import {
   ensureMixerAttached
 } from '../store/session.js'
 import { formatVolumeDb, formatPan, dbFromFader } from '../model/mixer-model.js'
-import { fxMeterLaneKey } from '../model/web-mixer.js'
+import { fxMeterLaneKey, laneInserts } from '../model/web-mixer.js'
+
+const mixDragging = ref(false)
 
 const laneChannels = computed(() => (
   session.tracks.filter((track) => track.type !== 'master')
@@ -175,6 +198,23 @@ function onVolume (track, value) {
 function onPan (track, value) {
   setTrackParameter(track, 'pan', value)
   flushTrackMix()
+}
+
+function slotLit (track, index) {
+  if (!track) return false
+  const lane = track.type === 'master' ? { type: 'master' } : { type: 'track', id: track.id }
+  const slot = laneInserts(session.webMixer, lane)[index]
+  return !!(slot && slot.pluginId && slot.enabled !== false)
+}
+
+function onMixDragStart (track, param) {
+  mixDragging.value = true
+  beginMixDrag(track, param)
+}
+
+function onMixDragEnd (track, param) {
+  mixDragging.value = false
+  endMixDrag(track, param)
 }
 
 function openFx (track) {
@@ -378,11 +418,31 @@ onMounted(() => {
 }
 .tog.on.mute { background: #c45c26; color: #fff; }
 .tog.on.solo { background: #2ea44f; color: #fff; }
+.fx-block {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
 .fx-btn {
   width: 100%;
   color: #c8c8c8;
   min-height: 34px;
 }
+.dots {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+}
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a3a3a;
+}
+.dot.on { background: #4da3ff; }
+.rack.lock { overflow: hidden; }
 @media (max-height: 640px) {
   .fader-row { min-height: 72px; max-height: 140px; }
   .vol { min-height: 72px; }

@@ -38,12 +38,41 @@
       </view>
     </view>
     <view class="right">
+      <view
+        class="hit"
+        :class="{ on: session.scaleSnap }"
+        title="Scale snap"
+        aria-label="Scale snap"
+        @click.stop="toggleScaleSnap"
+        @pointerdown.stop="onScaleHold"
+      >
+        <daw-icon name="scale" :size="22" :active="session.scaleSnap" />
+      </view>
       <view class="status" @click.stop="openSettings">
         <view class="led" :class="engineState()" />
       </view>
       <view class="hit" title="Audio settings" aria-label="Audio settings" @click.stop="openSettings">
         <daw-icon name="settings" :size="24" />
       </view>
+    </view>
+    <view v-if="session.audioBlocked" class="unlock" @click.stop="unlockAudioForUser">
+      <text>Tap to enable sound</text>
+    </view>
+    <view v-if="session.scaleMenuOpen" class="scale-menu" @click.stop>
+      <view
+        v-for="key in KEY_NAMES"
+        :key="key"
+        class="item"
+        :class="{ on: session.scaleKey === key }"
+        @click="setScaleKeyName(key, session.scaleName)"
+      >{{ key }}</view>
+      <view
+        v-for="name in SCALE_NAMES"
+        :key="name"
+        class="item"
+        :class="{ on: session.scaleName === name }"
+        @click="setScaleKeyName(session.scaleKey, name); session.scaleMenuOpen = false"
+      >{{ name }}</view>
     </view>
   </view>
 </template>
@@ -63,8 +92,12 @@ import {
   openSettings,
   engineState,
   saveProjectLocal,
-  openProjects
+  openProjects,
+  toggleScaleSnap,
+  setScaleKeyName,
+  unlockAudioForUser
 } from '../store/session.js'
+import { KEY_NAMES, SCALE_NAMES } from '../model/note-model.js'
 
 const positionDisplay = computed(() => (
   session.positionFormat === 'time' ? secondsText.value : positionText.value
@@ -72,6 +105,15 @@ const positionDisplay = computed(() => (
 
 function toggleFormat () {
   setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
+}
+
+function onScaleHold (e) {
+  const timer = setTimeout(() => { session.scaleMenuOpen = true }, 420)
+  const clear = () => {
+    clearTimeout(timer)
+    window.removeEventListener('pointerup', clear)
+  }
+  window.addEventListener('pointerup', clear)
 }
 </script>
 
@@ -94,7 +136,34 @@ function toggleFormat () {
   z-index: 1;
 }
 .left { width: 92px; }
-.right { width: 76px; justify-content: flex-end; }
+.right { width: 112px; justify-content: flex-end; }
+.hit.on { color: #4da3ff; }
+.unlock {
+  position: absolute;
+  left: 50%;
+  top: calc(100% + 4px);
+  transform: translateX(-50%);
+  z-index: 8;
+  background: #2b2b2b;
+  color: #e6e6e6;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+.scale-menu {
+  position: absolute;
+  right: 8px;
+  top: calc(100% + 4px);
+  z-index: 9;
+  background: #161616;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  max-height: 240px;
+  overflow: auto;
+  min-width: 88px;
+}
+.scale-menu .item { padding: 8px 12px; color: #e6e6e6; font-size: 12px; }
+.scale-menu .item.on { background: #2b2b2b; }
 .center {
   flex: 1;
   min-width: 0;

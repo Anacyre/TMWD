@@ -84,6 +84,15 @@ export function sampleArticulation (sample) {
   return sample.articulation || 'long'
 }
 
+/** Accept published loop points from v2+ manifests. Reject short or low-score loops. */
+export function acceptManifestLoop (sample, rules = PLAYBACK) {
+  if (!sample || !sample.loop) return false
+  if (!(sample.loopEnd > sample.loopStart)) return false
+  if ((sample.loopEnd - sample.loopStart) < (rules.minLoopSec || 1.45)) return false
+  if (sample.loopScore != null && sample.loopScore < (rules.minLoopCorrelation || 0.38)) return false
+  return true
+}
+
 export function targetDynamics (cc1, velocity, mix = PLAYBACK.dynamicsVelocityMix) {
   const dyn = Math.max(1, Math.min(127, cc1 || 100))
   const vel = Math.max(1, Math.min(127, velocity || 100))

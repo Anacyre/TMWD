@@ -1,6 +1,6 @@
 /* Pointer drag contract: capture, filtering by pointer id, and zero-size guards. */
 
-import { beginPointerDrag, trackRatio, clamp } from './pointer-drag.js'
+import { beginPointerDrag, trackRatio, clamp, relativeFromDelta, RELATIVE_TRAVEL_PX } from './pointer-drag.js'
 
 function assert (ok, message) {
   if (!ok) throw new Error(message)
@@ -99,6 +99,12 @@ globalThis.window = win
   assert(clamp(2, 0, 1) === 1, 'above range clamps to max')
   assert(clamp(-2, 0, 1) === 0, 'below range clamps to min')
   assert(clamp(0.4, 0, 1) === 0.4, 'in-range values pass through')
+}
+
+{
+  assert(relativeFromDelta(0.5, 130, 1, 260, true) === 0, 'relative fader down from mid reaches zero over 260px')
+  assert(relativeFromDelta(-1, 80, 2, 260, false) > -1, 'a knob at 100L can leave -1 by dragging up')
+  assert(RELATIVE_TRAVEL_PX >= 220, 'travel is damped like a 220–280px knob')
 }
 
 console.log('pointer-drag ok')

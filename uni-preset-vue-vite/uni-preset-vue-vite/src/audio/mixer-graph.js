@@ -181,6 +181,11 @@ function setRouting (graph, mode, error, extra = {}) {
  * Dry emergency path. Only legal when the graph has no inserts — otherwise a
  * failed worklet would play the mix as if every plugin had been removed.
  */
+function applyLaneGain (lane, value) {
+  if (!lane || !lane.gain) return
+  lane.gain.gain.value = value
+}
+
 function wireDryBypass (graph, error) {
   safeDisconnect(graph.remoteGain)
   safeDisconnect(graph.samplerGain)
@@ -190,11 +195,38 @@ function wireDryBypass (graph, error) {
   graph.master.connect(graph.context.destination)
   if (graph.master.gain) graph.master.gain.value = 1
   if (graph.trackLanes) {
-    graph.trackLanes.forEach((lane) => wireLane(graph, lane, ROUTING_DIRECT))
+    graph.trackLanes.forEach((lane) => {
+      wireLane(graph, lane, ROUTING_DIRECT)
+      applyLaneGain(lane, 1)
+    })
   }
   setRouting(graph, error ? ROUTING_FALLBACK : ROUTING_DIRECT, error, {
     muted: false,
     bypassReason: error ? 'fx-attach-failed-dry' : ''
+  })
+}
+
+/** Restore fader/pan when the FX worklet is missing so removing inserts can unmute. */
+export function syncDirectLaneGains (graph, tracks = [], options = {}) {
+  if (!graph || !graph.context) return
+  const list = tracks || []
+  const localPlayback = !!options.localPlayback
+  const masterTrack = list.find((track) => track.type === 'master')
+  const masterMute = !!(options.webMixer && options.webMixer.master && options.webMixer.master.mute)
+  const masterDb = options.webMixer && options.webMixer.master && options.webMixer.master.volumeDb != null
+    ? options.webMixer.master.volumeDb
+    : dbFromFader(masterTrack ? masterTrack.volume : 0.8)
+  const masterAudible = masterTrack ? !masterTrack.mute && !masterMute : !masterMute
+  if (graph.master && graph.master.gain) graph.master.gain.value = masterAudible ? dbToGain(masterDb) : 0
+
+  list.filter((track) => isWebOwnedTrack(track, { localPlayback })).forEach((track) => {
+    const lane = ensureTrackLane(graph, track.id)
+    if (!lane) return
+    const gain = laneVolumeGain(track, list)
+    applyLaneGain(lane, gain)
+    if (lane.pan && lane.pan.pan) {
+      lane.pan.pan.value = Math.min(1, Math.max(-1, Number(track.pan) || 0))
+    }
   })
 }
 
@@ -327,11 +359,15 @@ export function detachMixerGraph (graph) {
 }
 
 /** Reconnect a safe path when mixer nodes are missing (HMR, device switch). */
-export function ensureOutputRouting (graph, webMixer) {
+export function ensureOutputRouting (graph, webMixer, tracks = [], options = {}) {
   if (!graph || !graph.context || !graph.master) return
   if (graph.mixerNodes) return
+  const mixer = webMixer || graph.lastMixer
   const error = graph.routing ? graph.routing.error : ''
-  recoverFromAttachFailure(graph, error, webMixer || graph.lastMixer)
+  recoverFromAttachFailure(graph, error, mixer)
+  if (!graph.routing || !graph.routing.muted) {
+    syncDirectLaneGains(graph, tracks, { ...options, webMixer: mixer })
+  }
 }
 
 export function routingSnapshot (graph) {
@@ -401,8 +437,13 @@ function syncLaneStrip (graph, lane, ctx, opts) {
 }
 
 export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
-  if (!graph || !graph.mixerNodes || !webMixer) return
+  if (!graph || !webMixer) return
   graph.lastMixer = webMixer
+  if (!graph.mixerNodes) {
+    if (mixerHasInserts(webMixer) && graph.routing && graph.routing.muted) return
+    syncDirectLaneGains(graph, tracks, { ...options, webMixer })
+    return
+  }
   const ctx = graph.context
   const nodes = graph.mixerNodes
   const localPlayback = !!options.localPlayback

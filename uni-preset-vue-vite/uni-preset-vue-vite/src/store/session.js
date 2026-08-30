@@ -13,7 +13,7 @@ import { canAddInsert, dbFromFader, CONTROL_HZ, defaultSends, normalizeSends, de
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
-import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts } from '../audio/mixer-graph.js'
+import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains } from '../audio/mixer-graph.js'
 import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
 import {
   putProject,
@@ -48,7 +48,7 @@ import {
   writeLiteHintDismissed,
   isLiteMode
 } from '../model/ui-mode.js'
-import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, controllerIdForCc } from '../model/expression-lane.js'
+import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock } from '../model/expression-lane.js'
 import {
   M_ORCHESTRA_PLUGIN_ID,
   M_ORCHESTRA_DEFAULT_ID,
@@ -125,6 +125,7 @@ export const session = reactive({
   projectId: '',
   projectName: starterDemo.projectName,
   projectManagerOpen: false,
+  audioBlocked: false,
   userName: 'xiaofish',
   unsaved: false,
   playing: false,
@@ -165,6 +166,13 @@ export const session = reactive({
   settingsOpen: false,
   expressionOpen: false,
   expressionCc: 1,
+  expressionLane: 'expression',
+  expressionHeight: 140,
+  scaleGuide: true,
+  scaleSnap: true,
+  scaleKey: 'C',
+  scaleName: 'major',
+  scaleMenuOpen: false,
   positionFormat: 'musical',
   saveStatus: '',
   typing: false,
@@ -408,7 +416,12 @@ function mixerGraphOptions () {
 }
 
 function refreshMixerGraph () {
-  if (audioGraph) syncMixerGraph(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+  if (audioGraph) {
+    syncMixerGraph(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+    if (!audioGraph.mixerNodes) {
+      ensureOutputRouting(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+    }
+  }
   publishRoutingDiagnostics(audioGraph)
 }
 
@@ -745,7 +758,7 @@ async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
 export async function play () {
   if (session.playing) return
   session.playing = true
-  const graph = await unlockAudio()
+  const graph = await unlockAudioForUser()
   if (graph) {
     await Promise.race([
       prefetchOrchestraWindow(graph, session.positionBeats),
@@ -876,7 +889,12 @@ export function setProjectName (name) {
 }
 
 export function openInstrumentPicker (trackIndex) {
-  openPluginPicker (trackIndex)
+  openPluginPicker(trackIndex)
+}
+
+export function openNewTrackPicker () {
+  session.instrumentPickerMode = 'new-track'
+  session.instrumentPickerTrack = -2
 }
 
 export function openPluginPicker (trackOrIndex) {
@@ -947,6 +965,11 @@ export function insertPlugin (track, pluginId) {
     return
   }
   if (pluginId === ORCHESTRA_SAMPLER_PLUGIN_ID) {
+    if (!isEngineConnected()) {
+      showToast('需要电脑上的 DawWeb 引擎')
+      track.loadMessage = '需要电脑上的 DawWeb 引擎'
+      return
+    }
     openOrchestraPatchPicker(index >= 0 ? index : session.selectedTrack)
     return
   }
@@ -975,7 +998,7 @@ export function insertPlugin (track, pluginId) {
 }
 
 export function listInsertablePlugins () {
-  return insertablePlugins({ includeWebSampler: true })
+  return insertablePlugins({ includeWebSampler: true, engineConnected: isEngineConnected() })
 }
 
 export async function addTrack (type = 'audio', customName = '') {
@@ -1363,6 +1386,7 @@ export function catalogueByCategory () {
 }
 
 export function orchestraPatchCatalogue () {
+  const connected = isEngineConnected()
   return catalogueByCategory()
     .map((group) => ({
       ...group,
@@ -1374,9 +1398,27 @@ export function orchestraPatchCatalogue () {
           && plugin !== M_ORCHESTRA_PLUGIN_ID
           && plugin !== TEST_SYNTH_PLUGIN_ID
           && !id.startsWith('m_orch_')
+      }).map((item) => {
+        const id = String(item.id || '')
+        const plugin = String(item.sourcePlugin || '')
+        const vst = needsPcEngine(id) || /bbcso|synchron|orchestra sampler/i.test(plugin + ' ' + (item.displayName || ''))
+        if (!vst) return { ...item, requiresEngine: false }
+        return {
+          ...item,
+          available: connected,
+          requiresEngine: true,
+          sourcePlugin: connected ? (item.sourcePlugin || '') : '需要电脑上的 DawWeb 引擎'
+        }
       })
     }))
     .filter((group) => group.items.length && group.category !== 'Browser' && group.category !== 'M Orchestra' && group.category !== 'Internal')
+}
+
+export function needsPcEngine (definitionId) {
+  if (!definitionId) return false
+  if (definitionId === 'web_sampler') return false
+  if (String(definitionId).startsWith('m_orch_') || definitionId === M_ORCHESTRA_PLUGIN_ID) return false
+  return true
 }
 
 export function loadInstrument (track, definitionId) {
@@ -1389,7 +1431,21 @@ export function loadInstrument (track, definitionId) {
     loadCloudOrchestra(track, definitionId === M_ORCHESTRA_PLUGIN_ID ? M_ORCHESTRA_DEFAULT_ID : definitionId)
     return
   }
-  fire('instrument.load', { trackId: track.id, definitionId })
+  if (!isEngineConnected()) {
+    showToast('BBCSO / Synchron need the DawWeb engine on the PC')
+    track.loadMessage = 'Requires PC engine'
+    track.instrumentLoadMessage = 'Requires PC engine'
+    return
+  }
+  fire('instrument.load', { trackId: track.id, definitionId }).then((reply) => {
+    if (!reply) {
+      showToast('Instrument load failed — is the PC engine connected?')
+      return
+    }
+    startRemoteAudio().catch((err) => {
+      showToast(err.message || 'Remote audio failed after instrument load')
+    })
+  })
 }
 
 export function loadCloudOrchestra (track, definitionId) {
@@ -1780,7 +1836,33 @@ export function dismissLiteHint () {
 
 export function setExpressionOpen (open, cc) {
   session.expressionOpen = !!open
-  if (cc === 1 || cc === 11) session.expressionCc = cc
+  if (cc === 1 || cc === 11) {
+    session.expressionCc = cc
+    session.expressionLane = cc === 11 ? 'expression' : 'dynamics'
+  }
+}
+
+export function setExpressionLane (lane) {
+  session.expressionLane = lane || 'expression'
+  session.expressionOpen = true
+  if (lane === 'expression') session.expressionCc = 11
+  else if (lane === 'dynamics') session.expressionCc = 1
+}
+
+export function setExpressionHeight (height) {
+  session.expressionHeight = Math.min(280, Math.max(72, Math.round(height)))
+}
+
+export function toggleScaleSnap () {
+  session.scaleSnap = !session.scaleSnap
+  session.scaleGuide = true
+}
+
+export function setScaleKeyName (key, name) {
+  if (key) session.scaleKey = key
+  if (name) session.scaleName = name
+  session.score.key = session.scaleKey
+  session.score.scale = session.scaleName
 }
 
 export function paintClipExpression (clip, cc, t, v) {
@@ -1797,6 +1879,58 @@ export function eraseClipExpression (clip, cc, t) {
   const key = laneKey(cc)
   expr[key] = eraseNear(expr[key], t)
   markDirty()
+}
+
+export function addClipExpressionPoint (clip, cc, t, v) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr[laneKey(cc)] = addLanePoint(expr[laneKey(cc)], Math.max(0, t), v)
+  markDirty()
+}
+
+export function moveClipExpressionPoint (clip, cc, index, t, v) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr[laneKey(cc)] = moveLanePoint(expr[laneKey(cc)], index, Math.max(0, t), v)
+  markDirty()
+}
+
+export function deleteClipExpressionPoint (clip, cc, index) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr[laneKey(cc)] = deleteLanePoint(expr[laneKey(cc)], index)
+  markDirty()
+}
+
+export function addClipSustain (clip, startTick, endTick) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr.cc64 = addSustainBlock(expr.cc64, startTick, endTick)
+  markDirty()
+}
+
+export function moveClipSustain (clip, index, startTick, endTick) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr.cc64 = moveSustainBlock(expr.cc64, index, startTick, endTick)
+  markDirty()
+}
+
+export function deleteClipSustain (clip, index) {
+  if (!clip) return
+  const expr = ensureExpression(clip)
+  expr.cc64 = deleteSustainBlock(expr.cc64, index)
+  markDirty()
+}
+
+export function toggleInsertEnabled (lane, index) {
+  const list = laneInserts(session.webMixer, lane).slice()
+  const insert = list[index]
+  if (!insert) return
+  insert.enabled = insert.enabled === false
+  setLaneInserts(session.webMixer, lane, list)
+  syncTrackInsertMeta(lane)
+  persistWebMixer()
 }
 
 let expressionRaf = 0
@@ -1827,6 +1961,15 @@ function applyExpressionAtPlayhead (nowMs) {
       lastExpressionSent.set(key, value)
       setController(track, id, value)
     })
+    if (expr.cc64 && expr.cc64.length) {
+      const value = sampleSustain(expr.cc64, t) / 127
+      const key = track.id + ':pedal'
+      const prev = lastExpressionSent.get(key)
+      if (prev == null || Math.abs(prev - value) >= 0.02) {
+        lastExpressionSent.set(key, value)
+        setController(track, 'pedal', value)
+      }
+    }
   })
 }
 
@@ -2135,6 +2278,25 @@ export function toggleTrackInSelection (track) {
   session.selectedTrackIds = ids
   session.selectedTrack = session.tracks.indexOf(track)
   session.activeTrackId = track.id
+}
+
+export function assignTrackToGroup (trackId, groupId) {
+  const track = session.tracks.find((item) => item.id === trackId)
+  const group = session.tracks.find((item) => item.id === groupId)
+  if (!track || !group || track.type === 'master' || !isGroupTrack(group)) return
+  if (track.id === group.id) return
+  beginEdit('Assign to group')
+  track.parentId = group.id
+  markDirty()
+  endEdit()
+}
+
+export function ungroupTrack (track) {
+  if (!track || !track.parentId) return
+  beginEdit('Ungroup track')
+  track.parentId = 0
+  markDirty()
+  endEdit()
 }
 
 export function setTrackCollapsed (track, collapsed) {
@@ -2491,10 +2653,23 @@ export async function rebuildAudioGraph () {
   return unlockAudio()
 }
 
-if (typeof navigator !== 'undefined' && navigator.mediaDevices && typeof navigator.mediaDevices.addEventListener === 'function') {
-  navigator.mediaDevices.addEventListener('devicechange', () => {
-    rebuildAudioGraph().catch(() => {})
-  })
+export function audioContextState () {
+  return audioGraph && audioGraph.context ? audioGraph.context.state : ''
+}
+
+export async function unlockAudioForUser () {
+  const graph = ensureGraph()
+  if (!graph) return null
+  try {
+    if (graph.context.state === 'suspended' || graph.context.state === 'interrupted') {
+      await graph.context.resume()
+    }
+    session.audioBlocked = graph.context.state !== 'running'
+  } catch (err) {
+    session.audioBlocked = true
+    showToast('Tap again to enable sound')
+  }
+  return unlockAudio()
 }
 
 if (typeof import.meta !== 'undefined' && import.meta.hot) {
@@ -2510,13 +2685,14 @@ if (typeof import.meta !== 'undefined' && import.meta.hot) {
 async function unlockAudio () {
   const graph = ensureGraph()
   if (!graph) return null
-  if (graph.context.state === 'suspended') {
+  if (graph.context.state === 'suspended' || graph.context.state === 'interrupted') {
     try { await graph.context.resume() } catch (err) { /* autoplay policy */ }
   }
+  session.audioBlocked = graph.context.state !== 'running'
   ensureClickBuffer()
   try {
     await ensureMixerAttached()
-    ensureOutputRouting(graph, session.webMixer)
+    ensureOutputRouting(graph, session.webMixer, session.tracks, mixerGraphOptions())
     refreshMixerGraph()
     session.tracks.forEach((track) => {
       if (track.source === 'm-orchestra' && track.definitionId) {
@@ -2877,11 +3053,18 @@ export async function runLatencyMeasure () {
 
 export function persistWebMixer () {
   const opts = mixerGraphOptions()
-  if (audioGraph && audioGraph.mixerNodes) {
-    syncMixerGraph(audioGraph, session.webMixer, session.tracks, opts)
-  }
+  refreshMixerGraph()
   ensureMixerAttached().then((graph) => {
-    if (graph && graph.mixerNodes) syncMixerGraph(graph, session.webMixer, session.tracks, opts)
+    if (!graph) return
+    if (graph.mixerNodes) syncMixerGraph(graph, session.webMixer, session.tracks, opts)
+    else {
+      ensureOutputRouting(graph, session.webMixer, session.tracks, opts)
+      if (!mixerHasInserts(session.webMixer)) {
+        syncDirectLaneGains(graph, session.tracks, { ...opts, webMixer: session.webMixer })
+      }
+    }
+  }).catch(() => {
+    if (audioGraph) ensureOutputRouting(audioGraph, session.webMixer, session.tracks, opts)
   })
   if (persistTimer) clearTimeout(persistTimer)
   persistTimer = setTimeout(() => {
@@ -3065,6 +3248,12 @@ export function removeInsert (lane, index) {
   setLaneInserts(session.webMixer, lane, list)
   syncTrackInsertMeta(lane)
   persistWebMixer()
+  if (!mixerHasInserts(session.webMixer) && audioGraph) {
+    ensureOutputRouting(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+    syncDirectLaneGains(audioGraph, session.tracks, { ...mixerGraphOptions(), webMixer: session.webMixer })
+    mixerAttachPromise = null
+    ensureMixerAttached().catch(() => {})
+  }
   if (session.openPlugin && session.openPlugin.index === index) closePlugin()
 }
 

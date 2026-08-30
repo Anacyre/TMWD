@@ -23,7 +23,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { beginPointerDrag, trackRatio, clamp } from '../lib/pointer-drag.js'
+import { beginPointerDrag, clamp, relativeFromDelta, RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
@@ -54,12 +54,6 @@ const capStyle = computed(() => (
     : { left: `calc(${percent.value}% - 7px)` }
 ))
 
-function element () {
-  const node = root.value
-  if (!node) return null
-  return node.$el || node
-}
-
 function commit (value) {
   const next = clamp(value, props.min, props.max)
   if (next === props.modelValue) return
@@ -71,20 +65,18 @@ function nudge (steps) {
   commit(props.modelValue + steps * increment)
 }
 
-function applyRatio (event, target) {
-  const t = trackRatio(event, target, props.orientation)
-  // A zero-height container used to yield NaN here and left the fader stuck.
-  if (t === null) return
-  commit(props.min + t * span.value)
-}
-
 function onPointerDown (event) {
   if (props.disabled) return
-  const target = element() || event.currentTarget
-  applyRatio(event, target)
+  const startValue = props.modelValue
+  const vertical = props.orientation === 'vertical'
+  const start = vertical ? event.clientY : event.clientX
   emit('drag-start')
   beginPointerDrag(event, {
-    onMove: (ev) => applyRatio(ev, target),
+    onMove: (ev) => {
+      const now = vertical ? ev.clientY : ev.clientX
+      const fine = ev.shiftKey ? 0.35 : 1
+      commit(relativeFromDelta(startValue, (now - start) * fine, span.value, RELATIVE_TRAVEL_PX, vertical))
+    },
     onEnd: () => emit('drag-end')
   })
 }

@@ -59,6 +59,9 @@
       <view v-else-if="name === 'upload'" class="download up" />
       <view v-else-if="name === 'power'" class="power" />
       <view v-else-if="name === 'dot'" class="status-dot" />
+      <view v-else-if="name === 'scale'" class="scale-icon">
+        <view /><view /><view />
+      </view>
     </view>
   </view>
 </template>
@@ -533,6 +536,23 @@ const boxStyle = computed(() => {
   background: currentColor;
   transform: translateX(-50%);
 }
+.scale-icon {
+  left: 50%;
+  top: 50%;
+  width: 0.62em;
+  height: 0.56em;
+  transform: translate(-50%, -50%);
+}
+.scale-icon view {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.08em;
+  background: currentColor;
+}
+.scale-icon view:nth-child(1) { top: 0.04em; }
+.scale-icon view:nth-child(2) { top: 0.24em; }
+.scale-icon view:nth-child(3) { top: 0.44em; }
 .status-dot {
   left: 50%;
   top: 50%;

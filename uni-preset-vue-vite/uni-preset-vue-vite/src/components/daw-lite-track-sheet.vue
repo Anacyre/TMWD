@@ -6,7 +6,11 @@
     @close="closeLiteSheet"
   >
     <view v-if="tab === 'sampler'" class="os noscroll">
-      <view class="swap" @click.stop="changeInstrument">Change plugin</view>
+      <view class="icon-row">
+        <view class="icon-hit" aria-label="Change plugin" @click.stop="changeInstrument">
+          <daw-icon name="copy" :size="18" />
+        </view>
+      </view>
       <daw-m-orchestra v-if="mOrchestra" />
       <daw-orchestra-sampler v-else />
     </view>
@@ -17,20 +21,28 @@
           v-for="(slot, index) in slots"
           :key="'s' + index"
           class="fx-row"
-          @click.stop="onSlot(index, slot)"
-          @pointerdown.stop="onFxHold(index, slot, $event)"
         >
-          <text class="fx-name">{{ slotLabel(slot) }}</text>
-          <text class="fx-go">{{ slot ? 'Open' : '+' }}</text>
-        </view>
-        <view v-if="canAdd" class="fx-row add" @click.stop="showPicker">
-          <text class="fx-name">+</text>
+          <view class="fx-main" @click.stop="onSlot(index, slot)">
+            <text class="fx-name">{{ slotLabel(slot) }}</text>
+            <view v-if="!slot" class="icon-hit" aria-label="Add effect">
+              <daw-icon name="plus" :size="16" />
+            </view>
+            <view v-else class="icon-hit" aria-label="Open effect">
+              <daw-icon name="chevron-right" :size="16" />
+            </view>
+          </view>
+          <view
+            v-if="slot"
+            class="icon-hit"
+            :class="{ dim: slot.enabled === false }"
+            aria-label="Bypass"
+            @click.stop="toggleInsertEnabled(lane, index)"
+          >
+            <daw-icon name="power" :size="16" :active="slot.enabled !== false" />
+          </view>
         </view>
       </template>
       <view v-else class="picks">
-        <view class="fx-row add" @click.stop="picker = false">
-          <text class="fx-name">Back</text>
-        </view>
         <view
           v-for="plugin in catalogue"
           :key="plugin.id"
@@ -47,6 +59,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import DawLiteSheet from './daw-lite-sheet.vue'
+import DawIcon from './daw-icon.vue'
 import DawOrchestraSampler from './daw-orchestra-sampler.vue'
 import DawMOrchestra from './daw-m-orchestra.vue'
 import {
@@ -57,10 +70,11 @@ import {
   replaceInsert,
   openPlugin,
   openPluginPicker,
-  listPlugins
+  listPlugins,
+  toggleInsertEnabled
 } from '../store/session.js'
 import { laneInserts, MIXER_INSERT_SLOTS } from '../model/web-mixer.js'
-import { PLUGIN_SHORT, canAddInsert } from '../model/mixer-model.js'
+import { PLUGIN_SHORT } from '../model/mixer-model.js'
 import { plugins } from '../dsp/registry.js'
 import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
 
@@ -84,7 +98,6 @@ const slots = computed(() => {
   return Array.from({ length: MIXER_INSERT_SLOTS }, (_, i) => list[i] || null)
 })
 
-const canAdd = computed(() => canAddInsert(slots.value))
 const catalogue = computed(() => listPlugins())
 const mOrchestra = computed(() => isMOrchestraTrack(track.value))
 const title = computed(() => {
@@ -98,36 +111,18 @@ watch(() => session.liteSheet, (sheet) => {
 }, { immediate: true })
 
 function slotLabel (slot) {
-  if (!slot) return '+'
+  if (!slot) return 'Empty'
   return PLUGIN_SHORT[slot.pluginId] || (plugins[slot.pluginId] && plugins[slot.pluginId].name) || 'FX'
-}
-
-function showPicker () {
-  picker.value = true
 }
 
 function onSlot (index, slot) {
   if (!slot) {
-    showPicker()
+    picker.value = true
+    if (session.liteSheet) session.liteSheet.replaceIndex = index
     return
   }
   closeLiteSheet()
   openPlugin(lane.value, index)
-}
-
-function onFxHold (index, slot, e) {
-  if (!slot) return
-  const timer = setTimeout(() => {
-    picker.value = true
-    session.liteSheet = { ...(session.liteSheet || {}), picker: true, replaceIndex: index, tab: 'fx' }
-  }, 450)
-  const clear = () => {
-    clearTimeout(timer)
-    window.removeEventListener('pointerup', clear)
-    window.removeEventListener('pointermove', clear)
-  }
-  window.addEventListener('pointerup', clear)
-  window.addEventListener('pointermove', clear)
 }
 
 function choose (pluginId) {
@@ -152,25 +147,33 @@ function changeInstrument () {
   min-height: 48px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
   padding: 0 4px;
   border-bottom: 1px solid #242424;
   color: #e6e6e6;
   font-size: 15px;
 }
-.fx-row.add { color: #c8c8c8; }
-.fx-go { color: #8d8d8d; font-size: 18px; }
-.picks { margin-top: 0; }
-.os { min-height: 320px; }
-.swap {
-  min-height: 40px;
-  margin-bottom: 8px;
-  border-radius: 8px;
-  background: #2a2a2a;
-  color: #e6e6e6;
+.fx-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.fx-name { flex: 1; min-width: 0; }
+.icon-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }
+.icon-hit {
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 14px;
+  color: #c8c8c8;
+  background: #2b2b2b;
+  border-radius: 8px;
+  flex-shrink: 0;
 }
+.icon-hit.dim { opacity: 0.35; }
+.picks { margin-top: 0; }
+.os { min-height: 320px; }
 </style>

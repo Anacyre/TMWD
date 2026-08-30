@@ -135,6 +135,16 @@ export function isScalePitch (pitch, key = 'C', scale = 'major') {
   return scalePitchClasses(key, scale).has(((pitch % 12) + 12) % 12)
 }
 
+export function snapPitchToScale (pitch, key = 'C', scale = 'major') {
+  const n = Math.round(pitch)
+  if (isScalePitch(n, key, scale)) return n
+  for (let d = 1; d <= 6; d++) {
+    if (isScalePitch(n + d, key, scale)) return n + d
+    if (isScalePitch(n - d, key, scale)) return n - d
+  }
+  return n
+}
+
 export function repeatIntervalTicks (repeatMode) {
   const found = REPEAT_MODES.find((item) => item.id === repeatMode)
   return found ? Math.round(found.ticks) : 0

@@ -2,7 +2,7 @@
   <view v-if="session.instrumentPickerTrack >= 0" class="mask" @click="closeInstrumentPicker">
     <view class="dialog" :class="{ plugins: isPlugin }" @click.stop>
       <view class="head">
-        <text>{{ isPlugin ? 'Insert Plugin' : 'Instrument' }}</text>
+        <text>{{ isNewTrack ? 'Add track' : (isPlugin ? 'Insert Plugin' : 'Instrument') }}</text>
         <view class="icon-btn" @click="closeInstrumentPicker">×</view>
       </view>
       <input class="search" placeholder="Search..." :value="query" @input="query = $event.target.value">
@@ -11,7 +11,7 @@
           v-for="item in pluginItems"
           :key="item.id"
           class="plugin"
-          :class="{ on: selected && selected.id === item.id }"
+          :class="{ on: selected && selected.id === item.id, dim: item.available === false }"
           @click="onPluginTap(item)"
           @dblclick="choosePlugin(item)"
         >
@@ -39,13 +39,13 @@
             @dblclick="choosePatch(item)"
           >
             <text>{{ item.displayName }}</text>
-            <text class="src">{{ item.available ? (item.sourcePlugin || '') : 'unavailable' }}</text>
+            <text class="src">{{ item.available === false ? (item.sourcePlugin || '需要电脑上的 DawWeb 引擎') : (item.sourcePlugin || '') }}</text>
           </view>
         </scroll-view>
       </view>
       <view class="foot">
         <text class="hint">{{ hint }}</text>
-        <view class="btn" @click="confirm">{{ isPlugin ? 'Insert' : 'Select' }}</view>
+        <view class="btn" @click="confirm">{{ isNewTrack ? 'Add' : (isPlugin ? 'Insert' : 'Select') }}</view>
       </view>
     </view>
   </view>
@@ -61,13 +61,16 @@ import {
   loadInstrument,
   closeInstrumentPicker,
   openPluginUI,
-  isLite
+  isLite,
+  addTrack,
+  showToast
 } from '../store/session.js'
 
 const query = ref('')
 const category = ref(0)
 const selected = ref(null)
 
+const isNewTrack = computed(() => session.instrumentPickerMode === 'new-track')
 const isPlugin = computed(() => session.instrumentPickerMode !== 'orchestra-patch')
 
 const pluginItems = computed(() => {
@@ -102,9 +105,31 @@ watch(() => session.instrumentPickerMode, () => {
   selected.value = isPlugin.value ? (pluginItems.value[0] || null) : null
 })
 
+async function createTrackFromPlugin (item) {
+  if (!item) return
+  if (item.available === false) {
+    showToast(item.detail || '需要电脑上的 DawWeb 引擎')
+    return
+  }
+  const kind = item.id === 'web_sampler' ? 'web-sampler' : 'midi'
+  const index = await addTrack(kind, item.displayName || 'Track')
+  const track = session.tracks[index]
+  if (track) insertPlugin(track, item.id)
+  closeInstrumentPicker()
+}
+
 function choosePlugin (item) {
+  if (!item) return
+  if (item.available === false) {
+    showToast(item.detail || '需要电脑上的 DawWeb 引擎')
+    return
+  }
+  if (isNewTrack.value) {
+    createTrackFromPlugin(item)
+    return
+  }
   const track = session.tracks[session.instrumentPickerTrack]
-  if (!item || !track) return
+  if (!track) return
   insertPlugin(track, item.id)
 }
 
@@ -119,8 +144,13 @@ function onPatchTap (item) {
 }
 
 function choosePatch (item) {
+  if (!item) return
+  if (item.available === false || item.requiresEngine && !item.available) {
+    showToast(item.sourcePlugin || '需要电脑上的 DawWeb 引擎')
+    return
+  }
   const track = session.tracks[session.instrumentPickerTrack]
-  if (!item || !track) return
+  if (!track) return
   loadInstrument(track, item.id)
   closeInstrumentPicker()
   openPluginUI(session.tracks.indexOf(track))
@@ -145,7 +175,7 @@ function confirm () {
   box-sizing: border-box;
 }
 .dialog {
-  width: min(560px, 100%);
+  width: min(400px, 100%);
   height: min(420px, 78vh);
   background: #161616;
   border: 1px solid #2a2a2a;

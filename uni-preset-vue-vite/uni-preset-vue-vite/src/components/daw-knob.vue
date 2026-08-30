@@ -35,8 +35,10 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
+import { RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
+
 // Full travel over this many pixels of vertical drag.
-const DRAG_PIXELS = 140
+const DRAG_PIXELS = RELATIVE_TRAVEL_PX
 
 const span = computed(() => (props.max - props.min) || 1)
 
@@ -60,14 +62,17 @@ function onPointerDown (event) {
   const startY = event.clientY
   const startValue = props.modelValue
   emit('drag-start')
+  if (typeof document !== 'undefined') document.documentElement.classList.add('daw-pointer-lock')
   beginPointerDrag(event, {
     onMove: (ev) => {
-      // Shift narrows the travel so a fine pan setting is reachable on a phone.
       const scale = ev.shiftKey ? 0.2 : 1
       const delta = (startY - ev.clientY) / DRAG_PIXELS
       commit(startValue + delta * span.value * scale)
     },
-    onEnd: () => emit('drag-end')
+    onEnd: () => {
+      if (typeof document !== 'undefined') document.documentElement.classList.remove('daw-pointer-lock')
+      emit('drag-end')
+    }
   })
 }
 

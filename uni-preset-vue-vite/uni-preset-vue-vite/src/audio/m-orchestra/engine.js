@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
-import { playbackFrom } from './playback.js'
+import { playbackFrom, acceptManifestLoop as acceptPublishedLoop } from './playback.js'
 import { pickLayer, pickSample as pickFromManifest } from './pick.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
 import { trackInputNode } from '../mixer-graph.js'
@@ -167,14 +167,7 @@ export const MANIFEST_LOOP_FORMAT = 3
 const DECODE_CACHE_TAG = '|object-v3'
 
 function acceptManifestLoop (sample) {
-  const format = Number(manifest && manifest.formatVersion) || 0
-  if (format < MANIFEST_LOOP_FORMAT) return false
-  if (!sample || !sample.loop) return false
-  if (!(sample.loopEnd > sample.loopStart)) return false
-  const rules = pb()
-  if ((sample.loopEnd - sample.loopStart) < (rules.minLoopSec || 1.45)) return false
-  if (sample.loopScore != null && sample.loopScore < (rules.minLoopCorrelation || 0.38)) return false
-  return true
+  return acceptPublishedLoop(sample, pb())
 }
 
 /** Applies only the short equal-power seam described by the manifest. The expensive
@@ -425,6 +418,7 @@ export function applyControllers (track) {
 
 function attachLayerWhenReady (context, key, layer, track, spec, pitch, rules) {
   if (!layer) return
+  if ((rules && rules.maxSources) <= 1) return
   decodeSample(context, layer, false).then((decoded) => {
     const voice = voices.get(key)
     if (!voice) return
@@ -619,7 +613,9 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     dynLayerB: primary.dynamicLayer,
     baseRate: decodedList[0] ? (decodedList[0].decoded.unpitched ? 1 : Math.pow(2, (pitch - decodedList[0].decoded.rootNote) / 12)) : 1
   })
-  attachLayerWhenReady(ctx, key, secondaryLayer, track, spec, pitch, rules)
+  if ((rules.maxSources || 1) > 1) {
+    attachLayerWhenReady(ctx, key, secondaryLayer, track, spec, pitch, rules)
+  }
   applyControllers(track)
   const readyMs = nowMs() - noteStarted
   profile.noteReadyMs += readyMs

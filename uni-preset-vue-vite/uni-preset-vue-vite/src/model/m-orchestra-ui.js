@@ -112,9 +112,16 @@ export const CLOUD_CONTROLLERS = [
 ]
 
 export function insertablePlugins (options = {}) {
+  const engine = !!options.engineConnected
   const list = [
-    { id: M_ORCHESTRA_PLUGIN_ID, displayName: 'M Orchestra', detail: 'Cloud orchestral plugin', available: true },
-    { id: ORCHESTRA_SAMPLER_PLUGIN_ID, displayName: 'Orchestra Sampler', detail: 'BBCSO Discover / Synchron Player', available: true },
+    { id: M_ORCHESTRA_PLUGIN_ID, displayName: 'M Orchestra', detail: 'Browser cloud samples', available: true },
+    {
+      id: ORCHESTRA_SAMPLER_PLUGIN_ID,
+      displayName: 'Orchestra Sampler',
+      detail: engine ? 'BBCSO Discover / Synchron Player' : '需要电脑上的 DawWeb 引擎',
+      available: engine,
+      requiresEngine: true
+    },
     { id: TEST_SYNTH_PLUGIN_ID, displayName: 'Test Synth', detail: 'Built-in', available: true }
   ]
   if (options.includeWebSampler !== false) {

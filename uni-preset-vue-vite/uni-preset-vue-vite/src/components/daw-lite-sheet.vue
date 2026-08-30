@@ -2,11 +2,10 @@
   <view v-if="open" class="mask" @click="onMask">
     <view
       class="sheet lite-plugin-surface"
-      :class="{ tall }"
+      :class="{ tall, centered }"
       @click.stop
     >
       <view class="head">
-        <view class="handle" @pointerdown.stop="onDown" />
         <view class="head-row">
           <text v-if="title" class="title">{{ title }}</text>
           <view class="close-x" aria-label="Dismiss" @click.stop="emit('close')">×</view>
@@ -24,7 +23,8 @@ import './dsp/lite-plugin-surface.css'
 const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: '' },
-  tall: { type: Boolean, default: false }
+  tall: { type: Boolean, default: false },
+  centered: { type: Boolean, default: true }
 })
 const emit = defineEmits(['close'])
 
@@ -70,7 +70,8 @@ onUnmounted(() => {
   background: rgba(0, 0, 0, 0.45);
   z-index: 60;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
+  justify-content: center;
   padding:
     max(16px, env(safe-area-inset-top, 0px))
     16px
@@ -78,7 +79,7 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 .sheet {
-  width: 100%;
+  width: min(400px, 100%);
   max-height: calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
   background: #161616;
   border: 1px solid #2a2a2a;
@@ -88,7 +89,8 @@ onUnmounted(() => {
   animation: up 180ms ease-out;
   box-sizing: border-box;
 }
-.sheet.tall { max-height: calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px)); }
+.sheet.tall { max-height: min(78vh, calc(100vh - 32px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))); }
+.sheet.centered { margin: 0 auto; }
 .head {
   margin-bottom: 8px;
 }

@@ -74,3 +74,9 @@ import { session } from '../store/session.js'
   text-align: center;
 }
 </style>
+<style>
+html.daw-pointer-lock, html.daw-pointer-lock body {
+  overflow: hidden;
+  touch-action: none;
+}
+</style>

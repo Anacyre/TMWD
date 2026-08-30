@@ -252,9 +252,8 @@
             <text class="pick-short">{{ PLUGIN_SHORT[plugin.id] || plugin.name }}</text>
             <text class="pick-name">{{ plugin.name }}</text>
           </view>
-          <view v-if="picker.insert" class="pick remove" @click="removeCurrent" @tap="removeCurrent">
-            <text class="pick-short">✕</text>
-            <text class="pick-name">Remove</text>
+          <view v-if="picker.insert" class="pick remove" aria-label="Remove plugin" @click="removeCurrent" @tap="removeCurrent">
+            <daw-icon name="trash" :size="18" />
           </view>
         </view>
       </view>
@@ -859,9 +858,11 @@ function beginSlotDrag (nextLane, index, event) {
   justify-content: center;
 }
 .picker {
+  width: min(400px, 92vw);
   min-width: 240px;
   background: #1c1c1c;
   padding: 10px 0 8px;
+  border-radius: 10px;
 }
 .pick-title {
   display: block;
@@ -907,12 +908,12 @@ function beginSlotDrag (nextLane, index, event) {
   .tog { min-width: 40px; height: 40px; }
   .toggles { height: 44px; }
   .send-bar { height: 14px; }
-  .picker-mask { align-items: flex-end; }
+  .picker-mask { align-items: center; }
   .picker {
-    width: 100%;
+    width: min(400px, 92vw);
     min-width: 0;
-    border-radius: 12px 12px 0 0;
-    padding-bottom: max(12px, env(safe-area-inset-bottom));
+    border-radius: 10px;
+    padding-bottom: 12px;
   }
   .pick { min-height: 52px; }
 }

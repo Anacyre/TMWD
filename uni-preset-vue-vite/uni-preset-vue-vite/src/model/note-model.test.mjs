@@ -16,7 +16,8 @@ import {
   snapTick,
   ticksPerBar,
   timeSignatureAtTick,
-  isScalePitch
+  isScalePitch,
+  snapPitchToScale
 } from './note-model.js'
 import { hitNote, xToTick, defaultView, viewportTicks, iterateGridLines } from './piano-roll-engine.js'
 
@@ -72,6 +73,7 @@ assert(sig.numerator === 3, 'time signature at tick')
 
 assert(isScalePitch(60, 'C', 'major'), 'C is in C major')
 assert(!isScalePitch(61, 'C', 'major'), 'C# is out of C major')
+assert(snapPitchToScale(61, 'C', 'major') === 60 || snapPitchToScale(61, 'C', 'major') === 62, 'C# snaps to a C major pitch')
 
 const clip = serializeClipboard(notes)
 assert(parseClipboard(clip).length === 2, 'clipboard round-trip')

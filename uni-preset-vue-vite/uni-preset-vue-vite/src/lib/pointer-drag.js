@@ -65,3 +65,11 @@ export function clamp (value, min, max) {
   if (!Number.isFinite(value)) return min
   return Math.min(max, Math.max(min, value))
 }
+
+/** Pixel travel used by relative faders/knobs so a short control is not hair-trigger. */
+export const RELATIVE_TRAVEL_PX = 260
+
+export function relativeFromDelta (startValue, deltaPx, span, travelPx = RELATIVE_TRAVEL_PX, invert = false) {
+  const signed = invert ? -deltaPx : deltaPx
+  return startValue + (signed / Math.max(1, travelPx)) * span
+}

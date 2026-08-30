@@ -1,5 +1,5 @@
 import { findLoopPoints, pickRanked, scoreSample } from './pick.js'
-import { durationQuality, isOneShotDuration, PLAYBACK } from './playback.js'
+import { durationQuality, isOneShotDuration, PLAYBACK, acceptManifestLoop } from './playback.js'
 
 function assert (ok, message) {
   if (!ok) throw new Error(message)
@@ -44,6 +44,13 @@ function sineBuffer (seconds, hz, sampleRate = 44100) {
   const { data, sampleRate } = sineBuffer(0.4, 220)
   const found = findLoopPoints(data, sampleRate, PLAYBACK)
   assert(!found.loop, 'a buffer shorter than minLoopSec is rejected')
+}
+
+{
+  const v2 = { loop: true, loopStart: 0.4, loopEnd: 2.1, loopScore: 0.5 }
+  assert(acceptManifestLoop(v2), 'v2 loop metadata is accepted when length and score pass')
+  assert(!acceptManifestLoop({ loop: true, loopStart: 0.1, loopEnd: 0.2 }), 'loops shorter than minLoopSec are rejected')
+  assert(!acceptManifestLoop({ loop: true, loopStart: 0.4, loopEnd: 2.1, loopScore: 0.1 }), 'low loopScore is rejected')
 }
 
 console.log('m-orchestra loop ok')

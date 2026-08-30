@@ -107,7 +107,9 @@ const {
   trackInputNode,
   routingSnapshot,
   isWebOwnedTrack,
-  mixerHasInserts
+  mixerHasInserts,
+  syncDirectLaneGains,
+  ensureOutputRouting
 } = await import('./mixer-graph.js')
 const { defaultWebMixer, setLaneInserts } = await import('../model/web-mixer.js')
 const { createInsert } = await import('../dsp/plugin.js')
@@ -269,6 +271,15 @@ function reachable (start) {
   assert(graph.master.gain.value === 0, 'master gain is held at zero')
   assert(graph.routing.bypassReason === 'fx-attach-failed-inserts', 'the UI can name the mute')
   assert(routingSnapshot(graph).muted, 'snapshot exposes the mute')
+
+  setLaneInserts(mixer, { type: 'master' }, [null, null, null, null, null])
+  assert(!mixerHasInserts(mixer), 'inserts are gone')
+  ensureOutputRouting(graph, mixer, [], { localPlayback: true })
+  assert(!graph.routing.muted, 'removing inserts lifts the mute hold')
+  assert(graph.master.gain.value > 0, 'master gain is restored')
+  syncDirectLaneGains(graph, [{ id: 1, type: 'midi', source: 'm-orchestra', volumeDb: 0 }], { webMixer: mixer })
+  const recovered = ensureTrackLane(graph, 1)
+  assert(recovered.gain.gain.value === 1, 'direct-mode fader gain is restored')
 }
 
 //==============================================================================

@@ -105,9 +105,9 @@
           v-for="row in rows"
           :key="'h' + row.track.id"
           class="head"
-          :class="{ on: session.selectedTrack === row.index || session.selectedTrackIds.includes(row.track.id), group: isGroup(row.track), master: row.track.type === 'master', 'lite-head': lite }"
+          :class="{ on: session.selectedTrack === row.index || session.selectedTrackIds.includes(row.track.id), group: isGroup(row.track), master: row.track.type === 'master', 'lite-head': lite, drop: dropGroupId === row.track.id }"
           :style="{ height: session.trackHeight + 'px', paddingLeft: lite ? '0' : ((8 + row.depth * 12) + 'px') }"
-          @click="onHeaderTap(row)"
+          @click="onHeaderTap(row, $event)"
           @dblclick="startRename(row.index)"
           @pointerdown="onHeaderPointer(row, $event)"
         >
@@ -147,29 +147,12 @@
               <view
                 v-if="row.track.type !== 'master' && !isGroup(row.track)"
                 class="tiny fx"
+                aria-label="Track menu"
                 @click.stop="openTrackPlugin(row)"
                 @pointerdown.stop
-              >⋯</view>
-            </view>
-            <view
-              class="lite-mix"
-              @click.stop
-              @pointerdown.stop
-            >
-              <daw-fader
-                class="lite-vol"
-                :model-value="row.track.volume"
-                @update:model-value="onLiteVolume(row, $event)"
-              />
-              <daw-knob
-                v-if="row.track.type !== 'master'"
-                class="lite-pan"
-                :model-value="row.track.pan || 0"
-                :min="-1"
-                :max="1"
-                title="Pan"
-                @update:model-value="onLitePan(row, $event)"
-              />
+              >
+                <daw-icon name="more" :size="16" />
+              </view>
             </view>
           </view>
           <template v-else>
@@ -205,6 +188,14 @@
               @pointerdown.stop
             >S</view>
           </template>
+        </view>
+        <view v-if="lite" class="add-track-row">
+          <view class="add-track" aria-label="Add track" @click.stop="openNewTrackPicker">
+            <daw-icon name="plus" :size="18" />
+          </view>
+          <view class="add-track" aria-label="Add group" @click.stop="createTrack('group')">
+            <text class="add-lab">Grp</text>
+          </view>
         </view>
       </view>
 
@@ -254,7 +245,7 @@
             <view class="edge right" />
           </view>
           <view v-if="marquee" class="marquee" :style="marquee" />
-          <view class="playhead" ref="playheadEl">
+          <view class="playhead" ref="playheadEl" @pointerdown.stop="onPlayheadDown">
             <view class="cap" />
           </view>
           <view v-if="empty" class="empty">
@@ -287,8 +278,6 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from './daw-icon.vue'
-import DawFader from './daw-fader.vue'
-import DawKnob from './daw-knob.vue'
 import {
   session,
   SNAP_OPTIONS,
@@ -337,7 +326,10 @@ import {
   isLite,
   onTrackInstrumentClick,
   openPluginPicker,
-  openVirtualClip
+  openNewTrackPicker,
+  openVirtualClip,
+  assignTrackToGroup,
+  ungroupTrack
 } from '../store/session.js'
 import { visibleTrackRows, buildClipPreview, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../model/playlist-model.js'
 import { interpolateBeats } from '../model/timeline.js'
@@ -355,6 +347,7 @@ const tool = ref('edit')
 const marquee = ref(null)
 const context = ref(null)
 const follow = ref(true)
+const dropGroupId = ref(0)
 const viewportW = ref(1600)
 let raf = 0
 let gesture = null
@@ -581,16 +574,26 @@ function bindHoldEnd (origin) {
   document.addEventListener('mouseup', end, true)
 }
 
-function onHeaderTap (row) {
+function onHeaderTap (row, e) {
   if (skipHeaderClick) {
     skipHeaderClick = false
     return
   }
   dismissContext()
-  selectTrack(row.index)
-  if (!session.selectedTrackIds.includes(row.track.id) || session.selectedTrackIds.length <= 1) {
-    session.selectedTrackIds = [row.track.id]
+  if (e && (e.shiftKey || e.ctrlKey || e.metaKey)) {
+    toggleTrackInSelection(row.track)
+    return
   }
+  selectTrack(row.index)
+  session.selectedTrackIds = [row.track.id]
+}
+
+function groupAtPoint (clientY) {
+  const first = document.querySelector('.headers .head')
+  if (!first) return null
+  const top = first.getBoundingClientRect().top
+  const visual = Math.max(0, Math.min(rows.value.length - 1, Math.floor((clientY - top) / session.trackHeight)))
+  return rows.value[visual] || null
 }
 
 function onHeaderPointer (row, e) {
@@ -598,34 +601,35 @@ function onHeaderPointer (row, e) {
     openTrackMenu(row, e)
     return
   }
-  if (lite.value) {
-    const ox = e.clientX
-    const oy = e.clientY
+  const ox = e.clientX
+  const oy = e.clientY
+  const trackId = row.track.id
+  const originVisual = rows.value.findIndex((item) => item.index === row.index)
+  if (e.pointerType === 'touch' || lite.value) {
     longPress = setTimeout(() => {
       skipHeaderClick = true
       openTrackMenu(row, { clientX: ox, clientY: oy })
     }, 520)
     bindHoldEnd({ x: ox, y: oy })
-    return
   }
-  if (e.pointerType === 'touch') {
-    longPress = setTimeout(() => openTrackMenu(row, e), 420)
-  }
-  const startY = e.clientY
-  const trackId = row.track.id
-  const originVisual = rows.value.findIndex((item) => item.index === row.index)
   const move = (ev) => {
-    if (Math.abs(ev.clientY - startY) < 10) return
-    const visual = Math.max(0, Math.min(rows.value.length - 1,
-      originVisual + Math.round((ev.clientY - startY) / session.trackHeight)))
-    const dest = rows.value[visual]
-    const from = session.tracks.findIndex((item) => item.id === trackId)
-    if (from >= 0 && dest && dest.index !== from && dest.track.type !== 'master') {
-      moveTrack(from, dest.index)
+    if (Math.abs(ev.clientY - oy) < 10 && Math.abs(ev.clientX - ox) < 10) return
+    clearTimeout(longPress)
+    const dest = groupAtPoint(ev.clientY)
+    dropGroupId.value = dest && isGroup(dest.track) && dest.track.id !== trackId ? dest.track.id : 0
+    if (!lite.value && dest && dest.track.type !== 'master' && !isGroup(dest.track)) {
+      const from = session.tracks.findIndex((item) => item.id === trackId)
+      if (from >= 0 && dest.index !== from) moveTrack(from, dest.index)
     }
   }
-  const up = () => {
+  const up = (ev) => {
     clearTimeout(longPress)
+    const dest = groupAtPoint(ev.clientY)
+    if (dest && isGroup(dest.track) && dest.track.id !== trackId && Math.abs(ev.clientY - oy) > 10) {
+      skipHeaderClick = true
+      assignTrackToGroup(trackId, dest.track.id)
+    }
+    dropGroupId.value = 0
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
   }
@@ -664,6 +668,23 @@ function openClipMenu (clip, e) {
 function beatAt (clientX, el) {
   const rect = el.getBoundingClientRect()
   return snapBeat((clientX - rect.left + scrollX.value) / session.pixelsPerBeat)
+}
+
+function onPlayheadDown (e) {
+  const canvas = e.currentTarget.parentElement
+  if (!canvas) return
+  follow.value = true
+  const seek = (ev) => {
+    const rect = canvas.getBoundingClientRect()
+    setPositionBeats(snapBeat((ev.clientX - rect.left + scrollX.value) / session.pixelsPerBeat))
+  }
+  seek(e)
+  const up = () => {
+    window.removeEventListener('pointermove', seek)
+    window.removeEventListener('pointerup', up)
+  }
+  window.addEventListener('pointermove', seek)
+  window.addEventListener('pointerup', up)
 }
 
 function onRulerDown (e) {
@@ -855,6 +876,7 @@ function openTrackMenu (row, e) {
   const track = row.track
   const items = [
     { label: 'Change instrument', run: () => openPluginPicker(row.index) },
+    { label: 'Add to selection', run: () => toggleTrackInSelection(track) },
     { label: 'Rename', run: () => startRename(row.index) },
     { label: 'Mute', run: () => toggleFlag(row.index, 'mute') },
     { label: 'Solo', run: () => toggleFlag(row.index, 'solo') },
@@ -863,6 +885,12 @@ function openTrackMenu (row, e) {
     { label: 'Ungroup', run: () => ungroupSelectedTracks() },
     { label: 'Delete', run: () => removeTrack(row.index) }
   ]
+  session.tracks.filter((item) => isGroupTrack(item)).forEach((group) => {
+    items.splice(2, 0, { label: 'Add to ' + group.name, run: () => assignTrackToGroup(track.id, group.id) })
+  })
+  if (track.parentId) {
+    items.splice(2, 0, { label: 'Ungroup', run: () => ungroupTrack(track) })
+  }
   if (!lite.value) {
     items.splice(6, 0,
       { label: 'Open Piano Roll', run: () => { selectTrack(row.index); setWorkspaceView('piano') } },
@@ -1161,7 +1189,7 @@ onUnmounted(() => {
 .top .corner { width: 128px; flex-shrink: 0; }
 .top .ruler { flex: 1; min-width: 0; }
 .phone .top .corner { width: 112px; }
-.lite .top .corner { width: 168px; }
+.lite .top .corner { width: 132px; }
 .vscroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1229,7 +1257,7 @@ onUnmounted(() => {
   height: 24px;
 }
 @media (max-width: 360px) {
-  .lite .top .corner, .lite .headers { width: 148px; }
+  .lite .top .corner, .lite .headers { width: 124px; }
   .lite .name { font-size: 11px; }
   .lite .tiny { width: 26px; height: 26px; min-width: 26px; }
   .lite-vol { height: 16px; }
@@ -1295,7 +1323,26 @@ onUnmounted(() => {
   overflow: visible;
 }
 .phone .headers { width: 112px; }
-.lite .headers { width: 168px; }
+.lite .headers { width: 132px; }
+.add-track-row {
+  display: flex;
+  gap: 6px;
+  padding: 8px;
+  box-sizing: border-box;
+}
+.add-track {
+  flex: 1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #161616;
+  border: 1px dashed #3a3a3a;
+  border-radius: 8px;
+  color: #c8c8c8;
+}
+.add-lab { font-size: 11px; color: #c8c8c8; }
+.head.drop { outline: 1px solid #4da3ff; }
 .head {
   display: flex;
   align-items: center;
@@ -1439,11 +1486,21 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 1px;
-  background: #fff;
-  pointer-events: none;
+  width: 12px;
+  margin-left: -6px;
+  background: transparent;
+  pointer-events: auto;
   z-index: 8;
   will-change: transform;
+}
+.playhead::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  background: #fff;
 }
 .playhead .cap {
   position: absolute;

@@ -13,37 +13,38 @@
       <view v-if="!lite" class="chip" :class="{ on: tool === 'erase' }" @click="tool = 'erase'">Erase</view>
       <view v-if="!lite" class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Snap {{ snapLabel }}</view>
       <view v-if="!lite" class="chip" @click="quantizeSelected">Quantize</view>
-      <view class="chip" @click="undoEdit">Undo</view>
-      <view class="chip" @click="redoEdit">Redo</view>
-      <view v-if="lite" class="chip" :class="{ on: scaleGuide }" @click="scaleGuide = !scaleGuide">Scale</view>
-      <view v-if="lite" class="chip" @click="cycleScaleKey">{{ scaleKey }} {{ scaleName }}</view>
+      <view v-if="!lite" class="chip" @click="undoEdit">Undo</view>
+      <view v-if="!lite" class="chip" @click="redoEdit">Redo</view>
+      <template v-if="lite">
+        <view class="icon-chip" :class="{ on: tool === 'draw' }" aria-label="Draw" @click="tool = 'draw'">
+          <daw-icon name="note" :size="18" />
+        </view>
+        <view class="icon-chip" :class="{ on: tool === 'select' }" aria-label="Select" @click="tool = 'select'">
+          <daw-icon name="grid" :size="18" />
+        </view>
+        <view class="icon-chip" :class="{ on: tool === 'erase' }" aria-label="Erase" @click="tool = 'erase'">
+          <daw-icon name="trash" :size="18" />
+        </view>
+        <view class="icon-chip" :class="{ on: snapId !== 'off' }" aria-label="Snap" @click="cycleSnap">
+          <daw-icon name="magnet" :size="18" />
+        </view>
+      </template>
       <view class="spacer" />
       <view v-if="isPhone && !lite" class="chip" :class="{ on: keyboardOpen }" @click="keyboardOpen = !keyboardOpen">Keys</view>
       <view v-if="!lite" class="chip" :class="{ on: velocityOpen }" @click="velocityOpen = !velocityOpen">Vel</view>
-      <view v-if="lite" class="chip" :class="{ on: session.expressionOpen }" @click="toggleExpression">Expression</view>
       <view v-if="!lite" class="more" @click.stop="showMore = !showMore">⋯</view>
-    </view>
-
-    <view v-if="lite && session.expressionOpen" class="expr-bar">
-      <view
-        v-for="ctrl in expressionControllers"
-        :key="ctrl.id"
-        class="chip"
-        :class="{ on: session.expressionCc === ctrlCc(ctrl) }"
-        @click="setExpressionOpen(true, ctrlCc(ctrl))"
-      >{{ ctrl.displayName || ctrl.id }}</view>
     </view>
 
     <view v-if="showMore" class="more-row">
       <text>Key</text>
-      <select class="sel" :value="scaleKey" @change="scaleKey = $event.target.value">
+      <select class="sel" :value="session.scaleKey" @change="session.scaleKey = $event.target.value">
         <option v-for="key in keyNames" :key="key" :value="key">{{ key }}</option>
       </select>
       <text>Scale</text>
-      <select class="sel" :value="scaleName" @change="scaleName = $event.target.value">
+      <select class="sel" :value="session.scaleName" @change="session.scaleName = $event.target.value">
         <option v-for="name in scaleNames" :key="name" :value="name">{{ name }}</option>
       </select>
-      <view class="chip" :class="{ on: scaleGuide }" @click="scaleGuide = !scaleGuide">Guide</view>
+      <view class="chip" :class="{ on: session.scaleGuide }" @click="session.scaleGuide = !session.scaleGuide">Guide</view>
       <view class="chip" @click="groupSelected">Group</view>
       <view class="chip" @click="ungroupSelected">Ungroup</view>
       <text class="hint">{{ quantizeStrength }}%</text>
@@ -62,6 +63,13 @@
 
     <view v-else class="body">
       <view ref="host" class="canvas-host" />
+      <daw-expression-panel
+        v-if="lite"
+        :selected-notes="selectedNotes"
+        :pixels-per-beat="view.pixelsPerBeat"
+        :scroll-x="view.scrollX"
+        @velocity="patchVelocityFromPanel"
+      />
       <view v-if="lite && selectedNotes.length" class="note-bar">
         <text class="note-lab">{{ pitchLabel }}</text>
         <text class="note-lab">Vel {{ velocityLabel }}</text>
@@ -94,6 +102,8 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import DawIcon from './daw-icon.vue'
+import DawExpressionPanel from './daw-expression-panel.vue'
 import {
   session,
   getSelectedClip,
@@ -115,9 +125,6 @@ import {
   setLoopRange,
   updateMarker,
   isLite,
-  setExpressionOpen,
-  paintClipExpression,
-  eraseClipExpression
 } from '../store/session.js'
 import {
   SNAP_PRESETS,
@@ -135,7 +142,8 @@ import {
   midiVelocity,
   normalizeNote,
   ticksToBeats,
-  snapTick
+  snapTick,
+  snapPitchToScale
 } from '../model/note-model.js'
 import {
   defaultView,
@@ -167,9 +175,6 @@ const tool = ref('draw')
 const snapId = ref('1/16')
 const velocityOpen = ref(!isLite())
 const keyboardOpen = ref(true)
-const scaleGuide = ref(true)
-const scaleKey = ref('C')
-const scaleName = ref('major')
 const showMore = ref(false)
 const inspectorOpen = ref(false)
 const quantizeStrength = ref(100)
@@ -358,9 +363,9 @@ function paint () {
     loopEnd: session.loopEnd,
     playheadBeat: currentPlayhead(),
     clipStartBeat: clip.value ? clip.value.startBeat : 0,
-    scaleKey: scaleKey.value,
-    scaleName: scaleName.value,
-    scaleGuide: scaleGuide.value,
+    scaleKey: session.scaleKey,
+    scaleName: session.scaleName,
+    scaleGuide: session.scaleGuide,
     velocityOpen: velocityOpen.value,
     keyboardOpen: keyboardOpen.value,
     rubber,
@@ -408,6 +413,7 @@ function onPointerDown (e) {
       if (name) updateMarker(marker, { name })
     } else {
       setPositionBeats(Math.max(0, beat))
+      gesture = { type: 'seek' }
     }
     return
   }
@@ -418,11 +424,7 @@ function onPointerDown (e) {
     return
   }
   if (layout.velH > 0 && p.y >= layout.velY) {
-    if (lite.value && session.expressionOpen) {
-      applyExpression(p, e.detail > 1)
-      gesture = { type: 'expression', erase: e.detail > 1 }
-      return
-    }
+    if (lite.value && session.expressionOpen) return
     beginEdit('Velocity')
     setPianoDragActive(clip.value.id)
     gesture = { type: 'velocity', originY: p.y, originals: captureSelected() }
@@ -455,7 +457,7 @@ function onPointerDown (e) {
   }
   if (!hit) {
     if (lite.value) {
-      const pitch = yToPitch(g.y, view)
+      const pitch = snapP(yToPitch(g.y, view))
       const startTick = xToTick(g.x, view, { snap: true, free: e.ctrlKey || e.metaKey || e.altKey })
       gesture = {
         type: 'lite-empty',
@@ -480,7 +482,7 @@ function onPointerDown (e) {
       return
     }
     beginEdit('Create note')
-    const pitch = yToPitch(g.y, view)
+    const pitch = snapP(yToPitch(g.y, view))
     const startTick = xToTick(g.x, view, { snap: true, free: e.ctrlKey || e.metaKey || e.altKey })
     const note = createNote(clip.value, pitch, startTick / PPQ, defaultDurationTicks(view) / PPQ, 100)
     selectOnly(note.id)
@@ -524,6 +526,11 @@ function onPointerMove (e) {
   }
   if (!gesture) {
     if (p.x < layout.gridX) hoverPitch = yToPitch(p.y - layout.gridY, view)
+    return
+  }
+  if (gesture.type === 'seek') {
+    const beat = Math.max(0, (clip.value.startBeat || 0) + xToTick(p.x - layout.gridX, view, { snap: false }) / PPQ)
+    setPositionBeats(beat)
     return
   }
   if (gesture.type === 'preview') {
@@ -602,7 +609,7 @@ function onPointerMove (e) {
       } else {
         setNote(clip.value, live, {
           startTick: snapTick(orig.startTick + dTick, gridTicksForView(view), gesture.free),
-          pitch: orig.pitch + dPitch
+          pitch: snapP(orig.pitch + dPitch)
         })
         startPreview(live.pitch, live.velocity / 127)
       }
@@ -704,14 +711,23 @@ function cycleSnap () {
   snapId.value = snapPresets[(index + 1) % snapPresets.length].id
 }
 
+function snapP (pitch) {
+  if (!session.scaleSnap) return pitch
+  return snapPitchToScale(pitch, session.scaleKey, session.scaleName)
+}
+
+function patchVelocityFromPanel (value) {
+  selectedNotes.value.forEach((note) => setNote(clip.value, note, { velocity: value }))
+}
+
 function cycleScaleKey () {
-  const ki = Math.max(0, keyNames.indexOf(scaleKey.value))
+  const ki = Math.max(0, keyNames.indexOf(session.scaleKey))
   if (ki === keyNames.length - 1) {
-    scaleKey.value = keyNames[0]
-    const si = Math.max(0, scaleNames.indexOf(scaleName.value))
-    scaleName.value = scaleNames[(si + 1) % scaleNames.length]
+    session.scaleKey = keyNames[0]
+    const si = Math.max(0, scaleNames.indexOf(session.scaleName))
+    session.scaleName = scaleNames[(si + 1) % scaleNames.length]
   } else {
-    scaleKey.value = keyNames[ki + 1]
+    session.scaleKey = keyNames[ki + 1]
   }
 }
 
@@ -771,20 +787,6 @@ function startLongPress (p, hit) {
     }
     menu.value = { x: p.x, y: p.y }
   }, 320)
-}
-
-function toggleExpression () {
-  const next = !session.expressionOpen
-  setExpressionOpen(next)
-  velocityOpen.value = next
-}
-
-function applyExpression (p, erase) {
-  if (!clip.value) return
-  const t = Math.max(0, xToTick(p.x - layout.gridX, view, { snap: false }) / PPQ)
-  const v = 127 * (1 - Math.min(1, Math.max(0, (p.y - layout.velY) / Math.max(1, layout.velH))))
-  if (erase) eraseClipExpression(clip.value, session.expressionCc, t)
-  else paintClipExpression(clip.value, session.expressionCc, t, v)
 }
 
 function deleteSelected () {
@@ -924,10 +926,10 @@ watch(() => (notes.value || []).length, (len, prevLen) => {
   if (len > 0 && !prevLen && clip.value) fitViewToClip()
 })
 
-watch([scaleKey, scaleName], () => {
+watch(() => [session.scaleKey, session.scaleName], () => {
   if (!session.score) return
-  session.score.key = scaleKey.value
-  session.score.scale = scaleName.value
+  session.score.key = session.scaleKey
+  session.score.scale = session.scaleName
 })
 
 watch(isPhone, (phone) => {
@@ -937,10 +939,6 @@ watch(isPhone, (phone) => {
   }
 })
 
-watch(() => session.expressionOpen, (open) => {
-  if (lite.value) velocityOpen.value = !!open
-})
-
 onMounted(() => {
   nextTick(() => {
     if (mountCanvas() && clip.value && clip.value.midi) fitViewToClip()
@@ -948,8 +946,8 @@ onMounted(() => {
   if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true)
   session.pianoRollFocus = true
   if (session.score) {
-    if (session.score.key) scaleKey.value = session.score.key
-    if (session.score.scale) scaleName.value = session.score.scale
+    if (session.score.key) session.scaleKey = session.score.key
+    if (session.score.scale) session.scaleName = session.score.scale
   }
 })
 
@@ -990,8 +988,20 @@ onUnmounted(() => {
   border-bottom: 1px solid #2a2a2a;
   flex-shrink: 0;
 }
-.tools { height: 28px; }
-.tools.lite { height: 44px; overflow-x: auto; }
+.tools { height: 28px; background: #121212; }
+.tools.lite { height: 44px; overflow-x: auto; background: #121212; }
+.icon-chip {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #161616;
+  border-radius: 8px;
+  color: #e6e6e6;
+  flex-shrink: 0;
+}
+.icon-chip.on { background: #2b2b2b; color: #4da3ff; }
 .expr-bar {
   display: flex;
   align-items: center;
