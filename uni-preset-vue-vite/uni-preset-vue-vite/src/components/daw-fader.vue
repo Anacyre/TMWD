@@ -23,7 +23,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { beginPointerDrag, clamp, relativeFromDelta, RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
+import { beginPointerDrag, clamp, pointerCoord, relativeFromDelta, RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
@@ -55,7 +55,8 @@ const capStyle = computed(() => (
 ))
 
 function commit (value) {
-  const next = clamp(value, props.min, props.max)
+  if (!Number.isFinite(value)) return
+  const next = clamp(value, props.min, props.max, props.modelValue)
   if (next === props.modelValue) return
   emit('update:modelValue', next)
 }
@@ -69,13 +70,20 @@ function onPointerDown (event) {
   if (props.disabled) return
   const startValue = props.modelValue
   const vertical = props.orientation === 'vertical'
-  const start = vertical ? event.clientY : event.clientX
+  let start = pointerCoord(event)
   emit('drag-start')
   beginPointerDrag(event, {
     onMove: (ev) => {
-      const now = vertical ? ev.clientY : ev.clientX
+      const now = pointerCoord(ev)
+      if (!now) return
+      if (!start) {
+        start = now
+        return
+      }
       const fine = ev.shiftKey ? 0.35 : 1
-      commit(relativeFromDelta(startValue, (now - start) * fine, span.value, RELATIVE_TRAVEL_PX, vertical))
+      const delta = (vertical ? now.y - start.y : now.x - start.x) * fine
+      if (!Number.isFinite(delta)) return
+      commit(relativeFromDelta(startValue, delta, span.value, RELATIVE_TRAVEL_PX, vertical))
     },
     onEnd: () => emit('drag-end')
   })

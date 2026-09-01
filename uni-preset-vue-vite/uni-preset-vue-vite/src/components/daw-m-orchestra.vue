@@ -7,7 +7,7 @@
       </view>
       <text class="status" :class="{ ok: isReady, err: isError }">{{ statusText }}</text>
       <view class="swap" title="Change instrument" aria-label="Change instrument" @click.stop="changePlugin">
-        <daw-icon name="copy" :size="16" />
+        <daw-icon name="swap" :size="16" />
       </view>
     </view>
 
@@ -274,6 +274,7 @@ function changePlugin () {
 <style scoped>
 .mo {
   height: 100%;
+  max-height: 100%;
   background: #121212;
   color: #e6e6e6;
   display: flex;
@@ -334,14 +335,17 @@ function changePlugin () {
 .stage {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   padding: 12px 16px 10px;
+  justify-content: flex-start;
 }
 .hero { display: flex; justify-content: center; padding: 6px 0 10px; }
 .ring {
-  width: min(220px, 42vw);
-  height: min(220px, 42vw);
+  width: min(220px, 72%);
+  aspect-ratio: 1;
+  height: auto;
   border-radius: 50%;
   border: 1px solid #c9a46c66;
   background: radial-gradient(circle at 50% 42%, #1b1b1b 0%, #101010 70%);
@@ -385,7 +389,7 @@ function changePlugin () {
   border-radius: 8px;
   overflow: hidden;
   touch-action: none;
-  margin-top: auto;
+  flex-shrink: 0;
 }
 .key {
   position: absolute; top: 0; bottom: 0; width: calc(100% / 15);
@@ -428,7 +432,7 @@ function changePlugin () {
 .card-ico { font-size: 18px; filter: grayscale(0.2); }
 .card-name { font-size: 10px; letter-spacing: 0.04em; text-align: center; color: #e6e6e6; }
 .card-miss { font-size: 9px; color: #8d8d8d; }
-@media (max-width: 860px) {
+@media (max-width: 700px) {
   .body { flex-direction: column; }
   .families {
     width: auto; height: 64px; display: flex; flex-direction: row; border-right: 0;
@@ -437,7 +441,7 @@ function changePlugin () {
   .fam { min-width: 68px; }
   .library { width: auto; border-left: 0; border-top: 1px solid #2a2a2a; max-height: 38%; }
   .grid { grid-template-columns: repeat(3, 1fr); }
-  .ring { width: 160px; height: 160px; }
+  .ring { width: 160px; aspect-ratio: 1; height: auto; }
   .inst-name { font-size: 15px; }
 }
 </style>

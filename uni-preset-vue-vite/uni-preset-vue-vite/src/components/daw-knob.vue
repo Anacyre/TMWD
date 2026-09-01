@@ -23,7 +23,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { beginPointerDrag, clamp } from '../lib/pointer-drag.js'
+import { beginPointerDrag, clamp, pointerCoord, RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
@@ -35,9 +35,6 @@ const props = defineProps({
 })
 const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
-import { RELATIVE_TRAVEL_PX } from '../lib/pointer-drag.js'
-
-// Full travel over this many pixels of vertical drag.
 const DRAG_PIXELS = RELATIVE_TRAVEL_PX
 
 const span = computed(() => (props.max - props.min) || 1)
@@ -48,7 +45,8 @@ const angle = computed(() => {
 })
 
 function commit (next) {
-  const value = clamp(next, props.min, props.max)
+  if (!Number.isFinite(next)) return
+  const value = clamp(next, props.min, props.max, props.modelValue)
   if (value === props.modelValue) return
   emit('update:modelValue', value)
 }
@@ -59,14 +57,21 @@ function nudge (steps) {
 
 function onPointerDown (event) {
   if (props.disabled) return
-  const startY = event.clientY
+  let start = pointerCoord(event)
   const startValue = props.modelValue
   emit('drag-start')
   if (typeof document !== 'undefined') document.documentElement.classList.add('daw-pointer-lock')
   beginPointerDrag(event, {
     onMove: (ev) => {
+      const now = pointerCoord(ev)
+      if (!now) return
+      if (!start) {
+        start = now
+        return
+      }
       const scale = ev.shiftKey ? 0.2 : 1
-      const delta = (startY - ev.clientY) / DRAG_PIXELS
+      const delta = (start.y - now.y) / DRAG_PIXELS
+      if (!Number.isFinite(delta)) return
       commit(startValue + delta * span.value * scale)
     },
     onEnd: () => {

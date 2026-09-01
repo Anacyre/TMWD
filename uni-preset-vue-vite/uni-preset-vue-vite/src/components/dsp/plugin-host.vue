@@ -3,7 +3,7 @@
       <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite }]" @click.stop @pointerdown="onHostDown">
         <view class="grab" :class="{ 'head-lite': lite }">
           <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin">
-            <daw-icon name="copy" :size="18" />
+            <daw-icon name="swap" :size="18" />
           </view>
           <view
             v-if="session.openPlugin"

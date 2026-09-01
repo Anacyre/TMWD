@@ -12,7 +12,8 @@
         <view class="btn" @click="onOpenFile">Open file</view>
         <view class="btn" @click="onSave">Save</view>
         <view class="btn" @click="onSaveAs">Save as</view>
-        <view class="btn" @click="onExport">Export</view>
+        <view class="btn" @click="onExport">Export WAV</view>
+        <view class="btn" @click="onShare">Share project</view>
       </view>
       <view v-if="!rows.length" class="empty">No local projects yet. Save creates one here.</view>
       <view v-for="row in rows" :key="row.id" class="row" :class="{ on: row.id === session.projectId }">
@@ -40,7 +41,8 @@ import {
   addTrack,
   saveCurrentProject,
   saveProjectAs,
-  exportProject,
+  exportProjectWav,
+  shareProjectFile,
   importProjectJson,
   openStoredProject,
   listStoredProjects,
@@ -95,7 +97,11 @@ async function onSaveAs () {
 }
 
 async function onExport () {
-  await exportProject()
+  await exportProjectWav()
+}
+
+async function onShare () {
+  await shareProjectFile()
 }
 
 async function onOpen (row) {

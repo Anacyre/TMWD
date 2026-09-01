@@ -78,4 +78,23 @@ function assert (ok, message) {
   assert(merged.webMixer && merged.webMixer.remote, 'browser webMixer survives native merge')
 }
 
+{
+  const reactiveMixer = {
+    master: { inserts: [{ pluginId: 'equalizer-x', enabled: true, onMeter: () => 0 }] },
+    remote: { inserts: [] },
+    buses: []
+  }
+  const data = serializeSession({
+    projectName: 'Clone',
+    bpm: 120,
+    tracks: [{ id: 2, type: 'midi', name: 'Vln', inserts: [{ pluginId: 'reverb-x', state: { amount: 0.2 } }] }],
+    clips: [],
+    webMixer: reactiveMixer
+  })
+  structuredClone(data)
+  assert(data.webMixer.master.inserts[0].pluginId === 'equalizer-x', 'mixer inserts survive JSON clone')
+  assert(data.webMixer.master.inserts[0].onMeter == null, 'functions are stripped before IndexedDB put')
+  assert(data.tracks[0].inserts[0].pluginId === 'reverb-x', 'track inserts survive JSON clone')
+}
+
 console.log('project-io ok')

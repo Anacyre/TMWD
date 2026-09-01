@@ -1,4 +1,4 @@
-import { durationQuality, isOneShotDuration, playbackFrom, targetDynamics } from './playback.js'
+import { durationQuality, isOneShotDuration, playbackFrom, targetDynamics, acceptManifestLoop } from './playback.js'
 
 function matchesPack (sample, spec) {
   if (!sample || !spec || sample.pack !== spec.pack) return false
@@ -35,7 +35,8 @@ export function scoreSample (sample, spec, artic, midiNote, velocity, dynamics, 
   if (velocity < vmin) velDelta = vmin - velocity
   else if (velocity > vmax) velDelta = velocity - vmax
   const pitchScore = ranged ? delta * 2 : delta * 8 + 24
-  return pitchScore + dynDelta * 6 + velDelta * 0.04 + (4 - quality) * 0.5
+  const loopBonus = acceptManifestLoop(sample, pb) ? 1.4 : 0
+  return pitchScore + dynDelta * 6 + velDelta * 0.04 + (4 - quality) * 0.5 - loopBonus
 }
 
 function ranked (samples, spec, artic, midiNote, velocity, dynamics, pb, extraFilter) {
@@ -361,4 +362,66 @@ export function findLoopPoints (channelData, sampleRate, pb) {
     getChannelData: () => channelData
   }
   return prepareLoop(fake, pb)
+}
+
+/** Split a decoded one-shot into a loud sustain (loopable) and a quiet release tail. */
+export function splitSustainRelease (channelData, sampleRate, options = {}) {
+  const data = channelData || new Float32Array(0)
+  const sr = Math.max(1, sampleRate || 44100)
+  const n = data.length
+  const duration = n / sr
+  const empty = { loop: false, loopStart: 0, loopEnd: 0, releaseStart: 0, sustainStart: 0, sustainEnd: 0 }
+  if (n < sr * 0.25) return empty
+
+  const win = Math.max(64, Math.round((options.windowSec || 0.02) * sr))
+  const hop = Math.max(32, Math.floor(win / 2))
+  const frames = []
+  let peak = 1e-8
+  for (let i = 0; i + win <= n; i += hop) {
+    let sum = 0
+    for (let j = 0; j < win; j++) sum += data[i + j] * data[i + j]
+    const rms = Math.sqrt(sum / win)
+    frames.push({ t: i / sr, rms })
+    if (rms > peak) peak = rms
+  }
+  if (!frames.length) return empty
+
+  const thresh = peak * (options.floor || 0.35)
+  const quiet = peak * (options.quietFloor || 0.22)
+  const skip = options.attackSkipSec != null ? options.attackSkipSec : 0.08
+  let first = 0
+  for (let i = 0; i < frames.length; i++) {
+    if (frames[i].rms >= thresh && frames[i].t >= skip) { first = i; break }
+  }
+  let last = first
+  for (let i = first; i < frames.length; i++) {
+    if (frames[i].rms >= thresh) last = i
+    if (frames[i].rms < quiet && frames[i].t > frames[first].t + 0.35) {
+      let stays = true
+      const until = Math.min(frames.length, i + 6)
+      for (let j = i; j < until; j++) {
+        if (frames[j].rms > thresh) { stays = false; break }
+      }
+      if (stays) {
+        last = Math.max(first, i - 1)
+        break
+      }
+    }
+  }
+  const sustainStart = frames[first].t
+  const sustainEnd = Math.min(duration, frames[last].t + win / sr)
+  const body = sustainEnd - sustainStart
+  const minLoop = options.minLoopSec != null ? options.minLoopSec : 0.45
+  const loopStart = sustainStart + Math.min(0.18, body * 0.08)
+  const loopEnd = Math.max(loopStart + minLoop, sustainEnd - 0.04)
+  const canLoop = body >= minLoop && (loopEnd - loopStart) >= minLoop && loopEnd < duration - 0.02
+  const releaseStart = Math.min(duration, Math.max(loopEnd, sustainEnd))
+  return {
+    loop: canLoop,
+    loopStart: canLoop ? loopStart : 0,
+    loopEnd: canLoop ? Math.min(loopEnd, duration) : 0,
+    releaseStart,
+    sustainStart,
+    sustainEnd
+  }
 }

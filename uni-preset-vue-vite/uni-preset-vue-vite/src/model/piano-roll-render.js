@@ -65,7 +65,7 @@ export function drawPianoRoll (ctx, state) {
   const velY = gridY + gridH
 
   ctx.clearRect(0, 0, width, height)
-    ctx.fillStyle = '#141414'
+    ctx.fillStyle = '#121212'
     ctx.fillRect(0, 0, width, height)
 
   ctx.save()
@@ -132,7 +132,7 @@ function cull (notes, ghosts, width, height, view) {
 }
 
 function drawMarkers (ctx, width, height, view, markers, clipStartBeat, gridX) {
-  ctx.fillStyle = '#141414'
+  ctx.fillStyle = '#121212'
   ctx.fillRect(0, 0, width, height)
   ctx.font = '10px sans-serif'
   ;(markers || []).forEach((marker) => {
@@ -147,7 +147,7 @@ function drawMarkers (ctx, width, height, view, markers, clipStartBeat, gridX) {
 }
 
 function drawTimeline (ctx, x, y, w, h, view, timeSignatures, timeSig, clipStartBeat, loopStart, loopEnd, playheadBeat) {
-  ctx.fillStyle = '#1a1a1a'
+  ctx.fillStyle = '#161616'
   ctx.fillRect(x, y, w, h)
   const startTick = Math.max(0, Math.floor((view.scrollX / view.pixelsPerBeat) * PPQ))
   const endTick = startTick + Math.ceil((w / view.pixelsPerBeat) * PPQ)
@@ -195,7 +195,7 @@ function drawKeyboard (ctx, width, y0, height, view, hoverPitch, showLabels, sca
     const held = pitch === hoverPitch
     const inScale = !scaleGuide || isScalePitch(pitch, scaleKey, scaleName)
     ctx.fillStyle = held ? '#4da3ff' : (black
-      ? (inScale ? '#2a2a2a' : '#141414')
+      ? (inScale ? '#2a2a2a' : '#121212')
       : (inScale ? '#e8e8e8' : '#7a7a7a'))
     ctx.fillRect(0, y, black ? width * 0.62 : width - 1, view.pixelsPerSemitone - 1)
     if (showLabels && pitch % 12 === 0 && view.pixelsPerSemitone >= 10) {
@@ -229,7 +229,7 @@ function drawGrid (ctx, width, height, view, timeSignatures, timeSig, scaleKey, 
   const endTick = startTick + Math.ceil((width / view.pixelsPerBeat) * PPQ)
   iterateGridLines(startTick, endTick, view.pixelsPerBeat, timeSignatures, timeSig, (tick, kind) => {
     const x = tickToX(tick, view)
-    ctx.fillStyle = kind === 'bar' ? '#2c2c2c' : (kind === 'beat' ? '#222222' : '#1a1a1a')
+    ctx.fillStyle = kind === 'bar' ? '#2c2c2c' : (kind === 'beat' ? '#222222' : '#161616')
     ctx.fillRect(x, 0, 1, height)
   })
 }

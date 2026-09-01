@@ -65,9 +65,17 @@ function requestToPromise (req) {
   })
 }
 
+function cloneForStore (project) {
+  try {
+    return JSON.parse(JSON.stringify(project || {}))
+  } catch (err) {
+    throw new Error('Project could not be saved (contains data that cannot be stored)')
+  }
+}
+
 export async function putProject (project) {
   const record = {
-    ...project,
+    ...cloneForStore(project),
     updatedAt: Date.now()
   }
   if (hasIndexedDb()) {

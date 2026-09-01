@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
 import { playbackFrom, acceptManifestLoop as acceptPublishedLoop } from './playback.js'
-import { pickLayer, pickSample as pickFromManifest } from './pick.js'
+import { pickLayer, pickSample as pickFromManifest, splitSustainRelease } from './pick.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
 import { trackInputNode } from '../mixer-graph.js'
 
@@ -201,7 +201,7 @@ function applyManifestLoop (audio, sample) {
 }
 
 async function decodeSample (context, sample, priority = true) {
-  const key = sample.pack + '|' + sample.entry + DECODE_CACHE_TAG
+  const key = sample.pack + '|' + sample.entry + DECODE_CACHE_TAG + '|' + (context.sampleRate || 0)
   const cached = bufferCache.get(key)
   if (cached) {
     profile.cacheHits += 1
@@ -214,12 +214,23 @@ async function decodeSample (context, sample, priority = true) {
     const started = nowMs()
     const audio = await context.decodeAudioData(bytes.slice(0))
     profile.decodeMs += nowMs() - started
-    const loopInfo = applyManifestLoop(audio, sample)
+    let loopInfo = applyManifestLoop(audio, sample)
+    let releaseStart = loopInfo.loop ? loopInfo.loopEnd : 0
+    if (!loopInfo.loop) {
+      const split = splitSustainRelease(audio.getChannelData(0), audio.sampleRate)
+      if (split.loop) {
+        loopInfo = applyRuntimeLoop(audio, split)
+        releaseStart = split.releaseStart || loopInfo.loopEnd
+      } else if (split.releaseStart > 0) {
+        releaseStart = split.releaseStart
+      }
+    }
     const decoded = {
       audio,
       loop: !!loopInfo.loop,
       loopStart: loopInfo.loopStart || 0,
       loopEnd: loopInfo.loopEnd || 0,
+      releaseStart: releaseStart || 0,
       rootNote: sample.rootNote,
       unpitched: !!sample.unpitched,
       dynamicLayer: sample.dynamicLayer,
@@ -234,6 +245,25 @@ async function decodeSample (context, sample, priority = true) {
   } finally {
     decodePromises.delete(key)
   }
+}
+
+function applyRuntimeLoop (audio, split) {
+  const sr = audio.sampleRate
+  const start = Math.max(0, Math.min(audio.length - 2, Math.round(split.loopStart * sr)))
+  const end = Math.max(start + 2, Math.min(audio.length - 1, Math.round(split.loopEnd * sr)))
+  const crossfade = Math.min(Math.floor((end - start) * 0.08), Math.round(0.06 * sr))
+  if (crossfade > 8) {
+    for (let channel = 0; channel < audio.numberOfChannels; channel++) {
+      const data = audio.getChannelData(channel)
+      for (let i = 0; i < crossfade; i++) {
+        const t = i / Math.max(1, crossfade - 1)
+        const fadeOut = Math.cos(t * Math.PI * 0.5)
+        const fadeIn = Math.sin(t * Math.PI * 0.5)
+        data[end - crossfade + i] = data[end - crossfade + i] * fadeOut + data[start + i] * fadeIn
+      }
+    }
+  }
+  return { loop: true, loopStart: (start + Math.max(0, crossfade)) / sr, loopEnd: end / sr }
 }
 
 function prefetchSilent (context, spec, artic, pitch, velocity, dynamics) {
@@ -325,8 +355,33 @@ export function cancelPending (pitchOrKey, trackId) {
 function releaseVoice (key) {
   const voice = voices.get(key)
   if (!voice) return
-  const now = voice.gain.context.currentTime
+  const ctx = voice.gain.context
+  const now = ctx.currentTime
   const rules = pb()
+  const decoded = voice.decodedPrimary
+  const canRelease = decoded && decoded.releaseStart > 0 && decoded.releaseStart < (decoded.audio.duration - 0.04)
+
+  voice.sources.forEach((src) => {
+    try { src.loop = false } catch (err) { /* ignore */ }
+    try { src.stop(now + 0.02) } catch (err) { /* ended */ }
+  })
+
+  if (canRelease) {
+    const rel = ctx.createBufferSource()
+    rel.buffer = decoded.audio
+    rel.playbackRate.value = voice.baseRate || 1
+    const dest = voice.filter || voice.gain
+    rel.connect(dest)
+    const remaining = Math.max(0.05, decoded.audio.duration - decoded.releaseStart)
+    rel.start(now, decoded.releaseStart)
+    rel.stop(now + remaining)
+    voice.sources.push(rel)
+    const holdMs = Math.round(remaining * 1000 + 60)
+    setTimeout(() => disposeVoiceNodes(voice), holdMs)
+    voices.delete(key)
+    return
+  }
+
   const release = releaseSec(voice.artic, rules)
   voice.gain.gain.cancelScheduledValues(now)
   voice.gain.gain.setTargetAtTime(0, now, Math.max(0.03, release / 3))
@@ -335,13 +390,15 @@ function releaseVoice (key) {
     voice.filter.frequency.setTargetAtTime(rules.cutoffMinHz * 0.55, now, Math.max(0.04, release / 3))
   }
   const holdMs = Math.round(release * 1000 + 80)
-  setTimeout(() => {
-    voice.sources.forEach((src) => { try { src.stop() } catch (err) { /* ended */ } })
-    ;(voice.lfos || []).forEach((osc) => { try { osc.stop() } catch (err) { /* ended */ } })
-    try { voice.gain.disconnect() } catch (err) { /* already */ }
-    try { voice.filter && voice.filter.disconnect() } catch (err) { /* already */ }
-  }, holdMs)
+  setTimeout(() => disposeVoiceNodes(voice), holdMs)
   voices.delete(key)
+}
+
+function disposeVoiceNodes (voice) {
+  voice.sources.forEach((src) => { try { src.stop() } catch (err) { /* ended */ } })
+  ;(voice.lfos || []).forEach((osc) => { try { osc.stop() } catch (err) { /* ended */ } })
+  try { voice.gain.disconnect() } catch (err) { /* already */ }
+  try { voice.filter && voice.filter.disconnect() } catch (err) { /* already */ }
 }
 
 function orchestraDest (graph, track) {
@@ -611,6 +668,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     dualLayer: dual,
     dynLayerA: primary.dynamicLayer,
     dynLayerB: primary.dynamicLayer,
+    decodedPrimary: decodedList[0] ? decodedList[0].decoded : null,
     baseRate: decodedList[0] ? (decodedList[0].decoded.unpitched ? 1 : Math.pow(2, (pitch - decodedList[0].decoded.rootNote) / 12)) : 1
   })
   if ((rules.maxSources || 1) > 1) {
@@ -662,4 +720,50 @@ export async function preloadNotes (graph, track, pitches, velocity = 0.8) {
     if (!sample) return
     try { await decodeSample(graph.context, sample, false) } catch (err) { /* retry on note-on */ }
   }))
+}
+
+/** Schedule one M Orchestra note on an AudioContext (live or OfflineAudioContext). */
+export async function renderNoteAt (context, dest, track, pitch, velocity, when, durationSec) {
+  if (!context || !dest || !track) return false
+  await ensureManifest()
+  const spec = findInstrument(track.definitionId)
+  if (!spec) return false
+  const artic = articForTrack(track, spec)
+  const dynamics = dynamicsForTrack(track)
+  const velocityMidi = Math.round(Math.max(0.05, velocity) * 127)
+  const primary = pickFromManifest(samples(), spec, artic, pitch, velocityMidi, dynamics, 0, manifest)
+  if (!primary) return false
+  const decoded = await decodeSample(context, primary, false)
+  const src = context.createBufferSource()
+  src.buffer = decoded.audio
+  const semitones = decoded.unpitched
+    ? 0
+    : Math.max(-4, Math.min(4, pitch - decoded.rootNote))
+  src.playbackRate.value = Math.pow(2, semitones / 12)
+  if (decoded.loop && decoded.loopEnd - decoded.loopStart > 0.4) {
+    src.loop = true
+    src.loopStart = decoded.loopStart
+    src.loopEnd = decoded.loopEnd
+  }
+  const gain = context.createGain()
+  const expr = Math.max(0.15, expressionForTrack(track))
+  gain.gain.value = 0.35 * Math.max(0.05, velocity) * expr
+  src.connect(gain)
+  gain.connect(dest)
+  const start = Math.max(0, when || 0)
+  const hold = Math.max(0.05, durationSec || 0.5)
+  src.start(start)
+  src.stop(start + hold)
+  if (decoded.releaseStart > 0 && decoded.releaseStart < decoded.audio.duration - 0.04) {
+    const rel = context.createBufferSource()
+    rel.buffer = decoded.audio
+    rel.playbackRate.value = src.playbackRate.value
+    const relGain = context.createGain()
+    relGain.gain.setValueAtTime(gain.gain.value, start + hold)
+    relGain.gain.exponentialRampToValueAtTime(0.001, start + hold + Math.max(0.08, decoded.audio.duration - decoded.releaseStart))
+    rel.connect(relGain)
+    relGain.connect(dest)
+    rel.start(start + hold, decoded.releaseStart)
+  }
+  return true
 }

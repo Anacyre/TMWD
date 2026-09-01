@@ -2,6 +2,7 @@ import { reactive } from 'vue'
 
 const FIRST_PORT = 17890
 const LAST_PORT = 17899
+const ENGINE_HOST_KEY = 'dawweb.engineHost'
 
 export const engineLink = reactive({
   connected: false,
@@ -90,8 +91,45 @@ function engineOverride () {
   }
 }
 
+export function getStoredEngineHost () {
+  if (typeof localStorage === 'undefined') return ''
+  try {
+    return String(localStorage.getItem(ENGINE_HOST_KEY) || '').trim()
+  } catch (err) {
+    return ''
+  }
+}
+
+export function setStoredEngineHost (value) {
+  const next = String(value || '').trim()
+  if (typeof localStorage === 'undefined') return next
+  try {
+    if (next) localStorage.setItem(ENGINE_HOST_KEY, next)
+    else localStorage.removeItem(ENGINE_HOST_KEY)
+  } catch (err) { /* quota */ }
+  return next
+}
+
+export function parseEngineHost (text) {
+  const raw = String(text || '').trim().replace(/^https?:\/\//, '')
+  if (!raw) return null
+  const parts = raw.split(':')
+  const host = parts[0]
+  const port = parts.length > 1 ? Number(parts[1]) : FIRST_PORT
+  if (!host) return null
+  return { host, port: Number.isFinite(port) && port > 0 ? port : FIRST_PORT }
+}
+
+export function mixedContentHint () {
+  if (typeof location === 'undefined') return ''
+  if (location.protocol !== 'https:') return ''
+  return 'This HTTPS page cannot mix-connect to http://127.0.0.1. Open the address shown in the DawWeb window (LAN HTTP), or set Engine host / ?engine=IP:17890. Vite (npm run dev:h5) is not the engine.'
+}
+
 function candidateHosts () {
   const hosts = []
+  const stored = parseEngineHost(getStoredEngineHost())
+  if (stored) hosts.push(stored.host)
   const override = engineOverride()
   if (override) {
     const host = override.split(':')[0]
@@ -133,6 +171,12 @@ async function probeHealth (host, port) {
 }
 
 async function discoverUrl () {
+  const stored = parseEngineHost(getStoredEngineHost())
+  if (stored) {
+    const found = await probeHealth(stored.host, stored.port)
+    if (found) return found
+  }
+
   const override = engineOverride()
   if (override && override.includes(':')) {
     const [host, portText] = override.split(':')
@@ -149,10 +193,10 @@ async function discoverUrl () {
   }
 
   return {
-    host: '127.0.0.1',
-    port: FIRST_PORT,
-    ws: `ws://127.0.0.1:${FIRST_PORT}`,
-    audioWs: `ws://127.0.0.1:${FIRST_PORT}/audio`,
+    host: stored ? stored.host : '127.0.0.1',
+    port: stored ? stored.port : FIRST_PORT,
+    ws: `ws://${stored ? stored.host : '127.0.0.1'}:${stored ? stored.port : FIRST_PORT}`,
+    audioWs: `ws://${stored ? stored.host : '127.0.0.1'}:${stored ? stored.port : FIRST_PORT}/audio`,
     sessionId: '',
     schemaVersion: 0,
     lan: []
@@ -268,6 +312,13 @@ export async function connectEngine () {
   }
 
   const found = await discoverUrl()
+  const hint = mixedContentHint()
+  if (hint && found.ws && found.ws.startsWith('ws://')) {
+    engineLink.connecting = false
+    engineLink.status = 'Offline'
+    engineLink.lastError = hint
+    return
+  }
   openSocket(found)
 }
 

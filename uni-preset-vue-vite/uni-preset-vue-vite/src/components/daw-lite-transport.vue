@@ -41,10 +41,9 @@
       <view
         class="hit"
         :class="{ on: session.scaleSnap }"
-        title="Scale snap"
-        aria-label="Scale snap"
-        @click.stop="toggleScaleSnap"
-        @pointerdown.stop="onScaleHold"
+        title="Scale"
+        aria-label="Scale"
+        @click.stop="onScaleTap"
       >
         <daw-icon name="scale" :size="22" :active="session.scaleSnap" />
       </view>
@@ -71,8 +70,11 @@
         :key="name"
         class="item"
         :class="{ on: session.scaleName === name }"
-        @click="setScaleKeyName(session.scaleKey, name); session.scaleMenuOpen = false"
+        @click="setScaleKeyName(session.scaleKey, name)"
       >{{ name }}</view>
+      <view class="item" :class="{ on: session.scaleSnap }" @click="toggleScaleSnap">
+        {{ session.scaleSnap ? 'Snap on' : 'Highlight only' }}
+      </view>
     </view>
   </view>
 </template>
@@ -107,13 +109,8 @@ function toggleFormat () {
   setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
 }
 
-function onScaleHold (e) {
-  const timer = setTimeout(() => { session.scaleMenuOpen = true }, 420)
-  const clear = () => {
-    clearTimeout(timer)
-    window.removeEventListener('pointerup', clear)
-  }
-  window.addEventListener('pointerup', clear)
+function onScaleTap () {
+  session.scaleMenuOpen = !session.scaleMenuOpen
 }
 </script>
 

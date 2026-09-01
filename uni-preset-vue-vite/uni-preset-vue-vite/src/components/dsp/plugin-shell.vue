@@ -43,9 +43,6 @@
     </view>
 
     <view v-if="menu" class="drop menu-drop" @click.stop>
-      <view class="drop-item" title="Change plugin" aria-label="Change plugin" @click="emitChange">
-        <daw-icon name="copy" :size="16" />
-      </view>
       <view class="drop-item" title="Reset" aria-label="Reset" @click="doReset">
         <daw-icon name="undo" :size="16" />
       </view>
@@ -56,8 +53,6 @@
 <script setup>
 import { computed, ref } from 'vue'
 import DawIcon from '../daw-icon.vue'
-import { session, closePlugin, openLiteSheet, isLite } from '../../store/session.js'
-import { laneFromOpen } from '../../model/web-mixer.js'
 
 const props = defineProps({
   name: { type: String, required: true },
@@ -89,24 +84,6 @@ function step (dir) {
 function doReset () {
   menu.value = false
   emit('reset')
-}
-function emitChange () {
-  menu.value = false
-  emit('change-plugin')
-  const open = session.openPlugin
-  if (!open || !isLite()) return
-  const lane = laneFromOpen(open)
-  const trackIndex = lane && lane.type === 'track'
-    ? session.tracks.findIndex((track) => String(track.id) === String(lane.id))
-    : session.tracks.findIndex((track) => track.type === 'master')
-  closePlugin()
-  openLiteSheet({
-    kind: 'track',
-    tab: 'fx',
-    picker: true,
-    replaceIndex: open.index,
-    trackIndex: trackIndex >= 0 ? trackIndex : session.selectedTrack
-  })
 }
 </script>
 

@@ -118,7 +118,9 @@ export function insertablePlugins (options = {}) {
     {
       id: ORCHESTRA_SAMPLER_PLUGIN_ID,
       displayName: 'Orchestra Sampler',
-      detail: engine ? 'BBCSO Discover / Synchron Player' : '需要电脑上的 DawWeb 引擎',
+      detail: engine
+        ? 'BBCSO Discover / Synchron Player'
+        : 'Needs DawWeb.exe on the PC (LAN HTTP). Cloudflare HTTPS cannot reach localhost.',
       available: engine,
       requiresEngine: true
     },

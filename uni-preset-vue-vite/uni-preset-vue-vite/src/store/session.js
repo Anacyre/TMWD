@@ -7,7 +7,10 @@ import {
   onEngineEvent,
   onEngineAudio,
   sendCommand,
-  connectEngineAudio
+  connectEngineAudio,
+  getStoredEngineHost,
+  setStoredEngineHost,
+  mixedContentHint
 } from '../bridge/engine.js'
 import { canAddInsert, dbFromFader, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix } from '../model/mixer-model.js'
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
@@ -32,6 +35,7 @@ import {
   FALLBACK_KEYS
 } from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
+import { bounceSessionToWav } from '../audio/bounce.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/engine.js'
 import { createInsert } from '../dsp/plugin.js'
@@ -429,6 +433,14 @@ function refreshMixerGraph () {
  * Surface where each strip is processed. Inserts on a track with no reachable
  * audio stem would otherwise look active while doing nothing.
  */
+function readableFxError (raw) {
+  const text = String(raw || '')
+  if (/class statement must have a name/i.test(text) || /must have a name/i.test(text)) {
+    return 'FX processor failed to load in this browser build'
+  }
+  return text
+}
+
 function publishRoutingDiagnostics (graph) {
   const snap = routingSnapshot(graph)
   const diag = session.diagnostics
@@ -444,7 +456,7 @@ function publishRoutingDiagnostics (graph) {
   })
   diag.lanePeaks = peaks
   const warnings = []
-  if (snap.error) warnings.push('Routing: ' + snap.error)
+  if (snap.error) warnings.push('Routing: ' + readableFxError(snap.error))
   if (snap.muted) warnings.push('Mixer muted: inserts are offline')
   const localPlayback = !session.remoteAudioOn
   session.tracks.forEach((track) => {
@@ -628,8 +640,19 @@ export function setBpm (value) {
   fire('transport.setBpm', { bpm: session.bpm })
 }
 
+function stampClock () {
+  session.clockStamp = {
+    positionBeats: session.positionBeats,
+    playing: session.playing,
+    bpm: session.bpm,
+    receivedAt: typeof performance !== 'undefined' ? performance.now() : Date.now()
+  }
+}
+
 export function setPositionBeats (beats) {
   session.positionBeats = Math.max(0, beats)
+  lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  stampClock()
   fire('transport.seek', { beats: session.positionBeats })
 }
 
@@ -720,6 +743,7 @@ function loop (now) {
     if (session.looping && session.positionBeats >= session.loopEnd) {
       const length = Math.max(0.25, session.loopEnd - session.loopStart)
       session.positionBeats = session.loopStart + ((session.positionBeats - session.loopStart) % length)
+      stampClock()
       allLocalNotesOff()
     }
     tickLocalMetronome(session.positionBeats)
@@ -2345,8 +2369,19 @@ export function engineStateLabel () {
   const state = engineState()
   if (state === 'connected') return 'Ready'
   if (state === 'loading') return 'Loading'
-  if (state === 'error') return 'Error'
-  return 'Offline'
+  if (state === 'error') return engineLink.lastError || 'Error'
+  if (mixedContentHint()) return 'Offline — open DawWeb’s LAN page (HTTPS cannot reach the PC engine)'
+  return engineLink.lastError || 'Offline'
+}
+
+export function engineHostValue () {
+  return getStoredEngineHost()
+}
+
+export function setEngineHost (value) {
+  setStoredEngineHost(value)
+  disconnectEngine()
+  return connectEngine()
 }
 
 async function autosaveProject () {
@@ -2495,17 +2530,35 @@ export async function saveProjectLocal () {
   return saveCurrentProject()
 }
 
-export async function exportProject () {
+export async function shareProjectFile () {
   session.saveStatus = 'Saving…'
   try {
     const data = await buildSavePayload()
     downloadText((session.projectName || 'project') + '.dawweb', JSON.stringify(data, null, 2))
     markSaved()
-    showToast('Project exported')
+    showToast('Project file downloaded')
+  } catch (err) {
+    session.saveStatus = ''
+    showToast(err.message || 'Share failed')
+  }
+}
+
+export async function exportProjectWav () {
+  session.saveStatus = 'Exporting…'
+  showToast('Bouncing WAV…')
+  try {
+    await bounceSessionToWav(session, { samplerBuffers })
+    session.saveStatus = ''
+    showToast('WAV exported')
   } catch (err) {
     session.saveStatus = ''
     showToast(err.message || 'Export failed')
   }
+}
+
+export async function exportProject () {
+  if (isLite()) return exportProjectWav()
+  return shareProjectFile()
 }
 
 export async function importProjectJson (json) {
@@ -2746,13 +2799,13 @@ async function doEnsureMixerAttached () {
     console.error('[mixer] browser FX attach failed:', err)
     graph.mixerNodes = null
     session.diagnostics.browserFxAttached = false
-    session.diagnostics.browserFxError = err.message || String(err)
+    session.diagnostics.browserFxError = readableFxError(err.message || String(err))
     ensureOutputRouting(graph, session.webMixer)
     if (!dryMixToast) {
       dryMixToast = true
       const muted = mixerHasInserts(session.webMixer)
       showToast(muted
-        ? 'Mixer FX failed to load — inserts are offline and the mix is muted'
+        ? 'Mixer FX failed to load — inserts are offline. Remove them to restore sound.'
         : 'Mixer FX failed to load')
     }
   }

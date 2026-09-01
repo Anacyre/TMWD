@@ -1486,8 +1486,8 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 12px;
-  margin-left: -6px;
+  width: 16px;
+  margin-left: -8px;
   background: transparent;
   pointer-events: auto;
   z-index: 8;
@@ -1498,7 +1498,7 @@ onUnmounted(() => {
   position: absolute;
   top: 0;
   bottom: 0;
-  left: 5px;
+  left: 7px;
   width: 2px;
   background: #fff;
 }

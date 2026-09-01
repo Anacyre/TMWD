@@ -45,24 +45,51 @@ export function beginPointerDrag (event, handlers = {}) {
   return finish
 }
 
+function pickPoint (pt) {
+  if (!pt) return null
+  const x = Number(pt.clientX)
+  const y = Number(pt.clientY)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+  return { x, y }
+}
+
+function fromTouchList (list) {
+  if (!list || !list.length) return null
+  return pickPoint(list[0])
+}
+
+/** Uni-app / Safari touch events often omit clientX/Y on the event itself. */
+export function pointerCoord (event) {
+  if (!event) return null
+  return pickPoint(event)
+    || fromTouchList(event.touches)
+    || fromTouchList(event.changedTouches)
+    || fromTouchList(event.targetTouches)
+    || null
+}
+
 /**
  * 0..1 position of a pointer along `element`. Returns null when the element has
  * no measurable size, which would otherwise produce NaN and freeze the control.
  */
 export function trackRatio (event, element, orientation = 'horizontal') {
   if (!element || typeof element.getBoundingClientRect !== 'function') return null
+  const coord = pointerCoord(event)
+  if (!coord) return null
   const rect = element.getBoundingClientRect()
   const vertical = orientation === 'vertical'
   const span = vertical ? rect.height : rect.width
   if (!(span > 1)) return null
-  const offset = vertical ? (event.clientY - rect.top) : (event.clientX - rect.left)
+  const offset = vertical ? (coord.y - rect.top) : (coord.x - rect.left)
   const t = offset / span
   const clamped = Math.min(1, Math.max(0, t))
   return vertical ? 1 - clamped : clamped
 }
 
-export function clamp (value, min, max) {
-  if (!Number.isFinite(value)) return min
+export function clamp (value, min, max, fallback) {
+  if (!Number.isFinite(value)) {
+    return Number.isFinite(fallback) ? fallback : min
+  }
   return Math.min(max, Math.max(min, value))
 }
 

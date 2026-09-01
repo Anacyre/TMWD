@@ -140,9 +140,18 @@ export function migrateProject (raw) {
   }
 }
 
+/** Drop Vue proxies, functions and AudioBuffers so IndexedDB structured clone succeeds. */
+export function clonePlain (value) {
+  try {
+    return JSON.parse(JSON.stringify(value))
+  } catch (err) {
+    throw new Error('Project could not be saved (contains data that cannot be stored)')
+  }
+}
+
 export function serializeSession (session) {
   const master = (session.tracks || []).find((track) => track.type === 'master')
-  return migrateProject({
+  return clonePlain(migrateProject({
     id: session.projectId || uid(),
     name: session.projectName,
     tempo: session.bpm,
@@ -165,7 +174,7 @@ export function serializeSession (session) {
     webMixer: session.webMixer,
     pixelsPerBeat: session.pixelsPerBeat,
     trackHeight: session.trackHeight
-  })
+  }))
 }
 
 export function stripRuntime (project) {

@@ -7,32 +7,18 @@
       <view class="icon-btn" @click.stop="closeEditor" @tap.stop="closeEditor">×</view>
     </view>
 
-    <view class="tools" :class="{ lite: lite }">
-      <view v-if="!lite" class="chip" :class="{ on: tool === 'draw' }" @click="tool = 'draw'">Draw</view>
-      <view v-if="!lite" class="chip" :class="{ on: tool === 'select' }" @click="tool = 'select'">Select</view>
-      <view v-if="!lite" class="chip" :class="{ on: tool === 'erase' }" @click="tool = 'erase'">Erase</view>
-      <view v-if="!lite" class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Snap {{ snapLabel }}</view>
-      <view v-if="!lite" class="chip" @click="quantizeSelected">Quantize</view>
-      <view v-if="!lite" class="chip" @click="undoEdit">Undo</view>
-      <view v-if="!lite" class="chip" @click="redoEdit">Redo</view>
-      <template v-if="lite">
-        <view class="icon-chip" :class="{ on: tool === 'draw' }" aria-label="Draw" @click="tool = 'draw'">
-          <daw-icon name="note" :size="18" />
-        </view>
-        <view class="icon-chip" :class="{ on: tool === 'select' }" aria-label="Select" @click="tool = 'select'">
-          <daw-icon name="grid" :size="18" />
-        </view>
-        <view class="icon-chip" :class="{ on: tool === 'erase' }" aria-label="Erase" @click="tool = 'erase'">
-          <daw-icon name="trash" :size="18" />
-        </view>
-        <view class="icon-chip" :class="{ on: snapId !== 'off' }" aria-label="Snap" @click="cycleSnap">
-          <daw-icon name="magnet" :size="18" />
-        </view>
-      </template>
+    <view v-if="!lite" class="tools">
+      <view class="chip" :class="{ on: tool === 'draw' }" @click="tool = 'draw'">Draw</view>
+      <view class="chip" :class="{ on: tool === 'select' }" @click="tool = 'select'">Select</view>
+      <view class="chip" :class="{ on: tool === 'erase' }" @click="tool = 'erase'">Erase</view>
+      <view class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Snap {{ snapLabel }}</view>
+      <view class="chip" @click="quantizeSelected">Quantize</view>
+      <view class="chip" @click="undoEdit">Undo</view>
+      <view class="chip" @click="redoEdit">Redo</view>
       <view class="spacer" />
-      <view v-if="isPhone && !lite" class="chip" :class="{ on: keyboardOpen }" @click="keyboardOpen = !keyboardOpen">Keys</view>
-      <view v-if="!lite" class="chip" :class="{ on: velocityOpen }" @click="velocityOpen = !velocityOpen">Vel</view>
-      <view v-if="!lite" class="more" @click.stop="showMore = !showMore">⋯</view>
+      <view v-if="isPhone" class="chip" :class="{ on: keyboardOpen }" @click="keyboardOpen = !keyboardOpen">Keys</view>
+      <view class="chip" :class="{ on: velocityOpen }" @click="velocityOpen = !velocityOpen">Vel</view>
+      <view class="more" @click.stop="showMore = !showMore">⋯</view>
     </view>
 
     <view v-if="showMore" class="more-row">
@@ -102,7 +88,6 @@
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
-import DawIcon from './daw-icon.vue'
 import DawExpressionPanel from './daw-expression-panel.vue'
 import {
   session,
@@ -164,6 +149,7 @@ import {
 } from '../model/piano-roll-engine.js'
 import { drawPianoRoll, resizeCanvas } from '../model/piano-roll-render.js'
 import { interpolateBeats } from '../model/timeline.js'
+import { pointerCoord } from '../lib/pointer-drag.js'
 import { ensureExpression, laneKey, mappedExpressionControllers } from '../model/expression-lane.js'
 
 defineProps({
@@ -261,6 +247,7 @@ let gesture = null
 let clipboard = ''
 let longPressTimer = 0
 let lastTap = { at: 0, noteId: 0 }
+let lastEmptyTap = { at: 0, x: 0, y: 0 }
 const pointers = new Map()
 
 function resolveHost () {
@@ -376,7 +363,8 @@ function paint () {
 
 function localPoint (e) {
   const rect = canvasEl.getBoundingClientRect()
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top }
+  const coord = pointerCoord(e) || { x: e.clientX, y: e.clientY }
+  return { x: coord.x - rect.left, y: coord.y - rect.top }
 }
 
 function gridPoint (p) {
@@ -386,11 +374,14 @@ function gridPoint (p) {
 function onPointerDown (e) {
   if (!clip.value) return
   canvasEl.setPointerCapture(e.pointerId)
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  const coord = pointerCoord(e) || { x: e.clientX, y: e.clientY }
+  pointers.set(e.pointerId, { x: coord.x, y: coord.y })
   session.pianoRollFocus = true
   menu.value = null
   const p = localPoint(e)
   if (pointers.size === 2) {
+    clearTimeout(longPressTimer)
+    rubber = null
     gesture = { type: 'pinch', start: pinchState() }
     return
   }
@@ -415,6 +406,15 @@ function onPointerDown (e) {
       setPositionBeats(Math.max(0, beat))
       gesture = { type: 'seek' }
     }
+    return
+  }
+  const playheadBeat = currentPlayhead()
+  const playheadX = layout.gridX + ((playheadBeat - (clip.value.startBeat || 0)) * view.pixelsPerBeat) - view.scrollX
+  const playheadHit = e.pointerType === 'touch' ? 18 : 8
+  if (p.x >= layout.gridX && p.y >= layout.gridY && Math.abs(p.x - playheadX) <= playheadHit) {
+    const beat = (clip.value.startBeat || 0) + xToTick(p.x - layout.gridX, view, { snap: false }) / PPQ
+    setPositionBeats(Math.max(0, beat))
+    gesture = { type: 'seek' }
     return
   }
   if (p.x < layout.gridX) {
@@ -518,7 +518,8 @@ function onPointerDown (e) {
 }
 
 function onPointerMove (e) {
-  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+  const coord = pointerCoord(e) || { x: e.clientX, y: e.clientY }
+  if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: coord.x, y: coord.y })
   const p = canvasEl ? localPoint(e) : { x: 0, y: 0 }
   if (pointers.size === 2 && gesture && gesture.type === 'pinch') {
     applyPinch()
@@ -629,11 +630,18 @@ function onPointerUp (e) {
   pointers.delete(e.pointerId)
   clearTimeout(longPressTimer)
   const p = canvasEl ? localPoint(e) : { x: 0, y: 0 }
-  if (gesture && gesture.type === 'lite-empty' && !gesture.cancelled && clip.value) {
-    beginEdit('Create note')
-    const note = createNote(clip.value, gesture.pitch, gesture.startTick / PPQ, (view.lastDurationTicks || PPQ) / PPQ, 100)
-    selectOnly(note.id)
-    endEdit()
+  if (gesture && gesture.type === 'lite-empty' && !gesture.cancelled && !gesture.panning && clip.value) {
+    const now = Date.now()
+    const close = Math.hypot(p.x - lastEmptyTap.x, p.y - lastEmptyTap.y) < 28
+    if (now - lastEmptyTap.at < 360 && close) {
+      beginEdit('Create note')
+      const note = createNote(clip.value, gesture.pitch, gesture.startTick / PPQ, (view.lastDurationTicks || PPQ) / PPQ, 100)
+      selectOnly(note.id)
+      endEdit()
+      lastEmptyTap = { at: 0, x: 0, y: 0 }
+    } else {
+      lastEmptyTap = { at: now, x: p.x, y: p.y }
+    }
   }
   if (gesture && gesture.type === 'move' && lite.value && gesture.originals && gesture.originals.length === 1) {
     const moved = Math.hypot(p.x - (gesture.originX || p.x), p.y - (gesture.originY || p.y))
@@ -666,28 +674,33 @@ function pinchState () {
   if (pts.length < 2) return null
   const dx = pts[1].x - pts[0].x
   const dy = pts[1].y - pts[0].y
-  return { dist: Math.hypot(dx, dy), cx: (pts[0].x + pts[1].x) / 2, cy: (pts[0].y + pts[1].y) / 2, ppb: view.pixelsPerBeat, pps: view.pixelsPerSemitone }
+  return {
+    dist: Math.hypot(dx, dy),
+    cx: (pts[0].x + pts[1].x) / 2,
+    cy: (pts[0].y + pts[1].y) / 2,
+    ppb: view.pixelsPerBeat,
+    pps: view.pixelsPerSemitone,
+    scrollX: view.scrollX,
+    scrollY: view.scrollY
+  }
 }
 
 function applyPinch () {
   const now = pinchState()
   if (!now || !gesture.start || !gesture.start.dist) return
   const start = gesture.start
-  const scale = now.dist / start.dist
-  const moved = Math.hypot(now.cx - start.cx, now.cy - start.cy)
-  if (Math.abs(scale - 1) < 0.08 && moved > 8) {
-    const lastX = gesture.lastCx != null ? gesture.lastCx : start.cx
-    const lastY = gesture.lastCy != null ? gesture.lastCy : start.cy
-    view.scrollX -= now.cx - lastX
-    view.scrollY -= now.cy - lastY
-    gesture.lastCx = now.cx
-    gesture.lastCy = now.cy
-    return
-  }
+  const scale = now.dist / Math.max(1, start.dist)
   const rect = canvasEl.getBoundingClientRect()
-  zoomAt(view, { h: scale, v: scale, anchorX: now.cx - rect.left - layout.gridX, anchorY: now.cy - rect.top - layout.gridY })
+  const ax0 = start.cx - rect.left - layout.gridX
+  const ay0 = start.cy - rect.top - layout.gridY
+  const ax1 = now.cx - rect.left - layout.gridX
+  const ay1 = now.cy - rect.top - layout.gridY
+  const beat = (start.scrollX + ax0) / Math.max(0.001, start.ppb)
+  const pitchY = (start.scrollY + ay0) / Math.max(0.001, start.pps)
   view.pixelsPerBeat = Math.min(MAX_PX_PER_BEAT, Math.max(MIN_PX_PER_BEAT, start.ppb * scale))
   view.pixelsPerSemitone = Math.min(MAX_PX_PER_SEMITONE, Math.max(MIN_PX_PER_SEMITONE, start.pps * scale))
+  view.scrollX = beat * view.pixelsPerBeat - ax1
+  view.scrollY = pitchY * view.pixelsPerSemitone - ay1
 }
 
 function onWheel (e) {
@@ -972,7 +985,7 @@ onUnmounted(() => {
 .roll {
   height: 100%;
   min-height: 0;
-  background: #141414;
+  background: #121212;
   display: flex;
   flex-direction: column;
   overflow: hidden;

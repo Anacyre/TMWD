@@ -55,12 +55,15 @@
       <view v-else-if="name === 'copy'" class="copy">
         <view class="back" /><view class="front" />
       </view>
+      <view v-else-if="name === 'swap'" class="swap">
+        <view class="up" /><view class="down" />
+      </view>
       <view v-else-if="name === 'download'" class="download" />
       <view v-else-if="name === 'upload'" class="download up" />
       <view v-else-if="name === 'power'" class="power" />
       <view v-else-if="name === 'dot'" class="status-dot" />
       <view v-else-if="name === 'scale'" class="scale-icon">
-        <view /><view /><view />
+        <view /><view /><view /><view /><view />
       </view>
     </view>
   </view>
@@ -462,6 +465,76 @@ const boxStyle = computed(() => {
 .arrange view:nth-child(1) { top: 0; left: 0; width: 100%; }
 .arrange view:nth-child(2) { top: 50%; left: 18%; width: 64%; transform: translateY(-50%); }
 .arrange view:nth-child(3) { bottom: 0; left: 0; width: 82%; }
+.note {
+  left: 50%;
+  top: 50%;
+  width: 0.52em;
+  height: 0.62em;
+  transform: translate(-50%, -50%);
+}
+.note .head {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0.28em;
+  height: 0.22em;
+  border-radius: 50%;
+  background: currentColor;
+  transform: rotate(-18deg);
+}
+.note .stem {
+  position: absolute;
+  right: 0.08em;
+  top: 0;
+  width: 0.08em;
+  height: 0.5em;
+  background: currentColor;
+}
+.note .flag {
+  position: absolute;
+  right: 0;
+  top: 0;
+  width: 0.2em;
+  height: 0.18em;
+  border-right: 0.08em solid currentColor;
+  border-bottom: 0.08em solid currentColor;
+  border-radius: 0 0 0.08em 0;
+}
+.mixer {
+  left: 50%;
+  top: 50%;
+  width: 0.66em;
+  height: 0.56em;
+  transform: translate(-50%, -50%);
+}
+.mixer view {
+  position: absolute;
+  top: 0;
+  width: 0.12em;
+  height: 100%;
+  background: currentColor;
+  border-radius: 0.06em;
+}
+.mixer view:nth-child(1) { left: 0; height: 58%; top: 22%; }
+.mixer view:nth-child(2) { left: 50%; height: 100%; transform: translateX(-50%); }
+.mixer view:nth-child(3) { right: 0; height: 70%; top: 8%; }
+.inspector {
+  left: 50%;
+  top: 50%;
+  width: 0.62em;
+  height: 0.5em;
+  transform: translate(-50%, -50%);
+}
+.inspector .pane {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border: 0.08em solid currentColor;
+  border-radius: 0.05em;
+  box-sizing: border-box;
+}
+.inspector .pane.left { left: 0; width: 36%; }
+.inspector .pane.right { right: 0; width: 52%; }
 .trash {
   left: 50%;
   top: 54%;
@@ -492,6 +565,22 @@ const boxStyle = computed(() => {
 }
 .copy .back { left: 0; top: 0; }
 .copy .front { right: 0; bottom: 0; background: currentColor; opacity: 0.28; }
+.swap {
+  left: 50%;
+  top: 50%;
+  width: 0.62em;
+  height: 0.56em;
+  transform: translate(-50%, -50%);
+}
+.swap .up, .swap .down {
+  position: absolute;
+  width: 0.22em;
+  height: 0.22em;
+  border-top: 0.09em solid currentColor;
+  border-right: 0.09em solid currentColor;
+}
+.swap .up { left: 0.04em; top: 0.06em; transform: rotate(-45deg); }
+.swap .down { right: 0.04em; bottom: 0.06em; transform: rotate(135deg); }
 .download { left: 50%; top: 50%; width: 0.56em; height: 0.62em; transform: translate(-50%, -50%); }
 .download::before {
   content: '';
@@ -539,20 +628,34 @@ const boxStyle = computed(() => {
 .scale-icon {
   left: 50%;
   top: 50%;
-  width: 0.62em;
-  height: 0.56em;
+  width: 0.7em;
+  height: 0.58em;
   transform: translate(-50%, -50%);
 }
 .scale-icon view {
   position: absolute;
   left: 0;
   right: 0;
-  height: 0.08em;
+  height: 0.045em;
   background: currentColor;
+  opacity: 0.85;
 }
-.scale-icon view:nth-child(1) { top: 0.04em; }
-.scale-icon view:nth-child(2) { top: 0.24em; }
-.scale-icon view:nth-child(3) { top: 0.44em; }
+.scale-icon view:nth-child(1) { top: 0; }
+.scale-icon view:nth-child(2) { top: 0.12em; }
+.scale-icon view:nth-child(3) { top: 0.24em; }
+.scale-icon view:nth-child(4) { top: 0.36em; }
+.scale-icon view:nth-child(5) { top: 0.48em; }
+.scale-icon::after {
+  content: '';
+  position: absolute;
+  left: 0.28em;
+  bottom: 0.04em;
+  width: 0.16em;
+  height: 0.16em;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0.12em -0.22em 0 -0.04em currentColor;
+}
 .status-dot {
   left: 50%;
   top: 50%;

@@ -30,11 +30,19 @@
       <view class="led" :class="engineState()" />
       <text>{{ engineStateLabel() }}</text>
     </view>
+    <text class="cap host-cap">Engine host</text>
+    <input
+      class="host"
+      :value="host"
+      placeholder="192.168.1.10:17890"
+      @change="onHost"
+    >
+    <text class="note">{{ hostHint }}</text>
   </daw-lite-sheet>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import DawLiteSheet from './daw-lite-sheet.vue'
 import {
   session,
@@ -44,10 +52,22 @@ import {
   toggleSnap,
   toggleMetronome,
   engineState,
-  engineStateLabel
+  engineStateLabel,
+  engineHostValue,
+  setEngineHost
 } from '../store/session.js'
+import { mixedContentHint } from '../bridge/engine.js'
 
 const lite = computed(() => isLite())
+const host = ref(engineHostValue())
+const hostHint = computed(() => mixedContentHint()
+  || 'BBCSO / Synchron need DawWeb.exe on the PC. Enter that machine’s LAN IP:port. M Orchestra is browser cloud samples and does not use this.')
+
+function onHost (e) {
+  const value = (e.target && e.target.value) || ''
+  host.value = value
+  setEngineHost(value)
+}
 </script>
 
 <style scoped>
@@ -130,4 +150,16 @@ const lite = computed(() => isLite())
 .led.loading { background: #c4a026; }
 .led.error { background: #c45c26; }
 .led.offline { background: #5a5a5a; }
+.host-cap { margin-top: 18px; }
+.host {
+  width: 100%;
+  min-height: 40px;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  background: #161616;
+  color: #e6e6e6;
+  font-size: 14px;
+}
 </style>

@@ -825,6 +825,20 @@ function reverbXReportMeta (sr) {
   }
 }
 
+function workletDecl (name, fn) {
+  const src = Function.prototype.toString.call(fn).trim()
+  if (src.startsWith('class')) {
+    return src
+      .replace(/^class\s*[\w$]*/, 'class ' + name)
+      .replace(/^class\s*\{/, 'class ' + name + ' {')
+  }
+  if (src.startsWith('function')) {
+    const args = src.slice(src.indexOf('('))
+    return 'function ' + name + args
+  }
+  return 'const ' + name + ' = ' + src
+}
+
 export const REVERB_X_CORE_SOURCE = `
 const REVERB_X_VENUES = ${JSON.stringify(REVERB_X_VENUES)};
 const REVERB_X_MAX_PRE_ = ${REVERB_X_MAX_PRE_};
@@ -834,18 +848,32 @@ const REVERB_X_MAX_AP_ = ${REVERB_X_MAX_AP_};
 const REVERB_X_MIN_DELAY_ = ${REVERB_X_MIN_DELAY_};
 const REVERB_X_NUM_COMBS_ = ${REVERB_X_NUM_COMBS_};
 const REVERB_X_NUM_ALLPASS_ = ${REVERB_X_NUM_ALLPASS_};
-const REVERB_X_COMB_BASE = [${REVERB_X_COMB_SEC.join(',')}];
-const REVERB_X_COMB_R_OFF = [${REVERB_X_COMB_R_OFF_SEC.join(',')}];
-const REVERB_X_ALLPASS_BASE = [${REVERB_X_ALLPASS_SEC.join(',')}];
-const REVERB_X_ALLPASS_R_OFF = [${REVERB_X_ALLPASS_R_OFF_SEC.join(',')}];
-${reverbClamp.toString()}
-${sizeScale.toString()}
-${feedbackGain.toString()}
-${compileReverbNetwork.toString()}
-${wetInsertsFromState.toString()}
-${ReverbDelayLine.toString()}
-${WetProcessorChain.toString()}
-${ReverbXProcessor.toString()}
+const REVERB_X_MAX_BLOCK_ = ${REVERB_X_MAX_BLOCK_};
+const REVERB_X_COMB_SEC = [${REVERB_X_COMB_SEC.join(',')}];
+const REVERB_X_COMB_R_OFF_SEC = [${REVERB_X_COMB_R_OFF_SEC.join(',')}];
+const REVERB_X_ALLPASS_SEC = [${REVERB_X_ALLPASS_SEC.join(',')}];
+const REVERB_X_ALLPASS_R_OFF_SEC = [${REVERB_X_ALLPASS_R_OFF_SEC.join(',')}];
+const REVERB_X_COMB_BASE = REVERB_X_COMB_SEC;
+const REVERB_X_COMB_R_OFF = REVERB_X_COMB_R_OFF_SEC;
+const REVERB_X_ALLPASS_BASE = REVERB_X_ALLPASS_SEC;
+const REVERB_X_ALLPASS_R_OFF = REVERB_X_ALLPASS_R_OFF_SEC;
+const REVERB_X_MOD_HZ = [${REVERB_X_MOD_HZ.join(',')}];
+const REVERB_X_MOD_PHASE = [${REVERB_X_MOD_PHASE.join(',')}];
+const REVERB_X_MOD_DEPTH_ = ${REVERB_X_MOD_DEPTH_};
+const REVERB_X_MOD_R_SKEW_ = ${REVERB_X_MOD_R_SKEW_};
+const REVERB_X_SAT_T_ = ${REVERB_X_SAT_T_};
+const REVERB_X_SAT_K_ = ${REVERB_X_SAT_K_};
+${workletDecl('reverbClamp', reverbClamp)}
+${workletDecl('reverbSoftSat', reverbSoftSat)}
+${workletDecl('dampCoeff', dampCoeff)}
+${workletDecl('venueDampingHz', venueDampingHz)}
+${workletDecl('sizeScale', sizeScale)}
+${workletDecl('feedbackGain', feedbackGain)}
+${workletDecl('compileReverbNetwork', compileReverbNetwork)}
+${workletDecl('wetInsertsFromState', wetInsertsFromState)}
+${workletDecl('ReverbDelayLine', ReverbDelayLine)}
+${workletDecl('WetProcessorChain', WetProcessorChain)}
+${workletDecl('ReverbXProcessor', ReverbXProcessor)}
 `
 
 export {

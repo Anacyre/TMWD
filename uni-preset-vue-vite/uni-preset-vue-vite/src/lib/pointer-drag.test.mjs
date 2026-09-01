@@ -1,6 +1,6 @@
 /* Pointer drag contract: capture, filtering by pointer id, and zero-size guards. */
 
-import { beginPointerDrag, trackRatio, clamp, relativeFromDelta, RELATIVE_TRAVEL_PX } from './pointer-drag.js'
+import { beginPointerDrag, trackRatio, clamp, relativeFromDelta, RELATIVE_TRAVEL_PX, pointerCoord } from './pointer-drag.js'
 
 function assert (ok, message) {
   if (!ok) throw new Error(message)
@@ -95,10 +95,18 @@ globalThis.window = win
 
 // clamp rejects NaN so a bad rect can never poison the model value.
 {
-  assert(clamp(NaN, 0, 1) === 0, 'NaN clamps to the minimum')
+  assert(clamp(NaN, 0, 1, 0.8) === 0.8, 'NaN keeps the live value when a fallback is given')
   assert(clamp(2, 0, 1) === 1, 'above range clamps to max')
   assert(clamp(-2, 0, 1) === 0, 'below range clamps to min')
   assert(clamp(0.4, 0, 1) === 0.4, 'in-range values pass through')
+}
+
+{
+  assert(pointerCoord({ clientX: 10, clientY: 20 }).x === 10, 'mouse coords are used when present')
+  assert(pointerCoord({ touches: [{ clientX: 3, clientY: 9 }] }).y === 9, 'touch list fills in missing clientY')
+  assert(pointerCoord({ clientX: NaN, clientY: NaN, changedTouches: [{ clientX: 4, clientY: 5 }] }).x === 4,
+    'changedTouches recovers a uni-app event with NaN client fields')
+  assert(pointerCoord({}) === null, 'a coord-less event reports null instead of NaN')
 }
 
 {

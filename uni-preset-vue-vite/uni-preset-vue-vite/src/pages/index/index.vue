@@ -81,7 +81,7 @@ import {
   toggleLoop,
   toggleRecord,
   getSelectedClip,
-  exportProject,
+  saveCurrentProject,
   showToast,
   startEngineBridge,
   stopEngineBridge,
@@ -177,7 +177,7 @@ function onKey (e) {
     redoEdit()
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
-    exportProject()
+    saveCurrentProject()
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
     if (session.pianoRollFocus) return
     e.preventDefault()

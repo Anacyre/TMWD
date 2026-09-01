@@ -19,7 +19,7 @@
     "dev:quickapp-webview-huawei": "uni -p quickapp-webview-huawei",
     "dev:quickapp-webview-union": "uni -p quickapp-webview-union",
     "publish:m-orchestra": "node scripts/publish-m-orchestra.mjs --upload",
-    "test": "node src/audio/mixer-graph.test.mjs && node src/lib/project-io.test.mjs && node src/lib/project-db.test.mjs && node src/audio/m-orchestra/loop.test.mjs && node src/lib/pointer-drag.test.mjs && node src/dsp/visuals.test.mjs && node src/model/mixer-model.test.mjs && node src/model/note-model.test.mjs && node src/model/playlist-model.test.mjs && node src/model/expression-lane.test.mjs && node src/audio/m-orchestra/sample-cache.test.mjs && node src/dsp/reverb-x.test.mjs && node src/dsp/limiter-x.test.mjs && node src/dsp/dynamic-x.test.mjs",
+    "test": "node src/audio/mixer-graph.test.mjs && node src/lib/project-io.test.mjs && node src/lib/project-db.test.mjs && node src/audio/m-orchestra/loop.test.mjs && node src/lib/pointer-drag.test.mjs && node src/dsp/visuals.test.mjs && node src/dsp/fx-worklet.test.mjs && node src/audio/bounce.test.mjs && node src/model/mixer-model.test.mjs && node src/model/note-model.test.mjs && node src/model/playlist-model.test.mjs && node src/model/expression-lane.test.mjs && node src/audio/m-orchestra/sample-cache.test.mjs && node src/dsp/reverb-x.test.mjs && node src/dsp/limiter-x.test.mjs && node src/dsp/dynamic-x.test.mjs",
     "build:custom": "uni build -p",
     "build:h5": "uni build",
     "build:h5:ssr": "uni build --ssr",

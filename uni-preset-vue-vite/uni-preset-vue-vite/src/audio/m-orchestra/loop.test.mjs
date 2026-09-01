@@ -1,4 +1,4 @@
-import { findLoopPoints, pickRanked, scoreSample } from './pick.js'
+import { findLoopPoints, pickRanked, scoreSample, splitSustainRelease } from './pick.js'
 import { durationQuality, isOneShotDuration, PLAYBACK, acceptManifestLoop } from './playback.js'
 
 function assert (ok, message) {
@@ -51,6 +51,22 @@ function sineBuffer (seconds, hz, sampleRate = 44100) {
   assert(acceptManifestLoop(v2), 'v2 loop metadata is accepted when length and score pass')
   assert(!acceptManifestLoop({ loop: true, loopStart: 0.1, loopEnd: 0.2 }), 'loops shorter than minLoopSec are rejected')
   assert(!acceptManifestLoop({ loop: true, loopStart: 0.4, loopEnd: 2.1, loopScore: 0.1 }), 'low loopScore is rejected')
+}
+
+{
+  const sr = 44100
+  const data = new Float32Array(sr * 4)
+  for (let i = 0; i < sr * 2.2; i++) data[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.5
+  for (let i = Math.floor(sr * 2.2); i < data.length; i++) {
+    const t = (i - sr * 2.2) / (sr * 1.8)
+    data[i] = Math.sin(2 * Math.PI * 220 * i / sr) * 0.5 * Math.max(0, 1 - t)
+  }
+  const split = splitSustainRelease(data, sr)
+  assert(split.loop, 'loud-then-quiet buffer yields a sustain loop')
+  assert(split.loopEnd - split.loopStart >= 0.45, 'runtime loop covers the loud region')
+  assert(split.loopStart < 2.2, 'loop starts during the loud sustain')
+  assert(split.releaseStart >= split.loopEnd, 'release begins at or after the loop')
+  assert(split.releaseStart > 2.0, 'release sits in the decaying tail')
 }
 
 console.log('m-orchestra loop ok')
