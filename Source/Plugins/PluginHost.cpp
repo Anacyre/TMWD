@@ -5,6 +5,25 @@
 
 namespace
 {
+    /** JUCE 9's VST3 slow description path touches IComponent buses and requires the message thread. */
+    template <typename Fn>
+    void runOnMessageThread (Fn&& fn)
+    {
+        if (juce::MessageManager::getInstance()->isThisTheMessageThread())
+        {
+            fn();
+            return;
+        }
+
+        juce::WaitableEvent done;
+        juce::MessageManager::callAsync ([&fn, &done]
+        {
+            fn();
+            done.signal();
+        });
+        done.wait (300000);
+    }
+
    #if JUCE_PLUGINHOST_VST3
     int findVst3TypesSEH (juce::AudioPluginFormat* format,
                           juce::OwnedArray<juce::PluginDescription>* types,
@@ -30,11 +49,14 @@ namespace
                             juce::OwnedArray<juce::PluginDescription>& types,
                             const juce::String& path)
     {
-        if (findVst3TypesSEH (&format, &types, &path) == 0)
+        runOnMessageThread ([&format, &types, &path]
         {
-            types.clear();
-            juce::Logger::writeToLog ("[Plugin] VST3 type scan crashed for " + path + " (caught)");
-        }
+            if (findVst3TypesSEH (&format, &types, &path) == 0)
+            {
+                types.clear();
+                juce::Logger::writeToLog ("[Plugin] VST3 type scan crashed for " + path + " (caught)");
+            }
+        });
     }
    #endif
 }
@@ -405,27 +427,40 @@ std::unique_ptr<PluginInstance> PluginHost::createExternalInstance (const Plugin
     errorMessage = "VST3 hosting is disabled in this build.";
     return {};
    #else
-    juce::PluginDescription description;
-
-    if (! resolveDescription (descriptor, description, errorMessage))
-        return {};
+    struct LoadResult
+    {
+        std::unique_ptr<PluginInstance> instance;
+        juce::String error;
+    } result;
 
     const auto rate = sampleRate > 0.0 ? sampleRate : 44100.0;
     const auto block = juce::jmax (16, maximumBlockSize);
-    juce::Logger::writeToLog ("[Plugin] creating " + descriptor.displayName + " synchronously");
-    auto plugin = formatManager.createPluginInstance (description, rate, block, errorMessage);
 
-    if (plugin == nullptr)
+    runOnMessageThread ([this, &descriptor, rate, block, &result]
     {
-        if (errorMessage.isEmpty())
-            errorMessage = descriptor.displayName + " failed to load.";
-        return {};
-    }
+        juce::PluginDescription description;
 
-    auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin),
-                                                            descriptor.instrumentId,
-                                                            descriptor.displayName);
-    instance->prepare (rate, block);
-    return instance;
+        if (! resolveDescription (descriptor, description, result.error))
+            return;
+
+        juce::Logger::writeToLog ("[Plugin] creating " + descriptor.displayName + " synchronously");
+        auto plugin = formatManager.createPluginInstance (description, rate, block, result.error);
+
+        if (plugin == nullptr)
+        {
+            if (result.error.isEmpty())
+                result.error = descriptor.displayName + " failed to load.";
+            return;
+        }
+
+        auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin),
+                                                                descriptor.instrumentId,
+                                                                descriptor.displayName);
+        instance->prepare (rate, block);
+        result.instance = std::move (instance);
+    });
+
+    errorMessage = result.error;
+    return std::move (result.instance);
    #endif
 }

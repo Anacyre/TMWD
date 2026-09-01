@@ -239,6 +239,9 @@ namespace
         if (period <= 0)
             return pos;
 
+        if (minPos > maxPos)
+            return juce::jlimit (juce::jmin (minPos, maxPos), juce::jmax (minPos, maxPos), pos);
+
         const int cycles = (int) std::round ((double) (pos - minPos) / (double) period);
         const int aligned = minPos + cycles * period;
         return juce::jlimit (minPos, maxPos, aligned);
@@ -424,8 +427,12 @@ void Engine::findLoopPoints (SampleBuffer& buffer) const
         return;
     }
 
-    const auto searchStart = juce::jlimit (0, samples - 2, (int) (samples * (double) rules.loopSearchStart));
-    const auto searchEnd = juce::jlimit (searchStart + 8, samples - 1, (int) (samples * (double) rules.loopSearchEnd));
+    const auto searchStart = juce::jlimit (0, juce::jmax (0, samples - 2),
+                                           (int) (samples * (double) rules.loopSearchStart));
+    const auto searchEndCap = juce::jmax (searchStart, samples - 1);
+    const auto searchEndMin = juce::jmin (searchStart + 8, searchEndCap);
+    const auto searchEnd = juce::jlimit (searchEndMin, searchEndCap,
+                                         (int) (samples * (double) rules.loopSearchEnd));
     const auto avail = searchEnd - searchStart;
 
     if (avail < minLoop + xfade)
@@ -602,8 +609,13 @@ void Engine::findLoopPoints (SampleBuffer& buffer) const
     const int zcSpan = juce::jmax (8, (int) (0.012 * sr));
     int snapped = snapRisingZero (mono, bestStart, zcSpan);
     if (alignPeriod > 0)
-        snapped = alignToPeriod (snapped, alignPeriod, juce::jmax (searchStart, bestStart - alignPeriod),
-                                 juce::jmin (searchEnd - (bestEnd - bestStart) - xfade, bestStart + alignPeriod));
+    {
+        const int alignMin = juce::jmax (searchStart, bestStart - alignPeriod);
+        const int alignMax = juce::jmin (searchEnd - (bestEnd - bestStart) - xfade, bestStart + alignPeriod);
+
+        if (alignMin <= alignMax)
+            snapped = alignToPeriod (snapped, alignPeriod, alignMin, alignMax);
+    }
 
     const int snappedEnd = snapped + (bestEnd - bestStart);
     if (snappedEnd < samples - 2 && loopScore (snapped, snappedEnd) >= bestScore - 0.05)

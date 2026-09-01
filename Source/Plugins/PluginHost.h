@@ -45,7 +45,7 @@ public:
     /** File paths only.  Does not LoadLibrary the VST3s. */
     juce::String describeApprovedPlugins();
 
-    /** Opens the VST3 modules to read name/version.  Can stall for minutes under a debugger. */
+    /** Opens the VST3 modules to read name/version.  Must run on (or marshal to) the message thread. */
     juce::String inspectApprovedPlugins();
 
 private:
