@@ -239,64 +239,83 @@ function bindGesture () {
 }
 
 function draw () {
-  raf = requestAnimationFrame(draw)
+  raf = 0
+  if (!session.expressionOpen) return
   const canvas = canvasEl.value
   const host = laneEl.value
-  if (!canvas || !host || !session.expressionOpen) return
-  const w = host.clientWidth
-  const h = host.clientHeight
-  const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1)
-  if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-    canvas.width = Math.floor(w * dpr)
-    canvas.height = Math.floor(h * dpr)
-    canvas.style.width = w + 'px'
-    canvas.style.height = h + 'px'
+  if (canvas && host) {
+    const w = host.clientWidth
+    const h = host.clientHeight
+    const dpr = Math.min(2, (typeof window !== 'undefined' && window.devicePixelRatio) || 1)
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr)
+      canvas.height = Math.floor(h * dpr)
+      canvas.style.width = w + 'px'
+      canvas.style.height = h + 'px'
+    }
+    const ctx = canvas.getContext('2d')
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+    ctx.clearRect(0, 0, w, h)
+    ctx.fillStyle = '#121212'
+    ctx.fillRect(0, 0, w, h)
+    if (clip.value) {
+      const expr = ensureExpression(clip.value)
+      const ppb = Math.max(8, props.pixelsPerBeat)
+      const beatToX = (beat) => beat * ppb - props.scrollX
+      if (session.expressionLane === 'sustain') {
+        ctx.fillStyle = 'rgba(77,163,255,0.28)'
+        sortSustain(expr.cc64).forEach((b) => {
+          const x = beatToX(b.startTick / PPQ)
+          const rw = Math.max(4, (b.endTick - b.startTick) / PPQ * ppb)
+          ctx.fillRect(x, 8, rw, h - 16)
+        })
+      } else {
+        const points = sortLane(expr[session.expressionLane === 'expression' ? 'cc11' : 'cc1'])
+        ctx.strokeStyle = '#4da3ff'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        const beats = w / ppb + props.scrollX / ppb + 1
+        for (let i = 0; i <= beats * 8; i++) {
+          const t = props.scrollX / ppb + i / 8
+          const x = beatToX(t)
+          const v = sampleLane(points, t)
+          const y = (1 - v / 127) * (h - 8) + 4
+          if (i === 0) ctx.moveTo(x, y)
+          else ctx.lineTo(x, y)
+        }
+        ctx.stroke()
+        points.forEach((p) => {
+          const x = beatToX(p.t)
+          const y = (1 - p.v / 127) * (h - 8) + 4
+          ctx.fillStyle = '#e6e6e6'
+          ctx.beginPath()
+          ctx.arc(x, y, 5, 0, Math.PI * 2)
+          ctx.fill()
+        })
+      }
+    }
   }
-  const ctx = canvas.getContext('2d')
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-  ctx.clearRect(0, 0, w, h)
-  ctx.fillStyle = '#121212'
-  ctx.fillRect(0, 0, w, h)
-  if (!clip.value) return
-  const expr = ensureExpression(clip.value)
-  const ppb = Math.max(8, props.pixelsPerBeat)
-  const beatToX = (beat) => beat * ppb - props.scrollX
-  if (session.expressionLane === 'sustain') {
-    ctx.fillStyle = 'rgba(77,163,255,0.28)'
-    sortSustain(expr.cc64).forEach((b) => {
-      const x = beatToX(b.startTick / PPQ)
-      const rw = Math.max(4, (b.endTick - b.startTick) / PPQ * ppb)
-      ctx.fillRect(x, 8, rw, h - 16)
-    })
-    return
-  }
-  const points = sortLane(expr[session.expressionLane === 'expression' ? 'cc11' : 'cc1'])
-  ctx.strokeStyle = '#4da3ff'
-  ctx.lineWidth = 1.5
-  ctx.beginPath()
-  const beats = w / ppb + props.scrollX / ppb + 1
-  for (let i = 0; i <= beats * 8; i++) {
-    const t = props.scrollX / ppb + i / 8
-    const x = beatToX(t)
-    const v = sampleLane(points, t)
-    const y = (1 - v / 127) * (h - 8) + 4
-    if (i === 0) ctx.moveTo(x, y)
-    else ctx.lineTo(x, y)
-  }
-  ctx.stroke()
-  points.forEach((p) => {
-    const x = beatToX(p.t)
-    const y = (1 - p.v / 127) * (h - 8) + 4
-    ctx.fillStyle = '#e6e6e6'
-    ctx.beginPath()
-    ctx.arc(x, y, 5, 0, Math.PI * 2)
-    ctx.fill()
-  })
+  if (session.expressionOpen) raf = requestAnimationFrame(draw)
 }
 
-onMounted(() => { raf = requestAnimationFrame(draw) })
-onUnmounted(() => cancelAnimationFrame(raf))
-watch(() => session.expressionOpen, () => nextTick())
+function startExpressionDraw () {
+  if (raf) return
+  if (!session.expressionOpen) return
+  raf = requestAnimationFrame(draw)
+}
+
+onMounted(() => { startExpressionDraw() })
+onUnmounted(() => {
+  if (raf) cancelAnimationFrame(raf)
+  raf = 0
+})
+watch(() => session.expressionOpen, (open) => {
+  if (open) nextTick(startExpressionDraw)
+  else if (raf) {
+    cancelAnimationFrame(raf)
+    raf = 0
+  }
+})
 </script>
 
 <style scoped>

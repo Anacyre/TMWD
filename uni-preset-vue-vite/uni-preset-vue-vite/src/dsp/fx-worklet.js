@@ -96,9 +96,11 @@ class DawFxChain extends AudioWorkletProcessor {
     this.chainFft = new EQX_API.SpectrumAnalyzer(this.sr)
     this.block = 0
     this.cpuEma = 0
+    this.detailMeters = false
     this.port.onmessage = (ev) => {
       const m = ev.data
       if (m && m.type === 'set') this.chain = m.chain || []
+      else if (m && m.type === 'detail') this.detailMeters = !!m.on
     }
   }
 
@@ -204,40 +206,11 @@ class DawFxChain extends AudioWorkletProcessor {
     m.outPeakR = Math.max(m.outPeakR * 0.9, outR)
     m.inPeak = Math.max(m.inPeakL, m.inPeakR)
     m.outPeak = Math.max(m.outPeakL, m.outPeakR)
-    this.chainFft.push(l, r, n)
+    if (this.detailMeters) this.chainFft.push(l, r, n)
     this.block++
     if (this.block % 16 === 0) {
       if (t0) this.cpuEma = this.cpuEma * 0.9 + (performance.now() - t0) * 0.1
-      const eqById = {}
-      this.eqs.forEach((proc, id) => {
-        eqById[id] = {
-          spectrum: proc.getSpectrumArray(),
-          spectrumPre: proc.getPreSpectrumArray ? proc.getPreSpectrumArray() : null,
-          autoGainDb: proc.autoGainDb,
-          autoGain: proc.autoOn
-        }
-      })
-      const plugins = {}
-      this.dyns.forEach((proc, id) => {
-        if (proc && proc.meters) plugins[id] = proc.meters
-      })
-      this.reverbs.forEach((proc, id) => {
-        if (!proc) return
-        plugins[id] = { wetPeak: proc.reportedWetPeak || proc.lastWetPeak || 0 }
-      })
-      this.boosts.forEach((proc, id) => {
-        if (!proc) return
-        plugins[id] = {
-          width: proc.width,
-          corr: proc.corr,
-          gr: proc.gr,
-          activity: proc.activity
-        }
-      })
-      this.lims.forEach((proc, id) => {
-        if (proc && proc.meters) plugins[id] = proc.meters
-      })
-      this.port.postMessage({
+      const payload = {
         type: 'meters',
         inPeak: this.meters.inPeak,
         outPeak: this.meters.outPeak,
@@ -249,15 +222,47 @@ class DawFxChain extends AudioWorkletProcessor {
         wetPeak: this.meters.wetPeak,
         gr: this.meters.gr,
         grBands: this.meters.grBands,
-        spectrum: this.chainFft.getArray(),
-        eqById,
-        plugins,
         cpuMs: this.cpuEma,
         boostWidth: this.meters.boostWidth,
         boostCorr: this.meters.boostCorr,
         boostGr: this.meters.boostGr,
         boostActivity: this.meters.boostActivity
-      })
+      }
+      if (this.detailMeters) {
+        const eqById = {}
+        this.eqs.forEach((proc, id) => {
+          eqById[id] = {
+            spectrum: proc.getSpectrumArray(),
+            spectrumPre: proc.getPreSpectrumArray ? proc.getPreSpectrumArray() : null,
+            autoGainDb: proc.autoGainDb,
+            autoGain: proc.autoOn
+          }
+        })
+        const plugins = {}
+        this.dyns.forEach((proc, id) => {
+          if (proc && proc.meters) plugins[id] = proc.meters
+        })
+        this.reverbs.forEach((proc, id) => {
+          if (!proc) return
+          plugins[id] = { wetPeak: proc.reportedWetPeak || proc.lastWetPeak || 0 }
+        })
+        this.boosts.forEach((proc, id) => {
+          if (!proc) return
+          plugins[id] = {
+            width: proc.width,
+            corr: proc.corr,
+            gr: proc.gr,
+            activity: proc.activity
+          }
+        })
+        this.lims.forEach((proc, id) => {
+          if (proc && proc.meters) plugins[id] = proc.meters
+        })
+        payload.spectrum = this.chainFft.getArray()
+        payload.eqById = eqById
+        payload.plugins = plugins
+      }
+      this.port.postMessage(payload)
     }
     return true
   }

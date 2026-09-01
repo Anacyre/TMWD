@@ -50,7 +50,7 @@ import PluginDynamicX from '../../components/dsp/plugin-dynamic-x.vue'
 import PluginLimiterX from '../../components/dsp/plugin-limiter-x.vue'
 import { createInsert } from '../../dsp/plugin.js'
 import { plugins } from '../../dsp/registry.js'
-import { session, getFxAnalyser, persistWebMixer } from '../../store/session.js'
+import { session, getFxAnalyser, getFxMeterPayload, persistWebMixer } from '../../store/session.js'
 import { resolveOpenInsert, syncNativeInsertsToWebMixer, fxMeterLaneKey } from '../../model/web-mixer.js'
 import { pickPluginSpectrum, metersForInsert } from '../../dsp/runtime.js'
 import '../../components/dsp/dsp-theme.css'
@@ -154,7 +154,7 @@ function meterKey () {
 let raf = 0
 function tick () {
   const key = meterKey()
-  const posted = session.fxMeters[key] || {}
+  const posted = getFxMeterPayload(key)
   liveMeters.value = metersForInsert(posted, insert.value)
   liveSpectrum.value = pickPluginSpectrum(posted, getFxAnalyser(key), insert.value)
   raf = requestAnimationFrame(tick)

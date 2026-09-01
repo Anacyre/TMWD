@@ -81,7 +81,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from '../daw-icon.vue'
-import { session, closePlugin, persistWebMixer, getFxAnalyser, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
+import { session, closePlugin, persistWebMixer, getFxAnalyser, getFxMeterPayload, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
 import { resolveOpenInsert, fxMeterLaneKey, laneFromOpen } from '../../model/web-mixer.js'
 import { pickPluginSpectrum, pickPreSpectrum, metersForInsert, visualState, visualStateLabel } from '../../dsp/runtime.js'
 import PluginReverbX from './plugin-reverb-x.vue'
@@ -119,7 +119,7 @@ const visNotice = computed(() => visualStateLabel(liveState.value))
 let raf = 0
 function tick () {
   const key = meterKey.value
-  const posted = session.fxMeters[key] || {}
+  const posted = getFxMeterPayload(key)
   liveMeters.value = metersForInsert(posted, insert.value)
   liveSpectrum.value = pickPluginSpectrum(posted, getFxAnalyser(key), insert.value)
   livePreSpectrum.value = pickPreSpectrum(posted, insert.value)
@@ -228,7 +228,7 @@ function onChange () { persistWebMixer() }
     max(16px, env(safe-area-inset-bottom, 0px));
 }
 .sheet {
-  /* ~3/4 of viewport area: sqrt(0.75) ≈ 0.866 on each axis */
+  /* ~3/4 of viewport area: sqrt(0.75) ? 0.866 on each axis */
   width: min(86.6vw, calc(100vw - 12px));
   height: min(86.6vh, calc(100vh - 12px));
   max-width: calc(100vw - 12px);

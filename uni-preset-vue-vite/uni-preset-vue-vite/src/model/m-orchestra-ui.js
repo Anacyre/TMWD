@@ -120,7 +120,7 @@ export function insertablePlugins (options = {}) {
       displayName: 'Orchestra Sampler',
       detail: engine
         ? 'BBCSO Discover / Synchron Player'
-        : 'Needs DawWeb.exe on the PC (LAN HTTP). Cloudflare HTTPS cannot reach localhost.',
+        : 'Needs DawWeb.exe (LAN HTTP, or a Cloudflare Tunnel hostname on this HTTPS page)',
       available: engine,
       requiresEngine: true
     },

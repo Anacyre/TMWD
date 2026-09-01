@@ -34,7 +34,7 @@
     <input
       class="host"
       :value="host"
-      placeholder="192.168.1.10:17890"
+      placeholder="engine.example.com or 192.168.1.10:17890"
       @change="onHost"
     >
     <text class="note">{{ hostHint }}</text>
@@ -56,12 +56,11 @@ import {
   engineHostValue,
   setEngineHost
 } from '../store/session.js'
-import { mixedContentHint } from '../bridge/engine.js'
+import { engineHostHintText, parseEngineHost } from '../bridge/engine.js'
 
 const lite = computed(() => isLite())
 const host = ref(engineHostValue())
-const hostHint = computed(() => mixedContentHint()
-  || 'BBCSO / Synchron need DawWeb.exe on the PC. Enter that machine’s LAN IP:port. M Orchestra is browser cloud samples and does not use this.')
+const hostHint = computed(() => engineHostHintText({ parsed: parseEngineHost(host.value) }))
 
 function onHost (e) {
   const value = (e.target && e.target.value) || ''

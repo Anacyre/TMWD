@@ -44,7 +44,7 @@ export function pushChain (node, inserts) {
 
 export function createAnalyser (context) {
   const analyser = context.createAnalyser()
-  analyser.fftSize = 4096
+  analyser.fftSize = 256
   analyser.smoothingTimeConstant = 0.5
   analyser.minDecibels = -90
   analyser.maxDecibels = -6

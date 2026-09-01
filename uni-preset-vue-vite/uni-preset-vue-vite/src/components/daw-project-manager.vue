@@ -10,6 +10,7 @@
       <view class="actions">
         <view class="btn" @click="onNew">New</view>
         <view class="btn" @click="onOpenFile">Open file</view>
+        <view class="btn" @click="onImportMidi">Import MIDI</view>
         <view class="btn" @click="onSave">Save</view>
         <view class="btn" @click="onSaveAs">Save as</view>
         <view class="btn" @click="onExport">Export WAV</view>
@@ -44,6 +45,7 @@ import {
   exportProjectWav,
   shareProjectFile,
   importProjectJson,
+  openMidiFilePicker,
   openStoredProject,
   listStoredProjects,
   deleteStoredProject,
@@ -80,6 +82,11 @@ function onOpenFile () {
     close()
   }
   input.click()
+}
+
+async function onImportMidi () {
+  const count = await openMidiFilePicker()
+  if (count > 0) close()
 }
 
 async function onSave () {

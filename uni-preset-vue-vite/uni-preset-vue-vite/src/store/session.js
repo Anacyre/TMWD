@@ -12,11 +12,11 @@ import {
   setStoredEngineHost,
   mixedContentHint
 } from '../bridge/engine.js'
-import { canAddInsert, dbFromFader, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix } from '../model/mixer-model.js'
+import { canAddInsert, dbFromFader, dbToGain, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix } from '../model/mixer-model.js'
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
-import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains } from '../audio/mixer-graph.js'
+import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains, setLaneMix, setMasterMix, setFxMeterDetail } from '../audio/mixer-graph.js'
 import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
 import {
   putProject,
@@ -37,12 +37,13 @@ import {
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
 import { bounceSessionToWav } from '../audio/bounce.js'
 import { publicAssetUrl } from '../lib/supabase.js'
-import * as mOrchestraCloud from '../audio/m-orchestra/engine.js'
+import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
 import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache } from '../model/playlist-model.js'
 import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker, expandRepeats } from '../model/note-model.js'
+import { parseMidiBlob } from '../lib/midi-import.js'
 import {
   INTERFACE_LITE,
   INTERFACE_PROFESSIONAL,
@@ -419,14 +420,14 @@ function mixerGraphOptions () {
   return { localPlayback: !session.remoteAudioOn }
 }
 
-function refreshMixerGraph () {
+function refreshMixerGraph (extra = {}) {
   if (audioGraph) {
-    syncMixerGraph(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
+    syncMixerGraph(audioGraph, session.webMixer, session.tracks, { ...mixerGraphOptions(), ...extra })
     if (!audioGraph.mixerNodes) {
       ensureOutputRouting(audioGraph, session.webMixer, session.tracks, mixerGraphOptions())
     }
   }
-  publishRoutingDiagnostics(audioGraph)
+  if (!extra.mixOnly) publishRoutingDiagnostics(audioGraph)
 }
 
 /**
@@ -666,7 +667,11 @@ export function setMasterGain (gain) {
     session.webMixer.master.volumeDb = dbFromFader(session.masterGain)
   }
   queueMixCommand('mixer.setMasterVolume', { value: session.masterGain, volumeDb: dbFromFader(session.masterGain) })
-  refreshMixerGraph()
+  const masterTrack = session.tracks[0]
+  const muted = !!(masterTrack && masterTrack.mute) || !!(session.webMixer && session.webMixer.master && session.webMixer.master.mute)
+  if (!audioGraph || !setMasterMix(audioGraph, muted ? 0 : dbToGain(dbFromFader(session.masterGain)))) {
+    refreshMixerGraph()
+  }
 }
 
 const mixQueue = new Map()
@@ -710,7 +715,10 @@ export function setTrackParameter (track, parameter, value) {
     session.masterGain = value
     session.webMixer.master.volumeDb = dbFromFader(value)
     queueMixCommand('mixer.setMasterVolume', { value, volumeDb: dbFromFader(value) })
-    refreshMixerGraph()
+    const muted = !!track.mute || !!(session.webMixer.master && session.webMixer.master.mute)
+    if (!audioGraph || !setMasterMix(audioGraph, muted ? 0 : dbToGain(dbFromFader(value)))) {
+      refreshMixerGraph()
+    }
     return
   }
   const payload = { trackId: track.id, parameter, value }
@@ -720,9 +728,15 @@ export function setTrackParameter (track, parameter, value) {
   }
   syncTrackMixLane(track)
   queueMixCommand('track.setParameter', payload)
-  if (parameter === 'mute' || parameter === 'solo') flushTrackMix()
-  if (parameter === 'volume' || parameter === 'pan' || parameter === 'mute' || parameter === 'solo') {
-    refreshMixerGraph()
+  if (parameter === 'mute' || parameter === 'solo') {
+    flushTrackMix()
+    refreshMixerGraph({ mixOnly: true })
+    return
+  }
+  if (parameter === 'volume' || parameter === 'pan') {
+    if (!audioGraph || !setLaneMix(audioGraph, track, session.tracks)) {
+      refreshMixerGraph({ mixOnly: true })
+    }
   }
 }
 
@@ -827,6 +841,7 @@ export function pause () {
   stopLocalClock()
   stopExpressionPlayback()
   allLocalNotesOff()
+  maybeStopBrowserMeters()
   fire('transport.pause')
 }
 
@@ -1221,9 +1236,32 @@ export function isSupportedFile (name = '') {
 export async function addClipFromFile (file, trackIndex, startBeat) {
   const name = file && file.name ? file.name.replace(/\.[^.]+$/, '') : 'Clip'
   const midi = /\.mid(i)?$/i.test(file && file.name ? file.name : '')
+  let parsed = null
+  if (midi) {
+    if (!file || typeof file.arrayBuffer !== 'function') {
+      showToast('Invalid MIDI file')
+      return
+    }
+    try {
+      parsed = await parseMidiBlob(file)
+    } catch (err) {
+      console.warn('MIDI import failed', err)
+      showToast('MIDI parse failed: ' + (err.message || 'invalid file'))
+      return
+    }
+    if (!parsed.notes.length) {
+      showToast('No notes found in MIDI file')
+      return
+    }
+  }
+  const lengthBeats = parsed && parsed.notes.length
+    ? Math.max(1, Math.ceil(parsed.lengthBeats * 4) / 4)
+    : (midi ? 8 : 4)
+
   let track = session.tracks[trackIndex]
   let trackId = track && track.id
-  const needsNew = trackIndex <= 0 || !track || track.type === 'master' || (midi && track.type !== 'midi')
+  const needsNew = trackIndex <= 0 || !track || track.type === 'master' || track.type === 'group'
+    || (midi && track.type !== 'midi')
 
   if (needsNew) {
     if (isEngineConnected()) {
@@ -1239,27 +1277,77 @@ export async function addClipFromFile (file, trackIndex, startBeat) {
     }
   }
 
+  const start = snapBeat(startBeat)
+
   if (isEngineConnected()) {
-    await fire('clip.create', {
+    const reply = await fire('clip.create', {
       trackId,
       trackIndex,
-      start: snapBeat(startBeat),
-      length: midi ? 8 : 4,
+      start,
+      length: lengthBeats,
       name,
-      sketch: midi
+      sketch: false
     })
+    if (parsed && parsed.notes.length && reply && reply.clipId) {
+      await fire('notes.createBatch', {
+        clipId: reply.clipId,
+        notes: parsed.notes.map((item) => engineNotePayload(normalizeNote(item)))
+      })
+    }
     return
   }
 
-  session.clips.push({
+  const clip = {
     id: nextId(session.clips),
     trackIndex,
-    startBeat: snapBeat(startBeat),
-    lengthBeats: midi ? 8 : 4,
+    startBeat: start,
+    lengthBeats,
     name,
     colour: session.tracks[trackIndex].colour,
     midi,
     notes: []
+  }
+  session.clips.push(clip)
+  if (parsed && parsed.notes.length) createNotes(clip, parsed.notes)
+  markDirty()
+  const clipIndex = session.clips.indexOf(clip)
+  if (clipIndex >= 0) selectClip(clipIndex)
+}
+
+function importTargetTrackIndex () {
+  const selected = session.tracks[session.selectedTrack]
+  if (selected && selected.type === 'midi') return session.selectedTrack
+  const firstMidi = session.tracks.findIndex((track, index) => index > 0 && track.type === 'midi')
+  return firstMidi > 0 ? firstMidi : Math.max(1, session.selectedTrack || 1)
+}
+
+/** Open file picker to import .mid clips at the playhead. */
+export function openMidiFilePicker () {
+  if (typeof document === 'undefined') return Promise.resolve(0)
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = '.mid,.midi,audio/midi,audio/x-midi'
+    input.multiple = true
+    input.onchange = async () => {
+      const files = input.files ? Array.from(input.files) : []
+      const trackIndex = importTargetTrackIndex()
+      const beat = snapBeat(session.positionBeats)
+      let imported = 0
+      for (const file of files) {
+        if (!/\.mid(i)?$/i.test(file.name || '')) continue
+        try {
+          await addClipFromFile(file, trackIndex, beat)
+          imported += 1
+        } catch (err) {
+          console.warn('MIDI import failed', err)
+        }
+      }
+      if (imported) showToast('Imported ' + imported + ' MIDI clip' + (imported > 1 ? 's' : ''))
+      else if (files.length) showToast('Could not import MIDI file')
+      resolve(imported)
+    }
+    input.click()
   })
 }
 
@@ -1358,6 +1446,11 @@ export function toggleMixer () {
     ensureMixerAttached().catch((err) => {
       showToast(err.message || 'Browser FX audio failed to start')
     })
+    startBrowserMeterLoop()
+    syncFxMeterDetail()
+  } else {
+    maybeStopBrowserMeters()
+    syncFxMeterDetail()
   }
 }
 
@@ -1568,10 +1661,12 @@ export function previewNoteOff (track, pitch) {
     const previewId = 'preview-' + track.id + '-' + pitch
     mOrchestraCloud.cancelPending(previewId, track.id)
     mOrchestraCloud.noteOff(previewId, track.id)
+    maybeStopBrowserMeters()
     return
   }
   if (track.source === 'web-sampler') {
     releaseWebSampler(pitch)
+    maybeStopBrowserMeters()
     return
   }
   fire('preview.noteOff', { trackId: track.id, pitch })
@@ -2047,6 +2142,8 @@ export function setWorkspaceView (view) {
     if (!isLite() && session.workspaceView === 'mixer' && session.mixerVisible) {
       session.mixerVisible = false
       session.workspaceView = 'arrangement'
+      maybeStopBrowserMeters()
+      syncFxMeterDetail()
       return
     }
     session.workspaceView = 'mixer'
@@ -2055,12 +2152,16 @@ export function setWorkspaceView (view) {
     ensureMixerAttached().catch((err) => {
       showToast(err.message || 'Browser FX audio failed to start')
     })
+    startBrowserMeterLoop()
+    syncFxMeterDetail()
     return
   }
   session.workspaceView = 'arrangement'
   closeEditor()
   if (typeof window !== 'undefined' && window.innerWidth < 720) {
     session.mixerVisible = false
+    maybeStopBrowserMeters()
+    syncFxMeterDetail()
   }
 }
 
@@ -2370,7 +2471,7 @@ export function engineStateLabel () {
   if (state === 'connected') return 'Ready'
   if (state === 'loading') return 'Loading'
   if (state === 'error') return engineLink.lastError || 'Error'
-  if (mixedContentHint()) return 'Offline — open DawWeb’s LAN page (HTTPS cannot reach the PC engine)'
+  if (mixedContentHint()) return 'Offline — open DawWeb’s LAN HTTP page, or enter a Cloudflare Tunnel hostname'
   return engineLink.lastError || 'Offline'
 }
 
@@ -2778,23 +2879,32 @@ async function doEnsureMixerAttached () {
   if (graph.context.state === 'suspended') await graph.context.resume()
   try {
     await attachMixerGraph(graph, session.webMixer, (lane, meters) => {
-      session.fxMeters[lane] = meters
+      session.fxMeters[lane] = {
+        inPeak: meters.inPeak || 0,
+        outPeak: meters.outPeak || 0,
+        inPeakL: meters.inPeakL || 0,
+        inPeakR: meters.inPeakR || 0,
+        outPeakL: meters.outPeakL || 0,
+        outPeakR: meters.outPeakR || 0,
+        wetPeak: meters.wetPeak || 0,
+        gr: meters.gr || 0,
+        cpuMs: meters.cpuMs,
+        active: meters.active
+      }
+      if (meters.spectrum || meters.eqById || meters.plugins) {
+        fxMeterDetail[lane] = meters
+      }
       if (meters.cpuMs != null) session.diagnostics.browserCpuMs = meters.cpuMs
       if (lane === 'master' && session.webMixer.master && meters.outPeak != null) {
         session.webMixer.master.peak = meters.outPeak
         session.webMixer.master.clip = meters.outPeak >= 1
       }
-      const mixer = session.webMixer
-      session.diagnostics.browserPlugins =
-        (mixer.remote.inserts.filter((i) => i && i.enabled !== false).length) +
-        (mixer.master.inserts.filter((i) => i && i.enabled !== false).length) +
-        allTrackInserts(mixer, session.tracks).filter((i) => i && i.enabled !== false).length +
-        mixer.buses.reduce((n, b) => n + (b.inserts || []).filter((i) => i && i.enabled !== false).length, 0)
     }, session.tracks, mixerGraphOptions())
     session.diagnostics.browserFxAttached = !!graph.mixerNodes
     session.diagnostics.browserFxError = ''
     dryMixToast = false
-    startBrowserMeterLoop()
+    syncFxMeterDetail()
+    if (metersWanted()) startBrowserMeterLoop()
   } catch (err) {
     console.error('[mixer] browser FX attach failed:', err)
     graph.mixerNodes = null
@@ -2981,7 +3091,7 @@ function previewMOrchestra (track, pitch, velocity, id) {
     if (!graph) return
     await graph.context.resume()
     const engineKey = await mOrchestraCloud.noteOn(graph, track, pitch, velocity, logicalId)
-    if (engineKey) refreshMixerGraph()
+    if (engineKey && !graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
     console.warn('[m-orchestra] preview failed:', err)
   })
@@ -3003,7 +3113,7 @@ function previewWebSampler (track, pitch, velocity, id) {
     const buffer = track ? samplerBuffers.get(track.id) : null
     voice.noteOn(pitch, velocity, patch, buffer || null)
     samplerVoices.set(key, voice)
-    refreshMixerGraph()
+    if (!graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
     console.warn('[sampler] preview failed:', err)
   })
@@ -3134,9 +3244,22 @@ export function getFxAnalyser (laneKey) {
   return getLaneAnalyser(audioGraph, fxMeterLaneKey(laneKey, session.tracks, mixerGraphOptions()))
 }
 
+const analyserScratch = new WeakMap()
+const fxMeterDetail = Object.create(null)
+const METER_HZ = 20
+
+export function getFxMeterPayload (laneKey) {
+  return fxMeterDetail[laneKey] || session.fxMeters[laneKey] || {}
+}
+
 function peakFromAnalyser (analyser) {
   if (!analyser) return 0
-  const data = new Uint8Array(analyser.frequencyBinCount)
+  let data = analyserScratch.get(analyser)
+  const bins = analyser.frequencyBinCount || 128
+  if (!data || data.length !== bins) {
+    data = new Uint8Array(bins)
+    analyserScratch.set(analyser, data)
+  }
   analyser.getByteTimeDomainData(data)
   let peak = 0
   for (let i = 0; i < data.length; i++) {
@@ -3151,16 +3274,40 @@ function fxLanePeak (laneKey) {
   return posted.outPeak || posted.inPeak || 0
 }
 
-let browserMeterRaf = 0
+function metersWanted () {
+  if (session.playing) return true
+  if (session.mixerVisible) return true
+  if (session.workspaceView === 'mixer') return true
+  if (session.openPlugin) return true
+  if (soundingNotes && soundingNotes.size) return true
+  return false
+}
 
-function tickBrowserMeters () {
+function syncFxMeterDetail () {
+  const on = !!(session.openPlugin || session.mixerVisible || session.workspaceView === 'mixer')
+  setFxMeterDetail(audioGraph, on)
+  if (!on) {
+    Object.keys(fxMeterDetail).forEach((key) => { delete fxMeterDetail[key] })
+  }
+}
+
+let browserMeterRaf = 0
+let lastMeterAt = 0
+
+function tickBrowserMeters (now) {
   browserMeterRaf = 0
+  if (!metersWanted()) return
   const graph = audioGraph
   const nodes = graph && graph.mixerNodes
   if (!nodes) {
     browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
     return
   }
+  if (now - lastMeterAt < 1000 / METER_HZ) {
+    browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
+    return
+  }
+  lastMeterAt = now
 
   const local = !session.remoteAudioOn
   const samplerPeak = Math.max(fxLanePeak('sampler'), peakFromAnalyser(nodes.sampler && nodes.sampler.analyser))
@@ -3185,7 +3332,7 @@ function tickBrowserMeters () {
     if (remotePeak > 0) track.meterLevel = remotePeak
   })
 
-  if (graph.mixerNodes) {
+  if (graph.mixerNodes && metersWanted()) {
     browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
   }
 }
@@ -3194,13 +3341,14 @@ function startBrowserMeterLoop () {
   if (browserMeterRaf) return
   if (typeof requestAnimationFrame === 'undefined') return
   if (typeof document !== 'undefined' && document.hidden) return
+  if (!metersWanted()) return
   browserMeterRaf = requestAnimationFrame(tickBrowserMeters)
 }
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) stopBrowserMeterLoop()
-    else if (audioGraph && audioGraph.mixerNodes) startBrowserMeterLoop()
+    else if (metersWanted() && audioGraph && audioGraph.mixerNodes) startBrowserMeterLoop()
   })
 }
 
@@ -3209,6 +3357,10 @@ function stopBrowserMeterLoop () {
     cancelAnimationFrame(browserMeterRaf)
     browserMeterRaf = 0
   }
+}
+
+function maybeStopBrowserMeters () {
+  if (!metersWanted()) stopBrowserMeterLoop()
 }
 
 export function openPlugin (lane, index) {
@@ -3221,6 +3373,8 @@ export function openPlugin (lane, index) {
     index,
     instanceId: slot ? slot.instanceId : null
   }
+  syncFxMeterDetail()
+  startBrowserMeterLoop()
   ensureMixerAttached().catch((err) => {
     showToast(err.message || 'Browser FX audio failed to start')
   })
@@ -3228,6 +3382,8 @@ export function openPlugin (lane, index) {
 
 export function closePlugin () {
   session.openPlugin = null
+  syncFxMeterDetail()
+  maybeStopBrowserMeters()
 }
 
 export function setMixerLane (lane) {

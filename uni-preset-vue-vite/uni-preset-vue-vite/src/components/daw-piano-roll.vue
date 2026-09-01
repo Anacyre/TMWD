@@ -240,6 +240,8 @@ view.snapId = '1/16'
 let canvasEl = null
 let layout = { gridX: 68, gridY: 40, gridW: 100, gridH: 100, velY: 0, velH: 56, keyW: 68 }
 let raf = 0
+let dirty = true
+let resizeObs = null
 let hoverPitch = -1
 let previewPitch = -1
 let rubber = null
@@ -277,7 +279,11 @@ function mountCanvas (tries = 0) {
   el.addEventListener('pointercancel', onPointerUp)
   el.addEventListener('wheel', onWheel, { passive: false })
   el.addEventListener('contextmenu', (e) => e.preventDefault())
-  startLoop()
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObs = new ResizeObserver(() => markDirty())
+    resizeObs.observe(parent)
+  }
+  markDirty()
   return true
 }
 
@@ -304,13 +310,45 @@ function fitViewToClip () {
   fitViewToNotes(view, notes.value, gridW, gridH, c.lengthBeats || 8)
 }
 
+function markDirty () {
+  dirty = true
+  startLoop()
+}
+
+function loopWanted () {
+  if (typeof document !== 'undefined' && document.hidden) return false
+  if (dirty) return true
+  if (session.playing) return true
+  if (pointers.size > 0 || gesture || rubber) return true
+  return false
+}
+
 function startLoop () {
-  cancelAnimationFrame(raf)
+  if (raf) return
+  if (typeof requestAnimationFrame === 'undefined') return
+  if (typeof document !== 'undefined' && document.hidden) return
   const frame = () => {
+    raf = 0
+    if (typeof document !== 'undefined' && document.hidden) return
+    if (!loopWanted()) return
     paint()
-    raf = requestAnimationFrame(frame)
+    const keep = session.playing || pointers.size > 0 || !!gesture || !!rubber
+    if (!keep) dirty = false
+    if (keep || dirty) raf = requestAnimationFrame(frame)
   }
   raf = requestAnimationFrame(frame)
+}
+
+function onPianoVisibility () {
+  if (typeof document === 'undefined') return
+  if (document.hidden) {
+    if (raf) {
+      cancelAnimationFrame(raf)
+      raf = 0
+    }
+    return
+  }
+  markDirty()
 }
 
 function currentPlayhead () {
@@ -372,6 +410,7 @@ function gridPoint (p) {
 }
 
 function onPointerDown (e) {
+  markDirty()
   if (!clip.value) return
   canvasEl.setPointerCapture(e.pointerId)
   const coord = pointerCoord(e) || { x: e.clientX, y: e.clientY }
@@ -518,6 +557,7 @@ function onPointerDown (e) {
 }
 
 function onPointerMove (e) {
+  markDirty()
   const coord = pointerCoord(e) || { x: e.clientX, y: e.clientY }
   if (pointers.has(e.pointerId)) pointers.set(e.pointerId, { x: coord.x, y: coord.y })
   const p = canvasEl ? localPoint(e) : { x: 0, y: 0 }
@@ -627,6 +667,7 @@ function onPointerMove (e) {
 }
 
 function onPointerUp (e) {
+  markDirty()
   pointers.delete(e.pointerId)
   clearTimeout(longPressTimer)
   const p = canvasEl ? localPoint(e) : { x: 0, y: 0 }
@@ -701,6 +742,7 @@ function applyPinch () {
   view.pixelsPerSemitone = Math.min(MAX_PX_PER_SEMITONE, Math.max(MIN_PX_PER_SEMITONE, start.pps * scale))
   view.scrollX = beat * view.pixelsPerBeat - ax1
   view.scrollY = pitchY * view.pixelsPerSemitone - ay1
+  markDirty()
 }
 
 function onWheel (e) {
@@ -708,15 +750,15 @@ function onWheel (e) {
   const p = localPoint(e)
   if (e.ctrlKey || e.metaKey) {
     zoomAt(view, { h: e.deltaY < 0 ? 1.12 : 0.9, v: 1, anchorX: p.x - layout.gridX, anchorY: p.y - layout.gridY })
-    return
-  }
-  if (e.shiftKey) {
+  } else if (e.shiftKey) {
     view.pixelsPerSemitone += e.deltaY < 0 ? 1 : -1
     clampZoom(view)
-    return
+  } else if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+    view.scrollX += e.deltaX
+  } else {
+    view.scrollY += e.deltaY
   }
-  if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) view.scrollX += e.deltaX
-  else view.scrollY += e.deltaY
+  markDirty()
 }
 
 function cycleSnap () {
@@ -928,6 +970,7 @@ function onKey (e) {
 watch(clip, (c, prev) => {
   selectedIds.clear()
   inspectorOpen.value = false
+  markDirty()
   if (!c || !c.midi) return
   nextTick(() => {
     mountCanvas()
@@ -936,6 +979,7 @@ watch(clip, (c, prev) => {
 })
 
 watch(() => (notes.value || []).length, (len, prevLen) => {
+  markDirty()
   if (len > 0 && !prevLen && clip.value) fitViewToClip()
 })
 
@@ -943,6 +987,7 @@ watch(() => [session.scaleKey, session.scaleName], () => {
   if (!session.score) return
   session.score.key = session.scaleKey
   session.score.scale = session.scaleName
+  markDirty()
 })
 
 watch(isPhone, (phone) => {
@@ -950,13 +995,22 @@ watch(isPhone, (phone) => {
     velocityOpen.value = false
     keyboardOpen.value = false
   }
+  markDirty()
 })
+
+watch(() => session.playing, (on) => {
+  if (on) startLoop()
+  else markDirty()
+})
+
+watch(() => [session.scaleGuide, session.loopStart, session.loopEnd, session.clipPreviewRevision, snapId.value, velocityOpen.value, keyboardOpen.value], markDirty)
 
 onMounted(() => {
   nextTick(() => {
     if (mountCanvas() && clip.value && clip.value.midi) fitViewToClip()
   })
   if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true)
+  if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onPianoVisibility)
   session.pianoRollFocus = true
   if (session.score) {
     if (session.score.key) session.scaleKey = session.score.key
@@ -967,9 +1021,15 @@ onMounted(() => {
 onUnmounted(() => {
   session.pianoRollFocus = false
   cancelAnimationFrame(raf)
+  raf = 0
+  if (resizeObs) {
+    resizeObs.disconnect()
+    resizeObs = null
+  }
   stopPreview()
   flushNotePatches()
   if (typeof window !== 'undefined') window.removeEventListener('keydown', onKey, true)
+  if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onPianoVisibility)
   if (canvasEl) {
     canvasEl.removeEventListener('pointerdown', onPointerDown)
     canvasEl.removeEventListener('pointermove', onPointerMove)

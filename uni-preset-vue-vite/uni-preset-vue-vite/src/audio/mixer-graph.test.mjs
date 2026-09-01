@@ -70,8 +70,12 @@ class MockWorkletNode extends MockNode {
     this.chain = []
     this.port = {
       onmessage: null,
+      setCount: 0,
       postMessage: (message) => {
-        if (message && message.type === 'set') this.chain = message.chain
+        if (message && message.type === 'set') {
+          this.chain = message.chain
+          this.port.setCount++
+        }
       }
     }
   }
@@ -109,7 +113,8 @@ const {
   isWebOwnedTrack,
   mixerHasInserts,
   syncDirectLaneGains,
-  ensureOutputRouting
+  ensureOutputRouting,
+  setLaneMix
 } = await import('./mixer-graph.js')
 const { defaultWebMixer, setLaneInserts } = await import('../model/web-mixer.js')
 const { createInsert } = await import('../dsp/plugin.js')
@@ -296,6 +301,28 @@ function reachable (start) {
   assert(lane.input === trackInputNode(graph, 9), 'attach keeps the voice input stable')
   assert(reachable(lane.input).has(graph.mixerNodes.masterChain), 'the strip is rewired through the mixer')
   assert(trackInputNode(graph, null) === graph.samplerGain, 'unidentified voices use the fallback bus')
+}
+
+//==============================================================================
+// Fader / pan updates GainNode only — no pushChain
+{
+  const graph = makeGraph()
+  const tracks = [{ id: 4, type: 'midi', source: 'm-orchestra', volumeDb: 0, pan: 0 }]
+  const mixer = defaultWebMixer()
+  const eq = createInsert('equalizer-x', plugins)
+  setLaneInserts(mixer, { type: 'track', id: 4 }, [eq, null, null, null, null])
+  await attachMixerGraph(graph, mixer, () => {}, tracks, { localPlayback: true })
+  const lane = graph.trackLanes.get('4')
+  assert(lane && lane.chain, 'track with an insert owns a chain')
+  const sets = lane.chain.port.setCount
+  const chainRef = lane.chain.chain
+  tracks[0].volumeDb = -12
+  tracks[0].pan = -0.4
+  assert(setLaneMix(graph, tracks[0], tracks), 'setLaneMix applies')
+  assert(lane.chain.port.setCount === sets, 'fader drag does not pushChain')
+  assert(lane.chain.chain === chainRef, 'insert chain stays the same object')
+  assert(lane.gain.gain.value < 0.3, 'gain node follows the fader')
+  assert(Math.abs(lane.pan.pan.value - (-0.4)) < 1e-6, 'pan node follows')
 }
 
 console.log('mixer-graph routing ok')

@@ -127,11 +127,19 @@ function wireLane (graph, lane, mode) {
   lane.mode = ROUTING_MIXER
 }
 
+function createMeteredChain (graph, ctx, onMeters) {
+  const node = createChainNode(ctx, onMeters)
+  if (graph && graph.fxMeterDetail && node && node.port) {
+    try { node.port.postMessage({ type: 'detail', on: true }) } catch (err) { /* closed */ }
+  }
+  return node
+}
+
 /** Attach the FX worklet chain for a lane the first time it actually needs one. */
 function ensureLaneChain (graph, lane, inserts) {
   const wanted = (inserts || []).some((item) => item && item.pluginId)
   if (!wanted || lane.chain || !graph.mixerNodes) return false
-  lane.chain = createChainNode(graph.context, (m) => {
+  lane.chain = createMeteredChain(graph, graph.context, (m) => {
     const cb = graph.mixerNodes && graph.mixerNodes.onMeters
     if (cb) cb(lane.key, m)
   })
@@ -286,9 +294,9 @@ export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], 
   const nodes = {
     onMeters,
     sum: makeGain(ctx, 1),
-    busReverbChain: createChainNode(ctx, (m) => nodes.onMeters && nodes.onMeters('bus', m)),
-    busDelayChain: createChainNode(ctx, (m) => nodes.onMeters && nodes.onMeters('delay', m)),
-    masterChain: createChainNode(ctx, (m) => nodes.onMeters && nodes.onMeters('master', m)),
+    busReverbChain: createMeteredChain(graph, ctx, (m) => nodes.onMeters && nodes.onMeters('bus', m)),
+    busDelayChain: createMeteredChain(graph, ctx, (m) => nodes.onMeters && nodes.onMeters('delay', m)),
+    masterChain: createMeteredChain(graph, ctx, (m) => nodes.onMeters && nodes.onMeters('master', m)),
     analyserBus: createAnalyser(ctx),
     analyserDelay: createAnalyser(ctx),
     analyserMaster: createAnalyser(ctx),
@@ -299,8 +307,8 @@ export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], 
 
   nodes.remote = createLane(ctx, 'remote', graph.remoteGain)
   nodes.sampler = createLane(ctx, 'sampler', graph.samplerGain)
-  nodes.remote.chain = createChainNode(ctx, (m) => nodes.onMeters && nodes.onMeters('remote', m))
-  nodes.sampler.chain = createChainNode(ctx, (m) => nodes.onMeters && nodes.onMeters('sampler', m))
+  nodes.remote.chain = createMeteredChain(graph, ctx, (m) => nodes.onMeters && nodes.onMeters('remote', m))
+  nodes.sampler.chain = createMeteredChain(graph, ctx, (m) => nodes.onMeters && nodes.onMeters('sampler', m))
 
   safeDisconnect(graph.remoteGain)
   safeDisconnect(graph.samplerGain)
@@ -423,8 +431,8 @@ function laneVolumeGain (track, tracks) {
 }
 
 function syncLaneStrip (graph, lane, ctx, opts) {
-  const { gain, pan, sends, inserts, audible } = opts
-  const rebuilt = ensureLaneChain(graph, lane, inserts)
+  const { gain, pan, sends, inserts, audible, mixOnly } = opts
+  const rebuilt = mixOnly ? false : ensureLaneChain(graph, lane, inserts)
   smoothGain(lane.gain, gain, ctx)
   lane.pan.pan.setTargetAtTime(Math.min(1, Math.max(-1, Number(pan) || 0)), ctx.currentTime, SMOOTH_SEC)
   const levels = sendLevels(sends, audible)
@@ -432,8 +440,52 @@ function syncLaneStrip (graph, lane, ctx, opts) {
   smoothGain(lane.preDelay, levels.preDelay, ctx)
   smoothGain(lane.postReverb, levels.postReverb, ctx)
   smoothGain(lane.postDelay, levels.postDelay, ctx)
-  if (lane.chain) pushChain(lane.chain, inserts)
+  if (!mixOnly && lane.chain) pushChain(lane.chain, inserts)
   return rebuilt
+}
+
+/** Fader/pan only — do not rebuild or re-post FX chains. */
+export function setLaneMix (graph, track, tracks = []) {
+  if (!graph || !track || track.type === 'master') return false
+  const lane = ensureTrackLane(graph, track.id)
+  if (!lane || !graph.context) return false
+  const ctx = graph.context
+  smoothGain(lane.gain, laneVolumeGain(track, tracks), ctx)
+  if (lane.pan && lane.pan.pan) {
+    lane.pan.pan.setTargetAtTime(Math.min(1, Math.max(-1, Number(track.pan) || 0)), ctx.currentTime, SMOOTH_SEC)
+  }
+  return true
+}
+
+export function setMasterMix (graph, gain) {
+  if (!graph || !graph.master || !graph.context) return false
+  smoothGain(graph.master, Math.max(0, Number(gain) || 0), graph.context)
+  return true
+}
+
+function eachChainNode (graph, fn) {
+  if (!graph) return
+  const nodes = graph.mixerNodes
+  if (nodes) {
+    ;[nodes.remote && nodes.remote.chain, nodes.sampler && nodes.sampler.chain,
+      nodes.busReverbChain, nodes.busDelayChain, nodes.masterChain].forEach((node) => {
+      if (node && node.port) fn(node)
+    })
+  }
+  if (graph.trackLanes) {
+    graph.trackLanes.forEach((lane) => {
+      if (lane.chain && lane.chain.port) fn(lane.chain)
+    })
+  }
+}
+
+export function setFxMeterDetail (graph, detailed) {
+  const on = !!detailed
+  if (!graph) return
+  graph.fxMeterDetail = on
+  eachChainNode(graph, (node) => {
+    try { node.port.postMessage({ type: 'detail', on }) } catch (err) { /* closed */ }
+  })
 }
 
 export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
@@ -464,7 +516,8 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
       pan: track.pan != null ? track.pan : (laneMix ? laneMix.pan : 0),
       sends: laneMix ? laneMix.sends : null,
       inserts: laneInserts(webMixer, { type: 'track', id }).filter(Boolean),
-      audible: isTrackAudible(track, list)
+      audible: isTrackAudible(track, list),
+      mixOnly: !!options.mixOnly
     })
   })
 
@@ -480,13 +533,16 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
     })
   }
 
+  const mixOnly = !!options.mixOnly
+
   // Native VST sum tap: gain/pan/track FX already applied on the engine side.
   syncLaneStrip(graph, nodes.remote, ctx, {
     gain: 1,
     pan: 0,
     sends: (webMixer.remote && webMixer.remote.sends) || null,
     inserts: remoteProcessInserts(webMixer),
-    audible: true
+    audible: true,
+    mixOnly
   })
 
   // Voices without a resolvable track id (previews, metronome-free fallbacks).
@@ -495,7 +551,8 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
     pan: 0,
     sends: null,
     inserts: unassignedProcessInserts(webMixer),
-    audible: false
+    audible: false,
+    mixOnly
   })
 
   const buses = webMixer.buses || []
@@ -517,7 +574,9 @@ export function syncMixerGraph (graph, webMixer, tracks = [], options = {}) {
   const masterAudible = masterTrack ? !masterTrack.mute && !masterMute : !masterMute
   smoothGain(graph.master, masterAudible ? dbToGain(masterDb) : 0, ctx)
 
-  pushChain(nodes.busReverbChain, reverb ? (reverb.inserts || []).filter(Boolean) : [])
-  pushChain(nodes.busDelayChain, delay ? (delay.inserts || []).filter(Boolean) : [])
-  pushChain(nodes.masterChain, (webMixer.master.inserts || []).filter(Boolean))
+  if (!mixOnly) {
+    pushChain(nodes.busReverbChain, reverb ? (reverb.inserts || []).filter(Boolean) : [])
+    pushChain(nodes.busDelayChain, delay ? (delay.inserts || []).filter(Boolean) : [])
+    pushChain(nodes.masterChain, (webMixer.master.inserts || []).filter(Boolean))
+  }
 }

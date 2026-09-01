@@ -1,5 +1,5 @@
 <template>
-  <view class="pl" :class="{ phone: compact, lite }">
+  <view ref="plEl" class="pl" :class="{ phone: compact, lite, 'file-drag': draggingFiles }">
     <view v-if="compact && !lite" class="mobile-tools">
       <view class="hit" @click.stop="toggleMenu('add')">
         <daw-icon name="plus" />
@@ -39,7 +39,14 @@
       </view>
     </view>
 
-    <view class="board">
+    <view
+      ref="boardEl"
+      class="board"
+      @dragover.prevent="onDragOver"
+      @drop.prevent="onDrop"
+      @dragenter.prevent="onDragEnter"
+      @dragleave="onDragLeave"
+    >
       <view class="top">
       <view class="corner">
         <view v-if="!compact && !lite" class="hit" @click.stop="toggleMenu('add')">
@@ -211,8 +218,20 @@
         @pointerdown="onLaneDown"
         @dblclick="onLaneDbl"
         @contextmenu.prevent="onLaneMenu"
+        @dragover.prevent="onDragOver"
+        @drop.prevent="onDrop"
+        @dragenter.prevent="onDragEnter"
+        @dragleave="onDragLeave"
       >
-        <view class="canvas" :style="canvasStyle">
+        <view
+          ref="canvasEl"
+          class="canvas"
+          :style="canvasStyle"
+          @dragover.prevent="onDragOver"
+          @drop.prevent="onDrop"
+          @dragenter.prevent="onDragEnter"
+          @dragleave="onDragLeave"
+        >
           <view class="grid" :style="gridStyle" />
           <view v-if="session.looping" class="loop-fill" :style="loopStyle" />
           <view
@@ -226,30 +245,22 @@
             @contextmenu.prevent.stop="openClipMenu(clip, $event)"
           >
             <text class="clip-name">{{ clip.name }}{{ clipRepeatLabel(clip) }}</text>
-            <view class="preview">
-              <view
-                v-for="(col, x) in previewOf(clip)"
-                :key="x"
-                class="col"
-              >
-                <view
-                  v-for="(cell, y) in col"
-                  :key="y"
-                  v-show="cell > 0"
-                  class="cell"
-                  :style="{ opacity: cell, bottom: (y * 12.5) + '%' }"
-                />
-              </view>
-            </view>
+            <daw-clip-preview :clip="clip" :revision="session.clipPreviewRevision" />
             <view class="edge left" />
             <view class="edge right" />
           </view>
           <view v-if="marquee" class="marquee" :style="marquee" />
+          <view
+            v-if="draggingFiles && dropGhost"
+            class="drop-ghost"
+            :style="dropGhost"
+          />
           <view class="playhead" ref="playheadEl" @pointerdown.stop="onPlayheadDown">
             <view class="cap" />
           </view>
           <view v-if="empty" class="empty">
-            <text class="empty-title">Start your arrangement</text>
+            <text class="empty-title">Drag MIDI or audio files here</text>
+            <text class="empty-sub">MP3, WAV, FLAC, MID, and more</text>
             <view class="empty-actions">
               <view class="empty-btn" @click.stop="createTrack('midi')">+ Instrument</view>
               <view class="empty-btn" @click.stop="createTrack('web-sampler')">+ Web Sampler</view>
@@ -276,8 +287,10 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { bindFileDropZone, isFileDrag, filesFromDrop, resolveDom } from '../lib/file-drop.js'
 import DawIcon from './daw-icon.vue'
+import DawClipPreview from './daw-clip-preview.vue'
 import {
   session,
   SNAP_OPTIONS,
@@ -329,9 +342,12 @@ import {
   openNewTrackPicker,
   openVirtualClip,
   assignTrackToGroup,
-  ungroupTrack
+  ungroupTrack,
+  addClipFromFile,
+  isSupportedFile,
+  showToast
 } from '../store/session.js'
-import { visibleTrackRows, buildClipPreview, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../model/playlist-model.js'
+import { visibleTrackRows, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../model/playlist-model.js'
 import { interpolateBeats } from '../model/timeline.js'
 import { glyphClass, glyphLetter } from '../model/instrument-glyph.js'
 
@@ -340,6 +356,9 @@ const lite = computed(() => isLite())
 const scrollX = ref(0)
 const scrollY = ref(0)
 const lanesEl = ref(null)
+const boardEl = ref(null)
+const canvasEl = ref(null)
+const plEl = ref(null)
 const vScrollEl = ref(null)
 const playheadEl = ref(null)
 const renaming = ref(-1)
@@ -348,6 +367,8 @@ const marquee = ref(null)
 const context = ref(null)
 const follow = ref(true)
 const dropGroupId = ref(0)
+const draggingFiles = ref(false)
+const dropGhost = ref(null)
 const viewportW = ref(1600)
 let raf = 0
 let gesture = null
@@ -363,7 +384,7 @@ const empty = computed(() => session.tracks.filter((track) => track.type !== 'ma
 
 const contentBeats = computed(() => {
   let maxBeat = 64
-  maxBeat = Math.max(maxBeat, session.positionBeats + 16, session.loopEnd + 8)
+  maxBeat = Math.max(maxBeat, session.loopEnd + 8)
   session.clips.forEach((clip) => {
     maxBeat = Math.max(maxBeat, (clip.startBeat || 0) + (clip.lengthBeats || 0) + 8)
   })
@@ -462,11 +483,6 @@ function clipRepeatLabel (clip) {
   const source = clipSourceLength(clip)
   if ((clip.lengthBeats || 0) <= source * 1.05) return ''
   return '  ×' + Math.max(2, Math.round((clip.lengthBeats || source) / source))
-}
-
-function previewOf (clip) {
-  session.clipPreviewRevision
-  return buildClipPreview(clip)
 }
 
 function clipStyle (clip) {
@@ -907,6 +923,112 @@ function openTrackMenu (row, e) {
   }
 }
 
+function canvasDom () {
+  return resolveDom(canvasEl.value)
+    || (typeof document !== 'undefined' ? document.querySelector('.pl .canvas') : null)
+}
+
+function dropTargetDom () {
+  return resolveDom(boardEl.value)
+    || canvasDom()
+    || (typeof document !== 'undefined' ? document.querySelector('.pl .board') : null)
+}
+
+function isOverDropTarget (clientX, clientY) {
+  const target = dropTargetDom()
+  if (!target || !target.getBoundingClientRect) return false
+  const rect = target.getBoundingClientRect()
+  return clientX >= rect.left && clientX <= rect.right && clientY >= rect.top && clientY <= rect.bottom
+}
+
+function isOverCanvas (clientX, clientY) {
+  return isOverDropTarget(clientX, clientY)
+}
+
+function dropPointFromClient (clientX, clientY) {
+  const canvas = canvasDom()
+  if (!canvas || !canvas.getBoundingClientRect) {
+    return { beat: 0, trackIndex: 1, trackVisual: 0, row: rows.value[0] }
+  }
+  const rect = canvas.getBoundingClientRect()
+  const x = clientX - rect.left + scrollX.value
+  const y = clientY - rect.top
+  const beat = snapBeat(x / session.pixelsPerBeat)
+  const trackVisual = Math.min(rows.value.length - 1, Math.max(0, Math.floor(y / session.trackHeight)))
+  const row = rows.value[trackVisual]
+  const trackIndex = row ? row.index : 1
+  return { beat, trackIndex, trackVisual, row }
+}
+
+function dropPointFromEvent (e) {
+  return dropPointFromClient(e.clientX, e.clientY)
+}
+
+function updateDropGhost (clientX, clientY) {
+  const { beat, trackVisual } = dropPointFromClient(clientX, clientY)
+  dropGhost.value = {
+    left: beat * session.pixelsPerBeat + 'px',
+    top: trackVisual * session.trackHeight + 6 + 'px',
+    width: 4 * session.pixelsPerBeat + 'px',
+    height: session.trackHeight - 12 + 'px'
+  }
+}
+
+function onDragEnter (e) {
+  if (!isFileDrag(e)) return
+  if (e.preventDefault) e.preventDefault()
+  draggingFiles.value = true
+}
+
+function onDragOver (e) {
+  if (!isFileDrag(e)) return
+  if (e.preventDefault) e.preventDefault()
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+  draggingFiles.value = true
+  updateDropGhost(e.clientX, e.clientY)
+}
+
+function onDragLeave () {
+  draggingFiles.value = false
+  dropGhost.value = null
+}
+
+async function importDroppedFiles (files, beat, trackIndex) {
+  if (!files.length) return
+  let imported = 0
+  for (const file of files) {
+    if (!isSupportedFile(file.name)) continue
+    try {
+      await addClipFromFile(file, trackIndex, beat)
+      imported += 1
+    } catch (err) {
+      console.warn('[import] failed', file.name, err)
+      showToast('Import failed: ' + (file.name || 'file'))
+    }
+  }
+  if (imported) showToast('Imported ' + imported + ' clip' + (imported > 1 ? 's' : ''))
+  else showToast('Unsupported file type')
+}
+
+function handleFileDrop (e, preloadedFiles) {
+  if (e && e.preventDefault) e.preventDefault()
+  if (e && e.stopPropagation) e.stopPropagation()
+  draggingFiles.value = false
+  dropGhost.value = null
+  const files = (preloadedFiles && preloadedFiles.length)
+    ? preloadedFiles
+    : filesFromDrop(e)
+  if (!files.length) return
+  const { beat, trackIndex } = dropPointFromEvent(e)
+  importDroppedFiles(files, beat, trackIndex)
+}
+
+function onDrop (e) {
+  handleFileDrop(e)
+}
+
+let unbindFileDrop = []
+
 function onClipDown (clip, e) {
   if (clip.virtual) {
     if (lite.value) {
@@ -949,13 +1071,6 @@ function onClipDown (clip, e) {
     const dy = ev.clientY - startY
     if (!gesture || !gesture.armed) {
       if (Math.hypot(dx, dy) < 10) return
-      if (lite.value && edge === 'move' && Math.abs(dy) > Math.abs(dx) * 1.25) {
-        gesture = null
-        window.removeEventListener('pointermove', move)
-        window.removeEventListener('pointerup', up)
-        endEdit()
-        return
-      }
       if (gesture) gesture.armed = true
     }
     if (!gesture) return
@@ -978,9 +1093,12 @@ function onClipDown (clip, e) {
         }
       } else {
         found.startBeat = Math.max(0, snapBeat(orig.start + deltaBeats))
-        const nextTrack = Math.min(session.tracks.length - 1, Math.max(1, orig.track + deltaTracks))
-        const dest = session.tracks[nextTrack]
-        if (dest && dest.type !== 'master' && dest.type !== 'group') found.trackIndex = nextTrack
+        const origVisual = rowIndexByTrack.value.get(orig.track)
+        if (origVisual != null) {
+          const nextVisual = Math.min(rows.value.length - 1, Math.max(0, origVisual + deltaTracks))
+          const dest = rows.value[nextVisual]
+          if (dest && isPlayableTrack(dest.track)) found.trackIndex = dest.index
+        }
       }
     })
     queueClipMoves(selectedClips())
@@ -1078,6 +1196,7 @@ function onTouchMove (e) {
 }
 
 function updatePlayhead () {
+  raf = 0
   const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
   const beats = interpolateBeats(session.clockStamp || session, now, session.bpm)
   if (!session.remoteAudioOn && session.playing) {
@@ -1094,12 +1213,31 @@ function updatePlayhead () {
       if (x > viewRight - 48 && x < viewRight + 200) scroller.scrollLeft += Math.min(24, x - (viewRight - 80))
     }
   }
+  if (session.playing) raf = requestAnimationFrame(updatePlayhead)
+}
+
+function startPlayheadLoop () {
+  if (raf) return
+  if (typeof requestAnimationFrame === 'undefined') return
   raf = requestAnimationFrame(updatePlayhead)
 }
 
 function measure () {
   compact.value = typeof window !== 'undefined' && window.innerWidth < 720
 }
+
+watch(() => session.playing, (on) => {
+  if (on) startPlayheadLoop()
+  else {
+    if (raf) cancelAnimationFrame(raf)
+    raf = 0
+    updatePlayhead()
+  }
+})
+
+watch(() => session.positionBeats, () => {
+  if (!session.playing) updatePlayhead()
+})
 
 watch(() => session.scrollRequest, () => {
   const row = rows.value.find((item) => item.index === session.selectedTrack)
@@ -1112,25 +1250,82 @@ watch(() => session.scrollRequest, () => {
   }
 })
 
-onMounted(() => {
+onMounted(async () => {
   measure()
   if (typeof window !== 'undefined') window.addEventListener('resize', measure)
-  const scroller = lanesEl.value && (lanesEl.value.$el || lanesEl.value)
+  await nextTick()
+  await new Promise((r) => setTimeout(r, 0))
+
+  const scroller = resolveDom(lanesEl.value)
   if (scroller && scroller.addEventListener) {
     scroller.addEventListener('wheel', onWheel, { passive: false })
     viewportW.value = scroller.clientWidth || 1600
   }
-  raf = requestAnimationFrame(updatePlayhead)
+
+  const dropHandlers = {
+    onEnter: () => { draggingFiles.value = true },
+    onLeave: onDragLeave,
+    onOver: (e) => {
+      draggingFiles.value = true
+      updateDropGhost(e.clientX, e.clientY)
+    },
+    onDrop: (e, files) => handleFileDrop(e, files)
+  }
+
+  const bindTargets = new Set()
+  const addBind = (target) => {
+    const node = resolveDom(target)
+    if (!node || bindTargets.has(node)) return
+    bindTargets.add(node)
+    unbindFileDrop.push(bindFileDropZone(node, dropHandlers, { capture: true }))
+  }
+
+  ;[plEl.value, boardEl.value, canvasEl.value, lanesEl.value, vScrollEl.value].forEach(addBind)
+  if (typeof document !== 'undefined') {
+    ['.pl', '.pl .board', '.pl .lanes', '.pl .canvas', '.pl .vscroll'].forEach((sel) => {
+      const node = document.querySelector(sel)
+      if (node) addBind(node)
+    })
+  }
+
+  if (typeof document !== 'undefined') {
+    const onDocDragOver = (e) => {
+      if (!isOverDropTarget(e.clientX, e.clientY)) return
+      e.preventDefault()
+      if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+      if (!isFileDrag(e)) return
+      draggingFiles.value = true
+      updateDropGhost(e.clientX, e.clientY)
+    }
+    const onDocDrop = (e) => {
+      if (!isOverDropTarget(e.clientX, e.clientY)) return
+      handleFileDrop(e)
+    }
+    document.addEventListener('dragover', onDocDragOver, true)
+    document.addEventListener('drop', onDocDrop, true)
+    unbindFileDrop.push(() => {
+      document.removeEventListener('dragover', onDocDragOver, true)
+      document.removeEventListener('drop', onDocDrop, true)
+    })
+  }
+
+  startPlayheadLoop()
 })
 onUnmounted(() => {
   if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
-  const scroller = lanesEl.value && (lanesEl.value.$el || lanesEl.value)
+  const scroller = resolveDom(lanesEl.value)
   if (scroller && scroller.removeEventListener) scroller.removeEventListener('wheel', onWheel)
+  unbindFileDrop.forEach((unbind) => unbind())
+  unbindFileDrop = []
   if (raf) cancelAnimationFrame(raf)
 })
 </script>
 
 <style scoped>
+.pl.file-drag .clip,
+.pl.file-drag .playhead {
+  pointer-events: none;
+}
 .pl {
   flex: 1;
   min-width: 0;
@@ -1462,16 +1657,7 @@ onUnmounted(() => {
   right: 2px;
   top: 14px;
   bottom: 2px;
-  display: flex;
-}
-.col { flex: 1; position: relative; }
-.cell {
-  position: absolute;
-  left: 10%;
-  width: 80%;
-  height: 10%;
-  background: rgba(255,255,255,0.7);
-  border-radius: 1px;
+  pointer-events: none;
 }
 .edge {
   position: absolute;
@@ -1517,6 +1703,14 @@ onUnmounted(() => {
   background: rgba(77,163,255,0.12);
   pointer-events: none;
 }
+.drop-ghost {
+  position: absolute;
+  border-radius: 4px;
+  background: rgba(77,163,255,0.2);
+  border: 1px dashed rgba(77,163,255,0.55);
+  pointer-events: none;
+  z-index: 4;
+}
 .empty {
   position: absolute;
   inset: 0;
@@ -1528,6 +1722,7 @@ onUnmounted(() => {
   pointer-events: none;
 }
 .empty-title { color: #6a6a6a; font-size: 15px; }
+.empty-sub { color: #555; font-size: 12px; }
 .empty-actions { display: flex; gap: 8px; pointer-events: auto; }
 .empty-btn {
   padding: 7px 10px;

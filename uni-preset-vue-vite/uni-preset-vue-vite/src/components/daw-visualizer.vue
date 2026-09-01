@@ -10,7 +10,7 @@
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { session, getFxAnalyser } from '../store/session.js'
 import { readSpectrum } from '../dsp/runtime.js'
 
@@ -18,6 +18,7 @@ const bars = ref(new Array(16).fill(8))
 let raf = 0
 
 function tick (now) {
+  raf = 0
   const analyser = getFxAnalyser('master')
   if (analyser) {
     const spectrum = readSpectrum(analyser, 16)
@@ -32,11 +33,23 @@ function tick (now) {
       return Math.max(6, Math.round(amount * 100))
     })
   }
-  raf = requestAnimationFrame(tick)
+  if (session.playing) raf = requestAnimationFrame(tick)
 }
 
 onMounted(() => { raf = requestAnimationFrame(tick) })
-onUnmounted(() => cancelAnimationFrame(raf))
+onUnmounted(() => {
+  if (raf) cancelAnimationFrame(raf)
+  raf = 0
+})
+watch(() => session.playing, (on) => {
+  if (on) {
+    if (!raf) raf = requestAnimationFrame(tick)
+  } else {
+    if (raf) cancelAnimationFrame(raf)
+    raf = 0
+    tick()
+  }
+})
 </script>
 
 <style scoped>

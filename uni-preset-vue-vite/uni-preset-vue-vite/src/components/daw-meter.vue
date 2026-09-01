@@ -30,6 +30,5 @@ const percent = computed(() => Math.min(100, Math.max(0, Math.pow(Math.max(0, pr
   right: 0;
   bottom: 0;
   background: linear-gradient(#e74c3c, #2ea44f);
-  transition: height 90ms linear;
 }
 </style>

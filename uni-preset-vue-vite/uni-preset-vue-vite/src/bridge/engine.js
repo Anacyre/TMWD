@@ -1,7 +1,19 @@
 import { reactive } from 'vue'
+import {
+  ENGINE_FIRST_PORT,
+  ENGINE_LAST_PORT,
+  pageIsHttps,
+  parseEngineHost,
+  engineHealthUrl,
+  engineSocketUrls,
+  engineHostHintText,
+  usesSecureEngineTransport
+} from './engine-host.js'
 
-const FIRST_PORT = 17890
-const LAST_PORT = 17899
+export { parseEngineHost, usesSecureEngineTransport, engineHostHintText }
+
+const FIRST_PORT = ENGINE_FIRST_PORT
+const LAST_PORT = ENGINE_LAST_PORT
 const ENGINE_HOST_KEY = 'dawweb.engineHost'
 
 export const engineLink = reactive({
@@ -110,20 +122,13 @@ export function setStoredEngineHost (value) {
   return next
 }
 
-export function parseEngineHost (text) {
-  const raw = String(text || '').trim().replace(/^https?:\/\//, '')
-  if (!raw) return null
-  const parts = raw.split(':')
-  const host = parts[0]
-  const port = parts.length > 1 ? Number(parts[1]) : FIRST_PORT
-  if (!host) return null
-  return { host, port: Number.isFinite(port) && port > 0 ? port : FIRST_PORT }
-}
-
 export function mixedContentHint () {
-  if (typeof location === 'undefined') return ''
-  if (location.protocol !== 'https:') return ''
-  return 'This HTTPS page cannot mix-connect to http://127.0.0.1. Open the address shown in the DawWeb window (LAN HTTP), or set Engine host / ?engine=IP:17890. Vite (npm run dev:h5) is not the engine.'
+  if (!pageIsHttps()) return ''
+  const stored = parseEngineHost(getStoredEngineHost())
+  const override = parseEngineHost(engineOverride())
+  const target = stored || override
+  if (target && target.secure) return ''
+  return engineHostHintText({ parsed: target })
 }
 
 function candidateHosts () {
@@ -144,21 +149,29 @@ function candidateHosts () {
   return [...new Set(hosts)]
 }
 
-async function probeHealth (host, port) {
+async function probeHealth (host, port, secure) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timer = controller ? setTimeout(() => controller.abort(), 500) : 0
+  const timer = controller ? setTimeout(() => controller.abort(), secure ? 2500 : 500) : 0
   try {
-    const response = await fetch(`http://${host}:${port}/health`, {
+    const response = await fetch(engineHealthUrl(host, port, secure), {
       signal: controller ? controller.signal : undefined
     })
     if (!response.ok) return null
     const data = await response.json()
     if (!data || data.ok === false) return null
+    const listenPort = secure ? port : (Number(data.port) || port)
+    const urls = engineSocketUrls({
+      host,
+      port: listenPort,
+      secure,
+      ws: data.ws,
+      audioWs: data.audioWs
+    })
     return {
       host,
-      port: Number(data.port) || port,
-      ws: data.ws ? String(data.ws).replace('127.0.0.1', host).replace('localhost', host) : `ws://${host}:${Number(data.port) || port}`,
-      audioWs: data.audioWs ? String(data.audioWs).replace('127.0.0.1', host).replace('localhost', host) : `ws://${host}:${Number(data.port) || port}/audio`,
+      port: listenPort,
+      ws: urls.ws,
+      audioWs: urls.audioWs,
       sessionId: data.sessionId || '',
       schemaVersion: data.schemaVersion || 0,
       lan: data.lan || []
@@ -170,37 +183,51 @@ async function probeHealth (host, port) {
   }
 }
 
-async function discoverUrl () {
-  const stored = parseEngineHost(getStoredEngineHost())
-  if (stored) {
-    const found = await probeHealth(stored.host, stored.port)
-    if (found) return found
-  }
-
-  const override = engineOverride()
-  if (override && override.includes(':')) {
-    const [host, portText] = override.split(':')
-    const found = await probeHealth(host, Number(portText) || FIRST_PORT)
-    if (found) return found
-  }
-
-  const hosts = candidateHosts()
-  for (const host of hosts) {
-    for (let port = FIRST_PORT; port <= LAST_PORT; ++port) {
-      const found = await probeHealth(host, port)
-      if (found) return found
-    }
-  }
-
+function fallbackFound (parsed) {
+  const host = (parsed && parsed.host) || '127.0.0.1'
+  const port = (parsed && parsed.port) || FIRST_PORT
+  const secure = !!(parsed && parsed.secure)
+  const urls = engineSocketUrls({ host, port, secure })
   return {
-    host: stored ? stored.host : '127.0.0.1',
-    port: stored ? stored.port : FIRST_PORT,
-    ws: `ws://${stored ? stored.host : '127.0.0.1'}:${stored ? stored.port : FIRST_PORT}`,
-    audioWs: `ws://${stored ? stored.host : '127.0.0.1'}:${stored ? stored.port : FIRST_PORT}/audio`,
+    host,
+    port,
+    ws: urls.ws,
+    audioWs: urls.audioWs,
     sessionId: '',
     schemaVersion: 0,
     lan: []
   }
+}
+
+async function probeParsed (parsed) {
+  if (!parsed) return null
+  return probeHealth(parsed.host, parsed.port, parsed.secure)
+}
+
+async function discoverUrl () {
+  const stored = parseEngineHost(getStoredEngineHost())
+  if (stored) {
+    const found = await probeParsed(stored)
+    if (found) return found
+  }
+
+  const override = parseEngineHost(engineOverride())
+  if (override) {
+    const found = await probeParsed(override)
+    if (found) return found
+  }
+
+  if (!pageIsHttps()) {
+    const hosts = candidateHosts()
+    for (const host of hosts) {
+      for (let port = FIRST_PORT; port <= LAST_PORT; ++port) {
+        const found = await probeHealth(host, port, false)
+        if (found) return found
+      }
+    }
+  }
+
+  return fallbackFound(stored || override)
 }
 
 function handleMessage (raw) {
@@ -312,11 +339,10 @@ export async function connectEngine () {
   }
 
   const found = await discoverUrl()
-  const hint = mixedContentHint()
-  if (hint && found.ws && found.ws.startsWith('ws://')) {
+  if (pageIsHttps() && found.ws && found.ws.startsWith('ws://')) {
     engineLink.connecting = false
     engineLink.status = 'Offline'
-    engineLink.lastError = hint
+    engineLink.lastError = mixedContentHint() || engineHostHintText({ parsed: null })
     return
   }
   openSocket(found)
