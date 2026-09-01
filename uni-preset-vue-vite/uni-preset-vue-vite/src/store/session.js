@@ -2910,6 +2910,9 @@ async function doEnsureMixerAttached () {
     graph.mixerNodes = null
     session.diagnostics.browserFxAttached = false
     session.diagnostics.browserFxError = readableFxError(err.message || String(err))
+    // #region agent log
+    fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H1', location: 'session.js:doEnsureMixerAttached.catch', message: 'attach threw', data: { error: String(err && err.message || err), hasInserts: mixerHasInserts(session.webMixer) }, timestamp: Date.now() }) }).catch(() => {})
+    // #endregion
     ensureOutputRouting(graph, session.webMixer)
     if (!dryMixToast) {
       dryMixToast = true
@@ -3443,8 +3446,14 @@ export function addInsert (lane, pluginId, slotIndex = 0) {
   setLaneInserts(session.webMixer, lane, list)
   syncTrackInsertMeta(lane)
   persistWebMixer()
+  // #region agent log
+  fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H1', location: 'session.js:addInsert', message: 'insert added', data: { pluginId, laneType: lane && lane.type, laneId: lane && lane.id, returnOnly: !!(extra.state && extra.state.returnOnly), hasInserts: mixerHasInserts(session.webMixer), routingMode: session.diagnostics && session.diagnostics.routingMode, fxAttached: session.diagnostics && session.diagnostics.fxAttached, routingMuted: session.diagnostics && session.diagnostics.routingMuted }, timestamp: Date.now() }) }).catch(() => {})
+  // #endregion
   openPlugin(lane, target)
   unlockAudio().then(() => ensureMixerAttached()).then((graph) => {
+    // #region agent log
+    fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H3', location: 'session.js:addInsert.afterAttach', message: 'post-insert attach', data: { hasMixerNodes: !!(graph && graph.mixerNodes), routing: graph && graph.routing, masterGain: graph && graph.master && graph.master.gain ? graph.master.gain.value : null, ctxState: graph && graph.context && graph.context.state }, timestamp: Date.now() }) }).catch(() => {})
+    // #endregion
     if (graph && graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
     showToast(err.message || 'Browser FX audio failed to start')

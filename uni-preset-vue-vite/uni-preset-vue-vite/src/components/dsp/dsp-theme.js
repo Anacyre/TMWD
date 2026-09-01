@@ -265,6 +265,31 @@ export function drawLogTimeGrid (ctx, w, h, lo = 0.001, hi = 10) {
   ctx.restore()
 }
 
+export function linearTimeToX (sec, width, hi) {
+  const span = hi > 1e-6 ? hi : 1
+  return Math.min(1, Math.max(0, sec / span)) * width
+}
+
+export function drawLinearTimeGrid (ctx, w, h, hi) {
+  const span = hi > 1e-6 ? hi : 1
+  const marks = [0, 0.05, 0.1, 0.2, 0.5, 1, 2, 4, 8, 12]
+  ctx.save()
+  ctx.lineWidth = 1
+  ctx.strokeStyle = DSP_THEME.grid
+  marks.forEach((t) => {
+    if (t > span + 1e-9) return
+    if (t > 0 && t < span * 0.08) return
+    const x = Math.round(linearTimeToX(t, w, span)) + 0.5
+    ctx.beginPath()
+    ctx.moveTo(x, 0)
+    ctx.lineTo(x, h - 14)
+    ctx.stroke()
+    const label = t === 0 ? '0' : (t < 1 ? Math.round(t * 1000) + 'ms' : t + 's')
+    axisText(ctx, label, x, h - 7, t === 0 ? 'left' : 'center')
+  })
+  ctx.restore()
+}
+
 /* Amplitude decades 100 % / 10 % / 1 % / 0.1 %, matching the reference design. */
 export function ampToY (amp, h, floorDb = -60) {
   const db = 20 * Math.log10(Math.max(1e-6, amp))

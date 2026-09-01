@@ -44,7 +44,6 @@ export function reverbModeForVenue (venue) {
 
 const reverbParams = [
   { id: 'reverb.mix', name: 'Mix', min: 0, max: 1, default: 0.35, unit: '%', automatable: true },
-  { id: 'reverb.level', name: 'Amount', min: 0, max: 1.5, default: 0.65, unit: '%', automatable: true },
   { id: 'reverb.decay', name: 'Time', min: 0.15, max: 12, default: 2.2, unit: 's', scale: 'log', automatable: true },
   { id: 'reverb.size', name: 'Size', min: 0, max: 1, default: 0.62, unit: '%', automatable: true },
   { id: 'reverb.width', name: 'Width', min: 0, max: 2, default: 1, unit: '%', automatable: true },
@@ -57,7 +56,7 @@ const reverbParams = [
 function defaultReverbState () {
   return {
     amount: 0.35,
-    reverbLevel: 0.65,
+    reverbLevel: 1,
     decay: 2.2,
     size: 0.62,
     width: 1,
@@ -107,9 +106,16 @@ function snapOversampling (value, fallback) {
 }
 
 function normalizeReverbState (state) {
-  const next = mergeState(defaultReverbState(), state)
-  next.amount = clampNum(next.amount, 0, 1, 0.35)
-  next.reverbLevel = clampNum(next.reverbLevel, 0, 1.5, 0.65)
+  const incoming = state || {}
+  const next = mergeState(defaultReverbState(), incoming)
+  const amount = clampNum(incoming.amount, 0, 1, 0.35)
+  if (incoming.reverbLevel != null && Math.abs(Number(incoming.reverbLevel) - 1) > 1e-6) {
+    const level = clampNum(incoming.reverbLevel, 0, 1.5, 1)
+    next.amount = clampNum(amount * level, 0, 1, 0.35)
+  } else {
+    next.amount = amount
+  }
+  next.reverbLevel = 1
   next.decay = clampNum(next.decay, 0.15, 12, 2.2)
   next.size = clampNum(next.size, 0, 1, 0.62)
   next.width = clampNum(next.width, 0, 2, 1)

@@ -24,7 +24,7 @@
 
     <view class="stage">
       <view class="graph x-panel">
-        <text class="graph-lab">Amount</text>
+        <text class="graph-lab">Decay</text>
         <dsp-canvas ref="canvas" fill :height="230" @pointerdown="dragTime" />
         <view class="pods">
           <view class="pod x-card">
@@ -51,18 +51,9 @@
           </view>
         </view>
       </view>
-
-      <dsp-meter label="Out" :level="outLevel" fill :height="230" />
     </view>
 
     <view class="tray x-tray">
-      <dsp-knob
-        :model-value="state.reverbLevel"
-        :min="0" :max="1.5" :default-value="0.65"
-        label="Amount"
-        :format="fmtPercent150"
-        @update:model-value="set('reverbLevel', $event)"
-      />
       <dsp-knob
         :model-value="state.decay"
         :min="0.15" :max="12" :default-value="2.2"
@@ -162,7 +153,6 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import PluginShell from './plugin-shell.vue'
 import DspKnob from './dsp-knob.vue'
-import DspMeter from './dsp-meter.vue'
 import DspCanvas from './dsp-canvas.vue'
 import PluginEqualizerX from './plugin-equalizer-x.vue'
 import PluginDynamicX from './plugin-dynamic-x.vue'
@@ -175,8 +165,8 @@ import { createInsert } from '../../dsp/plugin.js'
 import { getReverbVisualization } from '../../dsp/reverb-x.js'
 import { prepareCanvas, observeCanvasResize } from './canvas-util.js'
 import {
-  DSP_THEME, drawLogTimeGrid, drawDecadeGrid, timeToX, ampToY, axisText,
-  drawVisualNotice, visualFrameMs, peakToDb
+  DSP_THEME, drawLinearTimeGrid, linearTimeToX, ampToY, axisText,
+  drawVisualNotice, drawDecadeGrid
 } from './dsp-theme.js'
 import { beginPointerDrag } from '../../lib/pointer-drag.js'
 import './dsp-theme.css'
@@ -193,15 +183,10 @@ const venueOpen = ref(false)
 const state = computed(() => props.insert.state)
 const presets = computed(() => plugins['reverb-x'].presets)
 
-const T_LO = 0.001
-const T_HI = 10
 const FLOOR_DB = -60
+const LERP_MS = 100
+const LERP_EPS = 1e-4
 
-const outLevel = computed(() => {
-  const m = props.meters || {}
-  if (m.wetPeak != null && m.wetPeak > 0) return m.wetPeak
-  return m.outPeak != null ? m.outPeak : 0
-})
 const activeMode = computed(() => reverbModeForVenue(state.value.venue))
 
 /* The wet chain runs inside this reverb, so it has no lane of its own. Feeding
@@ -254,10 +239,6 @@ function fmtDamping (v) {
   return hz >= 1000 ? (hz / 1000).toFixed(1) + ' kHz' : Math.round(hz) + ' Hz'
 }
 
-function fmtPercent150 (v) {
-  return Math.round((Number(v) || 0) / 1.5 * 100) + ' %'
-}
-
 function commit () { emit('change', props.insert) }
 function set (key, value) { props.insert.state[key] = value; commit() }
 function onPreset (id) { applyPreset(props.insert, id); commit() }
@@ -303,6 +284,45 @@ function onWetChange () {
   commit()
 }
 
+function snapDisplay () {
+  const s = state.value
+  disp.decay = Number(s.decay) || 2.2
+  disp.size = Number(s.size) || 0
+  disp.amount = Number(s.amount) || 0
+  disp.preDelayMs = Number(s.preDelayMs) || 0
+  disp.venue = s.venue || 'concert-hall'
+}
+
+function lerpToward (now) {
+  const dt = lastLerp ? now - lastLerp : 16
+  lastLerp = now
+  const a = Math.min(1, dt / LERP_MS)
+  const s = state.value
+  const targets = {
+    decay: Number(s.decay) || 2.2,
+    size: Number(s.size) || 0,
+    amount: Number(s.amount) || 0,
+    preDelayMs: Number(s.preDelayMs) || 0
+  }
+  let moving = false
+  for (const key of ['decay', 'size', 'amount', 'preDelayMs']) {
+    const delta = targets[key] - disp[key]
+    if (Math.abs(delta) > LERP_EPS) {
+      disp[key] += delta * a
+      if (Math.abs(targets[key] - disp[key]) <= LERP_EPS) disp[key] = targets[key]
+      else moving = true
+    } else {
+      disp[key] = targets[key]
+    }
+  }
+  const venue = s.venue || 'concert-hall'
+  if (disp.venue !== venue) {
+    disp.venue = venue
+    moving = true
+  }
+  return moving
+}
+
 function draw () {
   const prepared = prepareCanvas(canvas, 640, 230)
   if (!prepared) return
@@ -318,31 +338,40 @@ function draw () {
   const gw = Math.max(40, w - padL - padR)
   const gh = Math.max(40, h - padT - padB)
 
+  const key = disp.venue + '|' + disp.decay + '|' + disp.size + '|' + disp.amount + '|' + disp.preDelayMs
+  if (key !== vizKey) {
+    vizCache = getReverbVisualization({
+      venue: disp.venue,
+      decay: disp.decay,
+      size: disp.size,
+      amount: disp.amount,
+      preDelayMs: disp.preDelayMs
+    }) || {}
+    vizKey = key
+  }
+  const viz = vizCache
+  const tMax = Math.max(0.4, Number(viz.tMax) || disp.decay * 2)
+  const envelope = Array.isArray(viz.envelope) ? viz.envelope : []
+  const taps = Array.isArray(viz.earlyTaps) ? viz.earlyTaps : []
+
   ctx.save()
   ctx.translate(padL, padT)
   drawDecadeGrid(ctx, gw, gh, FLOOR_DB)
-  drawLogTimeGrid(ctx, gw, gh, T_LO, T_HI)
-
-  const viz = getReverbVisualization(state.value) || {}
-  const envelope = Array.isArray(viz.envelope) ? viz.envelope : []
-  const taps = Array.isArray(viz.earlyTaps) ? viz.earlyTaps : []
-  const level = Number(state.value.reverbLevel)
-  const scale = Math.min(1, Number.isFinite(level) ? level / 1.5 : 0.43) * 0.75 + 0.25
-  const preDelaySec = Math.max(0, Number(state.value.preDelayMs) || 0) / 1000
+  drawLinearTimeGrid(ctx, gw, gh, tMax)
 
   if (envelope.length > 1) {
     const trace = (close) => {
       ctx.beginPath()
-      if (close) ctx.moveTo(timeToX(preDelaySec + T_LO, gw, T_LO, T_HI), gh)
+      if (close) ctx.moveTo(linearTimeToX(envelope[0].t, gw, tMax), gh)
       envelope.forEach((point, i) => {
-        const x = timeToX(preDelaySec + Math.max(T_LO, point.t), gw, T_LO, T_HI)
-        const y = ampToY(Math.max(1e-6, point.env * scale), gh, FLOOR_DB)
+        const x = linearTimeToX(point.t, gw, tMax)
+        const y = ampToY(Math.max(1e-6, point.env), gh, FLOOR_DB)
         if (!close && i === 0) ctx.moveTo(x, y)
         else ctx.lineTo(x, y)
       })
       if (close) {
-        const last = envelope[envelope.length - 1]
-        ctx.lineTo(timeToX(preDelaySec + Math.max(T_LO, last.t), gw, T_LO, T_HI), gh)
+        const lastPt = envelope[envelope.length - 1]
+        ctx.lineTo(linearTimeToX(lastPt.t, gw, tMax), gh)
         ctx.closePath()
       }
     }
@@ -357,12 +386,11 @@ function draw () {
     ctx.stroke()
   }
 
-  // Early reflections as discrete taps, offset by pre-delay like the real tap list.
   ctx.strokeStyle = DSP_THEME.rev.early
   ctx.lineWidth = 1
   taps.forEach((tap) => {
-    const x = timeToX(preDelaySec + Math.max(T_LO, tap.t), gw, T_LO, T_HI)
-    const amp = Math.max(1e-6, Math.abs(Number(tap.gL) || 0) * scale)
+    const x = linearTimeToX(tap.t, gw, tMax)
+    const amp = Math.max(1e-6, Math.abs(Number(tap.gL) || 0) * disp.amount)
     const y = ampToY(amp, gh, FLOOR_DB)
     if (y >= gh - 1) return
     ctx.beginPath()
@@ -370,42 +398,32 @@ function draw () {
     ctx.lineTo(Math.round(x) + 0.5, y)
     ctx.stroke()
   })
-  // Live wet tail on the same amplitude decades, so the drawn envelope can be
-  // compared against what the reverb is actually putting out.
-  const wet = Number((props.meters || {}).wetPeak) || 0
-  if (wet > 1e-4) {
-    const y = ampToY(Math.min(1, wet), gh, FLOOR_DB)
-    ctx.strokeStyle = DSP_THEME.rev.accent
-    ctx.setLineDash([2, 3])
-    ctx.lineWidth = 1
-    ctx.beginPath()
-    ctx.moveTo(0, Math.round(y) + 0.5)
-    ctx.lineTo(gw, Math.round(y) + 0.5)
-    ctx.stroke()
-    ctx.setLineDash([])
-    axisText(ctx, Math.round(peakToDb(wet)) + ' dB wet', gw - 4, Math.max(8, y - 7), 'right')
-  }
   ctx.restore()
 
   axisText(ctx, 'Time', w - padR - 22, padT + 8, 'right')
-  if (wet <= 1e-4 && props.visNotice) drawVisualNotice(ctx, props.visNotice, (w - padR) / 2, padT + 26)
+  if (props.visNotice) drawVisualNotice(ctx, props.visNotice, (w - padR) / 2, padT + 26)
 }
 
+const disp = { decay: 2.2, size: 0.62, amount: 0.35, preDelayMs: 20, venue: 'concert-hall' }
+let vizCache = {}
+let vizKey = ''
 let raf = 0
-let lastDraw = 0
+let lastLerp = 0
 let stopResize = null
-const FRAME_MS = visualFrameMs()
-function loop (t) {
-  if (!lastDraw || t - lastDraw >= FRAME_MS) {
-    draw()
-    lastDraw = t
+
+function tick (now) {
+  raf = 0
+  const moving = lerpToward(now)
+  draw()
+  if (moving && (typeof document === 'undefined' || !document.hidden)) {
+    raf = requestAnimationFrame(tick)
   }
-  raf = requestAnimationFrame(loop)
 }
-function start () {
+function kick () {
+  if (typeof document !== 'undefined' && document.hidden) return
   if (raf) return
-  lastDraw = 0
-  raf = requestAnimationFrame(loop)
+  lastLerp = 0
+  raf = requestAnimationFrame(tick)
 }
 function stop () {
   cancelAnimationFrame(raf)
@@ -414,11 +432,11 @@ function stop () {
 function onVisibility () {
   if (typeof document === 'undefined') return
   if (document.hidden) stop()
-  else start()
+  else kick()
 }
 onMounted(() => {
+  snapDisplay()
   draw()
-  start()
   stopResize = observeCanvasResize(canvas, draw)
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
 })
@@ -427,15 +445,14 @@ onUnmounted(() => {
   if (stopResize) stopResize()
   if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
 })
-watch(() => props.insert.state, draw, { deep: true })
+watch(() => [state.value.decay, state.value.size, state.value.amount, state.value.preDelayMs, state.value.venue], kick)
 
 function dragTime (event) {
   const startX = event.clientX
   const start = props.insert.state.decay
   beginPointerDrag(event, {
     onMove: (ev) => {
-      // Horizontal drag is a ratio so it feels even across the log time axis.
-      props.insert.state.decay = Math.min(12, Math.max(0.15, start * Math.pow(2, (ev.clientX - startX) / 140)))
+      props.insert.state.decay = Math.min(12, Math.max(0.15, start + (ev.clientX - startX) / 90))
       commit()
     }
   })

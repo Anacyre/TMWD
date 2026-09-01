@@ -355,6 +355,16 @@ assert('sizeScale 0→0.5, 1→2', Math.abs(sizeScale(0) - 0.5) < 1e-9 && Math.a
 assert('all 8 venues defined', Object.keys(VENUE_DEFINITIONS).length === 8)
 assert('viz data matches venue taps', getReverbVisualization({ venue: 'chamber', size: 0.48, decay: 1.4, amount: 0.3 }).earlyTaps.length === VENUE_DEFINITIONS.chamber.reflectionDelayRatios.length)
 
+{
+  const st = { venue: 'hall', size: 0.7, decay: 1.8, amount: 0.4, preDelayMs: 40 }
+  const viz = getReverbVisualization(st)
+  const net = compileReverbNetwork(st, SR)
+  assert('viz envelope starts at t=0', Math.abs(viz.envelope[0].t) < 1e-9, 't0=' + viz.envelope[0].t)
+  assert('viz tMax follows decay', viz.tMax + 1e-9 >= st.decay * 2, 'tMax=' + viz.tMax)
+  const expectedTap = net.preDelaySec + net.taps[0].delaySec
+  assert('viz tap is not double pre-delay', Math.abs(viz.earlyTaps[0].t - expectedTap) < 1e-9, 't=' + viz.earlyTaps[0].t + ' expected=' + expectedTap)
+}
+
 const failed = results.filter((r) => !r.ok)
 console.log('\n=== Measured approximate RT60 (not physically exact) ===')
 rt60Table.forEach((row) => {

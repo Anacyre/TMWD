@@ -160,14 +160,14 @@ const REVERB_X_VENUES = {
 export const VENUE_DEFINITIONS = REVERB_X_VENUES
 
 export const REVERB_X_FACTORY_PRESETS = [
-  { id: 'small-room', name: 'Small Room', state: { amount: 0.28, reverbLevel: 0.55, decay: 0.45, size: 0.22, width: 0.80, preDelayMs: 8, dampingHz: 5200, venue: 'small-room' } },
-  { id: 'studio', name: 'Studio', state: { amount: 0.22, reverbLevel: 0.55, decay: 0.85, size: 0.32, width: 0.90, preDelayMs: 12, dampingHz: 7200, venue: 'studio' } },
-  { id: 'chamber', name: 'Chamber', state: { amount: 0.30, reverbLevel: 0.62, decay: 1.40, size: 0.48, width: 1.00, preDelayMs: 18, dampingHz: 6800, venue: 'chamber' } },
-  { id: 'hall', name: 'Hall', state: { amount: 0.32, reverbLevel: 0.68, decay: 2.10, size: 0.68, width: 1.15, preDelayMs: 26, dampingHz: 7800, venue: 'hall' } },
-  { id: 'concert-hall', name: 'Concert Hall', state: { amount: 0.35, reverbLevel: 0.65, decay: 2.80, size: 0.82, width: 1.10, preDelayMs: 32, dampingHz: 6200, venue: 'concert-hall' } },
-  { id: 'cathedral', name: 'Cathedral', state: { amount: 0.38, reverbLevel: 0.72, decay: 6.20, size: 1.00, width: 1.00, preDelayMs: 48, dampingHz: 3800, venue: 'cathedral' } },
-  { id: 'large-stage', name: 'Large Stage', state: { amount: 0.30, reverbLevel: 0.60, decay: 1.70, size: 0.78, width: 1.35, preDelayMs: 20, dampingHz: 8200, venue: 'large-stage' } },
-  { id: 'outdoor', name: 'Outdoor', state: { amount: 0.20, reverbLevel: 0.35, decay: 0.35, size: 0.70, width: 1.50, preDelayMs: 42, dampingHz: 9000, venue: 'outdoor' } }
+  { id: 'small-room', name: 'Small Room', state: { amount: 0.15, decay: 0.45, size: 0.22, width: 0.80, preDelayMs: 8, dampingHz: 5200, venue: 'small-room' } },
+  { id: 'studio', name: 'Studio', state: { amount: 0.12, decay: 0.85, size: 0.32, width: 0.90, preDelayMs: 12, dampingHz: 7200, venue: 'studio' } },
+  { id: 'chamber', name: 'Chamber', state: { amount: 0.19, decay: 1.40, size: 0.48, width: 1.00, preDelayMs: 18, dampingHz: 6800, venue: 'chamber' } },
+  { id: 'hall', name: 'Hall', state: { amount: 0.22, decay: 2.10, size: 0.68, width: 1.15, preDelayMs: 26, dampingHz: 7800, venue: 'hall' } },
+  { id: 'concert-hall', name: 'Concert Hall', state: { amount: 0.23, decay: 2.80, size: 0.82, width: 1.10, preDelayMs: 32, dampingHz: 6200, venue: 'concert-hall' } },
+  { id: 'cathedral', name: 'Cathedral', state: { amount: 0.27, decay: 6.20, size: 1.00, width: 1.00, preDelayMs: 48, dampingHz: 3800, venue: 'cathedral' } },
+  { id: 'large-stage', name: 'Large Stage', state: { amount: 0.18, decay: 1.70, size: 0.78, width: 1.35, preDelayMs: 20, dampingHz: 8200, venue: 'large-stage' } },
+  { id: 'outdoor', name: 'Outdoor', state: { amount: 0.07, decay: 0.35, size: 0.70, width: 1.50, preDelayMs: 42, dampingHz: 9000, venue: 'outdoor' } }
 ]
 
 function reverbClamp (value, min, max) {
@@ -221,7 +221,7 @@ function compileReverbNetwork (state, sr) {
   const s = sizeScale(st.size)
   const decay = reverbClamp(st.decay == null ? 2.2 : st.decay, 0.15, 12)
   const wetGain = reverbClamp(st.amount == null ? 0.35 : st.amount, 0, 1)
-  const reverbLevel = reverbClamp(st.reverbLevel == null ? 0.65 : st.reverbLevel, 0, 1.5)
+  const reverbLevel = reverbClamp(st.reverbLevel == null ? 1 : st.reverbLevel, 0, 1.5)
   const width = reverbClamp(st.width == null ? 1 : st.width, 0, 2)
   const preDelaySec = st.preDelayMs == null
     ? reverbClamp(venue.preDelay * s, 0, REVERB_X_MAX_PRE_)
@@ -507,7 +507,7 @@ class ReverbXProcessor {
     this.amountT = reverbClamp(this.state.amount == null ? 0.35 : this.state.amount, 0, 1)
     this.sizeT = reverbClamp(this.state.size == null ? 0.62 : this.state.size, 0, 1)
     this.decayT = reverbClamp(this.state.decay == null ? 2.2 : this.state.decay, 0.15, 12)
-    this.levelT = reverbClamp(this.state.reverbLevel == null ? 0.65 : this.state.reverbLevel, 0, 1.5)
+    this.levelT = reverbClamp(this.state.reverbLevel == null ? 1 : this.state.reverbLevel, 0, 1.5)
     this.widthT = reverbClamp(this.state.width == null ? 1 : this.state.width, 0, 2)
     const ven = REVERB_X_VENUES[this.state.venue] || REVERB_X_VENUES['concert-hall']
     const preMs = this.state.preDelayMs == null
@@ -776,33 +776,47 @@ function reverbXMemoryBytes (sr) {
   return samples * 4
 }
 
-function getReverbVisualization (state, sr) {
-  const net = compileReverbNetwork(state, sr || 48000)
-  const decay = net.decay
-  const amount = net.wetGain
-  const tMax = Math.min(12, Math.max(0.6, decay * 2.2))
+function getReverbVisualization (state) {
+  const st = state || {}
+  const venue = REVERB_X_VENUES[st.venue] || REVERB_X_VENUES['concert-hall']
+  const s = sizeScale(st.size)
+  const decay = reverbClamp(st.decay == null ? 2.2 : st.decay, 0.15, 12)
+  const amount = reverbClamp(st.amount == null ? 0.35 : st.amount, 0, 1)
+  const preDelaySec = st.preDelayMs == null
+    ? reverbClamp(venue.preDelay * s, 0, REVERB_X_MAX_PRE_)
+    : reverbClamp(st.preDelayMs / 1000, 0, REVERB_X_MAX_PRE_)
+  const tMax = Math.max(0.4, decay * 2)
+  const attack = Math.max(0.002, 0.005 * s)
   const envelope = []
-  for (let i = 0; i <= 64; i++) {
-    const t = (i / 64) * tMax
-    envelope.push({ t: t, env: amount * Math.pow(10, -3 * t / decay) })
+  const steps = 48
+  for (let i = 0; i <= steps; i++) {
+    const t = (i / steps) * tMax
+    let env = 0
+    if (t >= preDelaySec) {
+      const u = t - preDelaySec
+      env = amount * Math.pow(10, -3 * u / decay)
+      if (u < attack) env *= u / Math.max(1e-6, attack)
+    }
+    envelope.push({ t: t, env: env })
+  }
+  const sizeGain = 1 / Math.sqrt(s)
+  const ratios = venue.reflectionDelayRatios || []
+  const gains = venue.reflectionGainRatios || []
+  const earlyLevel = venue.earlyLevel == null ? 1 : venue.earlyLevel
+  const earlyTaps = []
+  for (let i = 0; i < ratios.length; i++) {
+    const delaySec = reverbClamp(venue.baseDelay * s * ratios[i], REVERB_X_MIN_DELAY_, REVERB_X_MAX_ER_)
+    const g = (gains[i] == null ? 0.5 : gains[i]) * sizeGain * earlyLevel
+    earlyTaps.push({ t: preDelaySec + delaySec, gL: g, gR: g })
   }
   return {
     wetGain: amount,
-    sizeScale: net.sizeScale,
+    sizeScale: s,
     decay: decay,
-    venue: net.venue.id,
-    venueName: net.venue.name,
-    preDelay: net.preDelaySec,
-    earlyTaps: net.taps.map(function (t) {
-      return {
-        t: net.preDelaySec + t.delaySec,
-        gL: t.gL * net.earlyLevel,
-        gR: t.gR * net.earlyLevel
-      }
-    }),
-    damping: net.damping,
-    lateLevel: net.lateLevel,
-    theoreticalRt60: decay,
+    venue: venue.id,
+    venueName: venue.name,
+    preDelay: preDelaySec,
+    earlyTaps: earlyTaps,
     tMax: tMax,
     envelope: envelope
   }
