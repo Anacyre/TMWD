@@ -1,4 +1,4 @@
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import {
   connectEngine,
   disconnectEngine,
@@ -237,7 +237,7 @@ export const session = reactive({
   clipPreviewRevision: 0,
   clockStamp: { positionBeats: 0, playing: false, bpm: starterDemo.bpm, receivedAt: 0 },
   clipboard: null,
-  webMixer: defaultWebMixer(),
+  webMixer: starterDemo.webMixer || defaultWebMixer(),
   mixerLane: { type: 'remote' },
   mixerMode: 'compact',
   showSends: false,
@@ -245,7 +245,8 @@ export const session = reactive({
   addInsertLane: null,
   fxMeters: {},
   virtualClip: null,
-  lastNoteDurationTicks: PPQ
+  lastNoteDurationTicks: PPQ,
+  cloudBannerDismissed: false
 })
 
 export { engineLink }
@@ -297,7 +298,7 @@ function mapTrack (track) {
       }
     }),
     sends: normalizeSends(track.sends),
-    source: track.source || existing.source || 'empty',
+    source: track.source || track.instrumentSource || existing.source || 'empty',
     legato: !!track.legato,
     meterLevel: existing.meterLevel || 0,
     webSampler: existing.webSampler || createWebSamplerInstrument({ name: track.instrument || 'Web Sampler' })
@@ -414,6 +415,7 @@ function applyProject (project) {
   if (project.trackHeight) session.trackHeight = project.trackHeight
   syncNativeInsertsToWebMixer(session.webMixer, session.tracks)
   refreshMixerGraph()
+  maybeStartRemoteAudio()
 }
 
 function mixerGraphOptions () {
@@ -571,11 +573,50 @@ function applyClock (clock) {
   }
 }
 
+function incomingProjectName (project) {
+  if (!project) return ''
+  return String(project.name || project.projectName || '')
+}
+
+function shouldKeepWebReTimeOverNative (project) {
+  if (session.projectName === 'Re-Time' && incomingProjectName(project) === 'Untitled Orchestra')
+    return true
+
+  const webRemote = session.tracks.some((track) => (
+    track && track.type === 'midi'
+    && (track.source === 'remote-vst' || needsPcEngine(track.definitionId || track.instrumentId))
+  ))
+  const nativeName = incomingProjectName(project)
+  return webRemote && nativeName === 'Untitled Orchestra'
+}
+
+let pushingSessionToEngine = false
+
+async function pushSessionProjectToEngine (projectData) {
+  if (!isEngineConnected() || !projectData || pushingSessionToEngine) return
+  const migrated = migrateProject(projectData)
+  pushingSessionToEngine = true
+  try {
+    await sendCommand('project.import', { json: JSON.stringify(migrated) }, 60000)
+  } catch (err) {
+    showToast(err.message || 'Engine project import failed')
+  } finally {
+    pushingSessionToEngine = false
+  }
+}
+
 function applySession (payload) {
   if (!payload) return
   if (payload.sessionId) engineLink.sessionId = payload.sessionId
   if (payload.schemaVersion) engineLink.schemaVersion = payload.schemaVersion
-  applyProject(payload.project || payload)
+  const project = payload.project || payload
+  if (shouldKeepWebReTimeOverNative(project)) {
+    pushSessionProjectToEngine(serializeSession(session)).catch(() => {})
+    if (payload.mixer && payload.mixer.webMixer) applyWebMixer(payload.mixer.webMixer)
+    ensureMixerAttached().catch(() => {})
+    return
+  }
+  applyProject(project)
   if (payload.mixer && payload.mixer.webMixer) applyWebMixer(payload.mixer.webMixer)
   ensureMixerAttached().catch(() => {})
   if (payload.audio && payload.audio.renderLatencyMs != null) {
@@ -597,12 +638,17 @@ function applySession (payload) {
 
 onEngineEvent((message) => {
   if (!message) return
-  if (message.type === 'event.state') applyProject(message.project)
+  if (message.type === 'event.state') {
+    if (!shouldKeepWebReTimeOverNative(message.project)) applyProject(message.project)
+    return
+  }
   if (message.type === 'event.notes') applyNotesState(message.notes)
   if (message.type === 'event.noteDelta') applyNoteDelta(message.delta)
   if (message.type === 'event.clock') applyClock(message)
   if (message.type === 'session.state') applySession(message)
-  if (message.ok && message.project) applyProject(message.project)
+  if (message.ok && message.project) {
+    if (!shouldKeepWebReTimeOverNative(message.project)) applyProject(message.project)
+  }
   if (message.ok && message.catalogue) applyCatalogue(message.catalogue)
   if (message.ok && message.type === 'audio.status' && message.renderLatencyMs != null) {
     session.diagnostics.renderLatencyMs = message.renderLatencyMs
@@ -631,6 +677,11 @@ export function startEngineBridge () {
   return connectEngine()
 }
 
+watch(() => engineLink.connected, (connected) => {
+  if (connected) maybeStartRemoteAudio()
+  else remoteAudioAttempted = false
+})
+
 export function stopEngineBridge () {
   stopRemoteAudio()
   disconnectEngine()
@@ -652,7 +703,9 @@ function stampClock () {
 
 export function setPositionBeats (beats) {
   session.positionBeats = Math.max(0, beats)
+  clockBeats = session.positionBeats
   lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  lastPositionPush = lastTime
   stampClock()
   fire('transport.seek', { beats: session.positionBeats })
 }
@@ -747,28 +800,70 @@ export function setPixelsPerBeat (ppb) {
 let rafId = 0
 let lastTime = 0
 
+/*  The transport used to advance session.positionBeats every frame, which
+    invalidated every component reading the store 60 times a second. The frame
+    accurate value now lives here; the store only gets it at readout rate, and
+    canvases interpolate from session.clockStamp instead.
+*/
+let clockBeats = 0
+let lastPositionPush = 0
+const POSITION_PUSH_MS = 1000 / 15
+
+function publishClockBeats (now) {
+  lastPositionPush = now
+  session.positionBeats = clockBeats
+}
+
 function loop (now) {
   if (!session.playing) return
+  if (typeof document !== 'undefined' && document.hidden) {
+    rafId = 0
+    return
+  }
   const dt = Math.min(0.1, (now - lastTime) / 1000)
   lastTime = now
   const remoteClock = isEngineConnected() && session.remoteAudioOn
   if (!remoteClock) {
-    session.positionBeats += dt * session.bpm / 60
-    if (session.looping && session.positionBeats >= session.loopEnd) {
+    clockBeats += dt * session.bpm / 60
+    if (session.looping && clockBeats >= session.loopEnd) {
       const length = Math.max(0.25, session.loopEnd - session.loopStart)
-      session.positionBeats = session.loopStart + ((session.positionBeats - session.loopStart) % length)
+      clockBeats = session.loopStart + ((clockBeats - session.loopStart) % length)
+      publishClockBeats(now)
       stampClock()
       allLocalNotesOff()
+    } else if (now - lastPositionPush >= POSITION_PUSH_MS) {
+      publishClockBeats(now)
     }
-    tickLocalMetronome(session.positionBeats)
+    tickLocalMetronome(clockBeats)
+  } else {
+    clockBeats = session.positionBeats
   }
-  tickLocalNotes(session.positionBeats)
+  tickLocalNotes(clockBeats)
+  tickExpressionPlayback(now)
   rafId = requestAnimationFrame(loop)
+}
+
+/** Copy the frame clock back into the store before anything reads the position. */
+function flushLocalClock () {
+  if (session.playing && !(isEngineConnected() && session.remoteAudioOn)) {
+    session.positionBeats = Math.max(0, clockBeats)
+  }
 }
 
 function stopLocalClock () {
   if (rafId) cancelAnimationFrame(rafId)
   rafId = 0
+}
+
+/*  Warming every M Orchestra track on the page decoded one sample per
+    articulation per track before a note had been played. Only the selected
+    track is warmed now; play() prefetches the upcoming window per note.
+*/
+function preloadSelectedOrchestra (graph) {
+  if (!graph) return
+  const track = session.tracks[session.selectedTrack]
+  if (!track || track.source !== 'm-orchestra' || !track.definitionId) return
+  mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
 }
 
 async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
@@ -821,6 +916,8 @@ function startLocalClock () {
   lastMetroBeat = Math.floor(session.positionBeats) - 1
   ensureClickBuffer()
   lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now())
+  clockBeats = session.positionBeats
+  lastPositionPush = lastTime
   session.clockStamp = {
     positionBeats: session.positionBeats,
     playing: true,
@@ -831,6 +928,7 @@ function startLocalClock () {
 }
 
 export function pause () {
+  flushLocalClock()
   session.playing = false
   session.clockStamp = {
     positionBeats: session.positionBeats,
@@ -862,6 +960,10 @@ export function stop () {
 
 export function returnToStart () {
   session.positionBeats = session.looping ? session.loopStart : 0
+  clockBeats = session.positionBeats
+  lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  lastPositionPush = lastTime
+  stampClock()
   fire('transport.seek', { beats: session.positionBeats })
 }
 
@@ -1005,11 +1107,27 @@ export function insertPlugin (track, pluginId) {
   }
   if (pluginId === ORCHESTRA_SAMPLER_PLUGIN_ID) {
     if (!isEngineConnected()) {
-      showToast('需要电脑上的 DawWeb 引擎')
-      track.loadMessage = '需要电脑上的 DawWeb 引擎'
+      // Leaving the track empty was a dead end in the browser, so fall back to
+      // the cloud library and say why.
+      showToast('Orchestra Sampler needs the PC engine — loaded M Orchestra instead')
+      loadCloudOrchestra(track, M_ORCHESTRA_DEFAULT_ID)
+      closeInstrumentPicker()
+      if (index < 0) return
+      session.selectedTrack = index
+      if (isLite()) openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
       return
     }
-    openOrchestraPatchPicker(index >= 0 ? index : session.selectedTrack)
+    loadInstrument(track, defaultOrchestraSamplerPatch())
+    closeInstrumentPicker()
+    if (index < 0) return
+    session.selectedTrack = index
+    if (isLite()) {
+      openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+      return
+    }
+    session.editorVisible = true
+    session.workspaceView = 'sampler'
+    session.editorTab = 'sampler'
     return
   }
   if (pluginId === M_ORCHESTRA_PLUGIN_ID) {
@@ -1078,6 +1196,10 @@ export async function addTrack (type = 'audio', customName = '') {
     legato: false,
     meterLevel: 0
   })
+  const created = session.tracks[session.tracks.length - 1]
+  // Offline, Test Synth is the least interesting thing the browser can do, so
+  // new instrument tracks start on the cloud library instead.
+  if (type === 'midi') loadCloudOrchestra(created, M_ORCHESTRA_DEFAULT_ID)
   markDirty()
   return session.tracks.length - 1
 }
@@ -1204,28 +1326,20 @@ export function newProject () {
 
 export async function loadDemoProject () {
   stop()
+  const demo = migrateProject(createDemoProject())
   if (isEngineConnected()) {
-    await fire('project.loadDemo')
-    session.selectedTrack = session.tracks.length > 1 ? 1 : 0
-    session.selectedClip = session.clips.length ? 0 : -1
-    return
+    await pushSessionProjectToEngine(demo)
   }
-  const demo = createDemoProject()
-  session.projectName = demo.projectName
-  session.bpm = demo.bpm
-  session.timeSigNum = demo.timeSigNum
-  session.timeSigDen = demo.timeSigDen
-  session.loopStart = demo.loopStart
-  session.loopEnd = demo.loopEnd
-  session.masterGain = demo.masterGain
-  session.tracks = demo.tracks
-  session.clips = demo.clips.map(normalizeClipNotes)
+  applyProject(demo)
+  persistWebMixer()
   session.selectedTrack = 1
-  session.selectedClip = 0
+  session.selectedClip = session.clips.length ? 0 : -1
   session.positionBeats = 0
-  demo.tracks.forEach((track) => {
-    if (track.source === 'm-orchestra') loadCloudOrchestra(track, track.definitionId)
-  })
+  session.unsaved = false
+  maybeStartRemoteAudio()
+  if (!isEngineConnected()) {
+    showToast('BBCSO / Synchron need the DawWeb engine on the PC')
+  }
 }
 
 export function isSupportedFile (name = '') {
@@ -1538,6 +1652,40 @@ export function needsPcEngine (definitionId) {
   return true
 }
 
+function trackWantsRemoteVst (track) {
+  if (!track || track.type === 'master' || track.type === 'group') return false
+  if (track.source === 'web-sampler' || isMOrchestraTrack(track)) return false
+  return track.source === 'remote-vst' || needsPcEngine(track.definitionId)
+}
+
+function defaultOrchestraSamplerPatch () {
+  const found = (session.catalogue.instruments || []).find((item) => {
+    const id = String(item.id || '')
+    return id && needsPcEngine(id)
+  })
+  return (found && found.id) || 'bbcso_violin_1'
+}
+
+let remoteAudioAttempted = false
+
+function maybeStartRemoteAudio () {
+  if (!isEngineConnected()) {
+    remoteAudioAttempted = false
+    return
+  }
+  if (session.remoteAudioOn || remoteAudioAttempted) return
+  if (!session.tracks.some(trackWantsRemoteVst)) return
+  remoteAudioAttempted = true
+  startRemoteAudio().catch((err) => {
+    remoteAudioAttempted = false
+    showToast(err.message || mixedContentHint() || 'Remote audio failed')
+  })
+}
+
+// Synchron Player loads are serialized on the engine side and can take a few
+// seconds each, so ignore repeat taps on a track that is still initializing.
+const engineLoadsInFlight = new Set()
+
 export function loadInstrument (track, definitionId) {
   if (!track || track.type === 'master' || !definitionId) return
   if (definitionId === 'web_sampler') {
@@ -1550,18 +1698,47 @@ export function loadInstrument (track, definitionId) {
   }
   if (!isEngineConnected()) {
     showToast('BBCSO / Synchron need the DawWeb engine on the PC')
+    track.source = 'remote-vst'
+    track.definitionId = definitionId
     track.loadMessage = 'Requires PC engine'
     track.instrumentLoadMessage = 'Requires PC engine'
     return
   }
+  if (engineLoadsInFlight.has(track.id)) {
+    showToast('Still initializing on the PC — one instrument at a time')
+    return
+  }
+  track.source = 'remote-vst'
+  track.definitionId = definitionId
+  track.loadState = 'loading'
+  track.instrumentLoadState = 'loading'
+  const waitMessage = needsPcEngine(definitionId)
+    ? 'Initializing on PC — waiting for the plugin window'
+    : 'Initializing...'
+  track.loadMessage = waitMessage
+  track.instrumentLoadMessage = waitMessage
+  engineLoadsInFlight.add(track.id)
+  const settle = () => { engineLoadsInFlight.delete(track.id) }
   fire('instrument.load', { trackId: track.id, definitionId }).then((reply) => {
+    settle()
     if (!reply) {
       showToast('Instrument load failed — is the PC engine connected?')
       return
     }
+    if (reply.status) {
+      track.loadState = reply.status
+      track.instrumentLoadState = reply.status
+    }
+    if (reply.message) {
+      track.loadMessage = reply.message
+      track.instrumentLoadMessage = reply.message
+    }
     startRemoteAudio().catch((err) => {
       showToast(err.message || 'Remote audio failed after instrument load')
     })
+  }, (err) => {
+    settle()
+    showToast((err && err.message) || 'Instrument load failed')
   })
 }
 
@@ -2052,7 +2229,7 @@ export function toggleInsertEnabled (lane, index) {
   persistWebMixer()
 }
 
-let expressionRaf = 0
+let expressionRunning = false
 let lastExpressionAt = 0
 const lastExpressionSent = new Map()
 
@@ -2092,26 +2269,26 @@ function applyExpressionAtPlayhead (nowMs) {
   })
 }
 
+/*  Driven from the transport loop rather than its own requestAnimationFrame:
+    two independent 60 Hz loops walking every clip was the second biggest cost
+    during playback after the reactive playhead.
+*/
 function tickExpressionPlayback (now) {
-  expressionRaf = 0
-  if (!session.playing) return
+  if (!expressionRunning || !session.playing) return
   if (!lastExpressionAt || now - lastExpressionAt >= 50) {
     lastExpressionAt = now
     applyExpressionAtPlayhead(now)
   }
-  expressionRaf = requestAnimationFrame(tickExpressionPlayback)
 }
 
 function startExpressionPlayback () {
-  if (typeof requestAnimationFrame === 'undefined') return
   lastExpressionSent.clear()
-  if (expressionRaf) cancelAnimationFrame(expressionRaf)
-  expressionRaf = requestAnimationFrame(tickExpressionPlayback)
+  lastExpressionAt = 0
+  expressionRunning = true
 }
 
 function stopExpressionPlayback () {
-  if (expressionRaf) cancelAnimationFrame(expressionRaf)
-  expressionRaf = 0
+  expressionRunning = false
   lastExpressionAt = 0
 }
 
@@ -2473,6 +2650,24 @@ export function engineStateLabel () {
   if (state === 'error') return engineLink.lastError || 'Error'
   if (mixedContentHint()) return 'Offline — open DawWeb’s LAN HTTP page, or enter a Cloudflare Tunnel hostname'
   return engineLink.lastError || 'Offline'
+}
+
+// Cloud mode keeps the same DAW but re-skins it, rather than desaturating
+// everything, so browser-only work still looks like a first-class mode.
+export function isCloudMode () {
+  return !isEngineConnected()
+}
+
+export function engineModeClass () {
+  return isEngineConnected() ? 'daw-local' : 'daw-cloud'
+}
+
+export function cloudBannerVisible () {
+  return isCloudMode() && !session.cloudBannerDismissed
+}
+
+export function dismissCloudBanner () {
+  session.cloudBannerDismissed = true
 }
 
 export function engineHostValue () {
@@ -2848,11 +3043,7 @@ async function unlockAudio () {
     await ensureMixerAttached()
     ensureOutputRouting(graph, session.webMixer, session.tracks, mixerGraphOptions())
     refreshMixerGraph()
-    session.tracks.forEach((track) => {
-      if (track.source === 'm-orchestra' && track.definitionId) {
-        mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
-      }
-    })
+    preloadSelectedOrchestra(graph)
   } catch (err) {
     ensureOutputRouting(graph, session.webMixer)
     showToast(err.message || 'Browser audio failed to start')
@@ -2910,9 +3101,6 @@ async function doEnsureMixerAttached () {
     graph.mixerNodes = null
     session.diagnostics.browserFxAttached = false
     session.diagnostics.browserFxError = readableFxError(err.message || String(err))
-    // #region agent log
-    fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H1', location: 'session.js:doEnsureMixerAttached.catch', message: 'attach threw', data: { error: String(err && err.message || err), hasInserts: mixerHasInserts(session.webMixer) }, timestamp: Date.now() }) }).catch(() => {})
-    // #endregion
     ensureOutputRouting(graph, session.webMixer)
     if (!dryMixToast) {
       dryMixToast = true
@@ -2923,11 +3111,7 @@ async function doEnsureMixerAttached () {
     }
   }
   publishRoutingDiagnostics(graph)
-  session.tracks.forEach((track) => {
-    if (track.source === 'm-orchestra' && track.definitionId) {
-      mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
-    }
-  })
+  preloadSelectedOrchestra(graph)
   return graph
 }
 
@@ -2987,8 +3171,6 @@ export async function startRemoteAudio () {
     await ensureRemoteNode()
     if (!audioUnsub) audioUnsub = onEngineAudio(onRemotePacket)
     await connectEngineAudio()
-    const reply = await sendCommand('audio.subscribe')
-    if (reply && reply.ok === false) throw new Error(reply.error || 'audio.subscribe failed')
     session.remoteAudioOn = true
     soundingNotes.forEach((voiceKey, key) => {
       releaseWebSampler(voiceKey)
@@ -2997,10 +3179,18 @@ export async function startRemoteAudio () {
     soundingNotes.clear()
     refreshMixerGraph()
     startBrowserMeterLoop()
+    try {
+      const reply = await sendCommand('audio.subscribe', {}, 20000)
+      if (reply && reply.ok === false) throw new Error(reply.error || 'audio.subscribe failed')
+    } catch {
+      // Audio WS already streams once /audio is open; keep remoteAudioOn.
+    }
   } catch (err) {
     session.remoteAudioOn = false
-    session.diagnosticsLog = String(err.message || err)
-    throw err
+    const hint = mixedContentHint()
+    const message = String((err && err.message) || err || 'Remote audio failed')
+    session.diagnosticsLog = hint && !message.includes(hint) ? `${message} — ${hint}` : message
+    throw new Error(session.diagnosticsLog)
   }
 }
 
@@ -3350,8 +3540,18 @@ function startBrowserMeterLoop () {
 
 if (typeof document !== 'undefined') {
   document.addEventListener('visibilitychange', () => {
-    if (document.hidden) stopBrowserMeterLoop()
-    else if (metersWanted() && audioGraph && audioGraph.mixerNodes) startBrowserMeterLoop()
+    if (document.hidden) {
+      stopBrowserMeterLoop()
+      stopLocalClock()
+      return
+    }
+    if (metersWanted() && audioGraph && audioGraph.mixerNodes) startBrowserMeterLoop()
+    // The transport loop bails out while hidden, so pick it up again.
+    if (session.playing && !rafId) {
+      lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
+      lastPositionPush = lastTime
+      rafId = requestAnimationFrame(loop)
+    }
   })
 }
 
@@ -3446,14 +3646,8 @@ export function addInsert (lane, pluginId, slotIndex = 0) {
   setLaneInserts(session.webMixer, lane, list)
   syncTrackInsertMeta(lane)
   persistWebMixer()
-  // #region agent log
-  fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H1', location: 'session.js:addInsert', message: 'insert added', data: { pluginId, laneType: lane && lane.type, laneId: lane && lane.id, returnOnly: !!(extra.state && extra.state.returnOnly), hasInserts: mixerHasInserts(session.webMixer), routingMode: session.diagnostics && session.diagnostics.routingMode, fxAttached: session.diagnostics && session.diagnostics.fxAttached, routingMuted: session.diagnostics && session.diagnostics.routingMuted }, timestamp: Date.now() }) }).catch(() => {})
-  // #endregion
   openPlugin(lane, target)
   unlockAudio().then(() => ensureMixerAttached()).then((graph) => {
-    // #region agent log
-    fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId: 'H3', location: 'session.js:addInsert.afterAttach', message: 'post-insert attach', data: { hasMixerNodes: !!(graph && graph.mixerNodes), routing: graph && graph.routing, masterGain: graph && graph.master && graph.master.gain ? graph.master.gain.value : null, ctxState: graph && graph.context && graph.context.state }, timestamp: Date.now() }) }).catch(() => {})
-    // #endregion
     if (graph && graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
     showToast(err.message || 'Browser FX audio failed to start')

@@ -3,12 +3,6 @@ import { remoteProcessInserts, trackLaneKey, unassignedProcessInserts, laneInser
 import { dbToGain, dbFromFader, isTrackAudible, isBusAudible, SMOOTH_SEC, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
 import { ROUTING_DIRECT, ROUTING_MIXER, ROUTING_FALLBACK } from './graph.js'
 
-// #region agent log
-function dbgMixer (hypothesisId, location, message, data) {
-  fetch('http://127.0.0.1:7820/ingest/d53c0923-8c39-4b54-9cb1-ff44aed6b403', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': 'd8c315' }, body: JSON.stringify({ sessionId: 'd8c315', runId: 'pre-fix', hypothesisId, location, message, data, timestamp: Date.now() }) }).catch(() => {})
-}
-// #endregion
-
 /** True when any lane in this mixer actually carries an insert. */
 export function mixerHasInserts (webMixer) {
   if (!webMixer) return false
@@ -270,16 +264,7 @@ function wireMutedHold (graph, error) {
 
 function recoverFromAttachFailure (graph, error, webMixer) {
   const mixer = webMixer || graph.lastMixer
-  const hasInserts = mixerHasInserts(mixer)
-  // #region agent log
-  dbgMixer('H1', 'mixer-graph.js:recoverFromAttachFailure', 'fx attach failed', {
-    hasInserts,
-    error: String(error || ''),
-    mutedPath: hasInserts,
-    masterGain: graph && graph.master && graph.master.gain ? graph.master.gain.value : null
-  })
-  // #endregion
-  if (hasInserts) {
+  if (mixerHasInserts(mixer)) {
     wireMutedHold(graph, error)
     return
   }
@@ -351,15 +336,6 @@ export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], 
 
   setRouting(graph, ROUTING_MIXER, '')
   syncMixerGraph(graph, webMixer, tracks, options)
-  // #region agent log
-  dbgMixer('H3', 'mixer-graph.js:attachMixerGraph', 'mixer attached', {
-    mode: graph.routing && graph.routing.mode,
-    muted: !!(graph.routing && graph.routing.muted),
-    hasInserts: mixerHasInserts(webMixer),
-    trackLanes: graph.trackLanes ? graph.trackLanes.size : 0,
-    masterGain: graph.master && graph.master.gain ? graph.master.gain.value : null
-  })
-  // #endregion
   return nodes
 }
 
@@ -464,22 +440,7 @@ function syncLaneStrip (graph, lane, ctx, opts) {
   smoothGain(lane.preDelay, levels.preDelay, ctx)
   smoothGain(lane.postReverb, levels.postReverb, ctx)
   smoothGain(lane.postDelay, levels.postDelay, ctx)
-  if (!mixOnly && lane.chain) {
-    const chain = (inserts || []).filter((item) => item && item.pluginId)
-    // #region agent log
-    if (chain.some((item) => item.pluginId === 'reverb-x')) {
-      dbgMixer('H2', 'mixer-graph.js:syncLaneStrip', 'push reverb chain', {
-        lane: lane.key,
-        plugins: chain.map((item) => item.pluginId),
-        returnOnly: chain.filter((item) => item.pluginId === 'reverb-x').map((item) => !!(item.state && item.state.returnOnly)),
-        amount: chain.filter((item) => item.pluginId === 'reverb-x').map((item) => item.state && item.state.amount),
-        rebuilt,
-        mode: lane.mode
-      })
-    }
-    // #endregion
-    pushChain(lane.chain, inserts)
-  }
+  if (!mixOnly && lane.chain) pushChain(lane.chain, inserts)
   return rebuilt
 }
 

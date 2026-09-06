@@ -1,8 +1,9 @@
 <template>
   <view class="root">
     <daw-lite-app v-if="lite" />
-    <view v-else class="daw" @click="closeMenus">
+    <view v-else class="daw" :class="engineModeClass()" @click="closeMenus">
     <daw-top-bar @audio-settings="onAudioSettings" />
+    <daw-cloud-banner />
     <view class="workspace" :class="session.workspaceView">
       <view
         v-show="showArrangement"
@@ -59,21 +60,28 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import DawTopBar from '../../components/daw-top-bar.vue'
-import DawPlaylist from '../../components/daw-playlist.vue'
-import DawInspector from '../../components/daw-inspector.vue'
-import DawEditor from '../../components/daw-editor.vue'
-import DawMixer from '../../components/daw-mixer.vue'
-import DawStatus from '../../components/daw-status.vue'
-import DawInstrumentBrowser from '../../components/daw-instrument-browser.vue'
-import DawDiagnostics from '../../components/daw-diagnostics.vue'
-import PluginHost from '../../components/dsp/plugin-host.vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawLiteApp from '../../components/daw-lite-app.vue'
-import DawLiteSettings from '../../components/daw-lite-settings.vue'
-import DawProjectManager from '../../components/daw-project-manager.vue'
+import DawCloudBanner from '../../components/daw-cloud-banner.vue'
+// Shared with the lite shell, which needs it for first paint.
+import DawPlaylist from '../../components/daw-playlist.vue'
+
+/*  Lite is the default interface, so none of the professional-only surfaces
+    belong in the first-paint bundle.
+*/
+const DawTopBar = defineAsyncComponent(() => import('../../components/daw-top-bar.vue'))
+const DawInspector = defineAsyncComponent(() => import('../../components/daw-inspector.vue'))
+const DawEditor = defineAsyncComponent(() => import('../../components/daw-editor.vue'))
+const DawMixer = defineAsyncComponent(() => import('../../components/daw-mixer.vue'))
+const DawStatus = defineAsyncComponent(() => import('../../components/daw-status.vue'))
+const DawDiagnostics = defineAsyncComponent(() => import('../../components/daw-diagnostics.vue'))
+const DawInstrumentBrowser = defineAsyncComponent(() => import('../../components/daw-instrument-browser.vue'))
+const PluginHost = defineAsyncComponent(() => import('../../components/dsp/plugin-host.vue'))
+const DawLiteSettings = defineAsyncComponent(() => import('../../components/daw-lite-settings.vue'))
+const DawProjectManager = defineAsyncComponent(() => import('../../components/daw-project-manager.vue'))
 import {
   session,
+  engineModeClass,
   closeMenus,
   togglePlay,
   stop,
@@ -234,6 +242,8 @@ onUnmounted(() => {
   color: #e6e6e6;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
+/* Cloud mode re-skins the shell instead of desaturating it. */
+.daw.daw-cloud { background: #101619; }
 .workspace {
   flex: 1;
   display: flex;

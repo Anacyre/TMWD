@@ -1,7 +1,9 @@
 #pragma once
 
 #include "EngineAPI.h"
+#include <array>
 #include <atomic>
+#include <memory>
 
 /*  Local HTTP + WebSocket front for EngineAPI.
 
@@ -52,11 +54,12 @@ private:
     juce::var makeHealth() const;
 
     EngineAPI& api;
-    juce::StreamingSocket listener;
+    std::unique_ptr<juce::StreamingSocket> listener;
     mutable juce::CriticalSection lock;
     juce::OwnedArray<Connection> connections;
     std::unique_ptr<juce::Thread> audioPump;
     juce::File webRoot;
+    std::array<char, 48> cachedSessionId {};
     std::atomic<bool> serving { false };
     std::atomic<bool> stateDirty { true };
     std::atomic<int> dirtyFlags { 0 };

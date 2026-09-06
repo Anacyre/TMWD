@@ -288,8 +288,8 @@ function openSocket (found) {
     engineLink.connecting = false
     engineLink.status = 'Connected'
     startPing()
-    sendCommand('session.state').catch(() => sendCommand('project.getState').catch(() => {}))
-    sendCommand('instrument.getCatalogue').catch(() => {})
+    sendCommand('session.state', {}, 30000).catch(() => sendCommand('project.getState', {}, 30000).catch(() => {}))
+    sendCommand('instrument.getCatalogue', {}, 30000).catch(() => {})
   }
 
   next.onmessage = (event) => {
@@ -355,6 +355,9 @@ export function connectEngineAudio () {
 
   const url = engineLink.audioUrl
   if (!url) return Promise.reject(new Error('No audio WebSocket URL'))
+  if (pageIsHttps() && String(url).startsWith('ws://')) {
+    return Promise.reject(new Error(mixedContentHint() || 'HTTPS pages cannot open ws:// audio. Use the LAN HTTP page or a wss tunnel.'))
+  }
 
   return new Promise((resolve, reject) => {
     const next = new WebSocket(url)

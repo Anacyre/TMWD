@@ -1,6 +1,7 @@
 <template>
-  <view class="lite">
+  <view class="lite" :class="engineModeClass()">
     <daw-lite-transport />
+    <daw-cloud-banner compact />
     <view class="work">
       <daw-playlist v-if="session.workspaceView === 'arrangement'" />
       <daw-piano-roll v-else-if="session.workspaceView === 'piano'" embedded />
@@ -18,18 +19,24 @@
 </template>
 
 <script setup>
+import { defineAsyncComponent } from 'vue'
 import DawLiteTransport from './daw-lite-transport.vue'
 import DawLiteNav from './daw-lite-nav.vue'
-import DawLiteSettings from './daw-lite-settings.vue'
-import DawLiteTrackSheet from './daw-lite-track-sheet.vue'
 import DawLiteHint from './daw-lite-hint.vue'
-import DawLiteMixer from './daw-lite-mixer.vue'
 import DawPlaylist from './daw-playlist.vue'
-import DawPianoRoll from './daw-piano-roll.vue'
-import DawInstrumentBrowser from './daw-instrument-browser.vue'
-import PluginHost from './dsp/plugin-host.vue'
-import DawProjectManager from './daw-project-manager.vue'
-import { session } from '../store/session.js'
+import DawCloudBanner from './daw-cloud-banner.vue'
+import { session, engineModeClass } from '../store/session.js'
+
+/*  Everything below only shows up once a view is switched or a sheet opens, so
+    it loads after the arrangement is on screen.
+*/
+const DawPianoRoll = defineAsyncComponent(() => import('./daw-piano-roll.vue'))
+const DawLiteMixer = defineAsyncComponent(() => import('./daw-lite-mixer.vue'))
+const DawLiteSettings = defineAsyncComponent(() => import('./daw-lite-settings.vue'))
+const DawLiteTrackSheet = defineAsyncComponent(() => import('./daw-lite-track-sheet.vue'))
+const DawInstrumentBrowser = defineAsyncComponent(() => import('./daw-instrument-browser.vue'))
+const PluginHost = defineAsyncComponent(() => import('./dsp/plugin-host.vue'))
+const DawProjectManager = defineAsyncComponent(() => import('./daw-project-manager.vue'))
 </script>
 
 <style scoped>
@@ -46,6 +53,10 @@ import { session } from '../store/session.js'
   position: relative;
   box-sizing: border-box;
 }
+/* Cloud mode is a different skin, not a desaturated one: the shell picks up a
+   cool cast so it reads as "browser engine" without dimming the content. */
+.lite.daw-cloud { background: #101619; }
+.lite.daw-cloud .work { background: #101619; }
 .work {
   flex: 1;
   min-height: 0;

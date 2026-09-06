@@ -1,89 +1,66 @@
-import { defaultSends } from './mixer.js'
-import { mOrchestraInstrument } from './m-orchestra-ui.js'
-
-const CHORD_LENGTH = 8
-const DEMO_LENGTH = 64
-
-const progression = [
-  { tones: [2, 5, 9], bass: 2 },
-  { tones: [10, 2, 5], bass: 10 },
-  { tones: [5, 9, 0], bass: 5 },
-  { tones: [0, 4, 7], bass: 0 },
-  { tones: [2, 5, 9], bass: 2 },
-  { tones: [7, 10, 2], bass: 7 },
-  { tones: [9, 1, 4], bass: 9 },
-  { tones: [2, 5, 9], bass: 2 }
-]
+import { createInsert } from '../dsp/plugin.js'
+import { plugins } from '../dsp/registry.js'
+import { BUS_REVERB, BUS_DELAY, defaultSends, dbFromFader } from './mixer-model.js'
+import { defaultWebMixer, ensureInsertSlots } from './web-mixer.js'
+import { DEMO_BPM, DEMO_LENGTH_BEATS, DEMO_RETIME_NOTES } from './demo-retime-data.js'
 
 const demoTracks = [
-  { name: 'Violin I', section: 'Strings', colour: '#d9a04a', basePitch: 74, volume: 0.80, pan: -0.55, role: 'pad', voice: 2, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_violin_1', techniqueId: 'm_orch_long' },
-  { name: 'Violin II', section: 'Strings', colour: '#d18f45', basePitch: 69, volume: 0.78, pan: -0.30, role: 'pad', voice: 1, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_violin_2', techniqueId: 'm_orch_long' },
-  { name: 'Viola', section: 'Strings', colour: '#c47f3f', basePitch: 62, volume: 0.76, pan: 0.18, role: 'pad', voice: 0, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_viola', techniqueId: 'm_orch_long' },
-  { name: 'Cello', section: 'Strings', colour: '#b87038', basePitch: 50, volume: 0.78, pan: 0.42, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64, instrumentId: 'm_orch_cello', techniqueId: 'm_orch_long' },
-  { name: 'Bass', section: 'Strings', colour: '#a66232', basePitch: 38, volume: 0.74, pan: 0.60, role: 'bass', voice: 0, entryBeat: 8, exitBeat: 64, instrumentId: 'm_orch_bass', techniqueId: 'm_orch_long' },
-  { name: 'Flute', section: 'Woodwinds', colour: '#6dbf8a', basePitch: 81, volume: 0.68, pan: -0.22, role: 'moving', voice: 2, entryBeat: 16, exitBeat: 64, instrumentId: 'm_orch_flute', techniqueId: 'm_orch_long' },
-  { name: 'Oboe', section: 'Woodwinds', colour: '#5faf7d', basePitch: 74, volume: 0.66, pan: -0.08, role: 'moving', voice: 1, entryBeat: 16, exitBeat: 48, instrumentId: 'm_orch_oboe', techniqueId: 'm_orch_long' },
-  { name: 'Clarinet', section: 'Woodwinds', colour: '#53a071', basePitch: 69, volume: 0.68, pan: 0.08, role: 'moving', voice: 0, entryBeat: 24, exitBeat: 64, instrumentId: 'm_orch_clarinet', techniqueId: 'm_orch_long' },
-  { name: 'Bassoon', section: 'Woodwinds', colour: '#479065', basePitch: 50, volume: 0.66, pan: 0.22, role: 'pad', voice: 1, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_bassoon', techniqueId: 'm_orch_long' },
-  { name: 'Horn', section: 'Brass', colour: '#4a90d9', basePitch: 57, volume: 0.70, pan: -0.35, role: 'brass', voice: 0, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_horn', techniqueId: 'm_orch_long' },
-  { name: 'Trumpet', section: 'Brass', colour: '#4283c4', basePitch: 69, volume: 0.66, pan: 0.14, role: 'brass', voice: 2, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_trumpet', techniqueId: 'm_orch_long' },
-  { name: 'Trombone', section: 'Brass', colour: '#3a76b0', basePitch: 52, volume: 0.68, pan: 0.30, role: 'brass', voice: 1, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_trombone', techniqueId: 'm_orch_long' },
-  { name: 'Tuba', section: 'Brass', colour: '#33699c', basePitch: 38, volume: 0.66, pan: 0.45, role: 'bass', voice: 0, entryBeat: 48, exitBeat: 64, instrumentId: 'm_orch_tuba', techniqueId: 'm_orch_long' },
-  { name: 'Timpani', section: 'Percussion', colour: '#c46bb3', basePitch: 38, volume: 0.72, pan: 0.00, role: 'percussion', voice: 0, entryBeat: 0, exitBeat: 64, instrumentId: 'm_orch_bass_drum', techniqueId: 'm_orch_hit' },
-  { name: 'Percussion', section: 'Percussion', colour: '#ab5c9e', basePitch: 60, volume: 0.62, pan: 0.10, role: 'percussion', voice: 0, entryBeat: 32, exitBeat: 64, instrumentId: 'm_orch_snare', techniqueId: 'm_orch_hit' }
-]
-
-function nearestPitch (pitchClass, reference) {
-  const offset = ((pitchClass - reference) % 12 + 18) % 12 - 6
-  return Math.min(108, Math.max(21, reference + offset))
-}
-
-function velByte (value) {
-  return Math.min(127, Math.max(1, Math.round(value * 127)))
-}
-
-function appendNote (notes, pitch, startBeat, lengthBeats, velocity, clipLength) {
-  if (startBeat < -0.001 || startBeat >= clipLength - 0.001) return
-  notes.push({
-    pitch,
-    start: startBeat,
-    duration: Math.min(lengthBeats, clipLength - startBeat),
-    velocity: velByte(Math.min(1, Math.max(0.1, velocity)))
-  })
-}
-
-function fillChordNotes (spec, clipStart, clipLength) {
-  const notes = []
-  for (let chordIndex = 0; chordIndex < progression.length * 2; chordIndex++) {
-    const chordStart = chordIndex * CHORD_LENGTH
-    if (chordStart >= clipStart + clipLength || chordStart + CHORD_LENGTH <= clipStart) continue
-    const chord = progression[chordIndex % progression.length]
-    const localStart = chordStart - clipStart
-    const emphasis = chordIndex % 4 === 0 ? 0.06 : 0
-    if (spec.role === 'pad') {
-      appendNote(notes, nearestPitch(chord.tones[spec.voice % 3], spec.basePitch), localStart, CHORD_LENGTH - 0.4, 0.62 + emphasis, clipLength)
-    } else if (spec.role === 'bass') {
-      const pitch = nearestPitch(chord.bass, spec.basePitch)
-      appendNote(notes, pitch, localStart, CHORD_LENGTH * 0.5 - 0.2, 0.72 + emphasis, clipLength)
-      appendNote(notes, pitch, localStart + CHORD_LENGTH * 0.5, CHORD_LENGTH * 0.5 - 0.3, 0.64, clipLength)
-    } else if (spec.role === 'moving') {
-      const order = [0, 1, 2, 1]
-      for (let step = 0; step < 4; step++) {
-        const tone = chord.tones[(spec.voice + order[step]) % 3]
-        appendNote(notes, nearestPitch(tone, spec.basePitch), localStart + step * 2.0, 1.7, 0.58 + emphasis, clipLength)
-      }
-    } else if (spec.role === 'brass') {
-      const pitch = nearestPitch(chord.tones[spec.voice % 3], spec.basePitch)
-      appendNote(notes, pitch, localStart + 0.5, 3.2, 0.66 + emphasis, clipLength)
-      appendNote(notes, pitch, localStart + 4.5, 3.2, 0.60, clipLength)
-    } else {
-      const pitch = nearestPitch(chord.bass, spec.basePitch)
-      appendNote(notes, pitch, localStart, 0.6, 0.78, clipLength)
-      appendNote(notes, pitch, localStart + 4.0, 0.4, 0.58, clipLength)
-    }
+  {
+    id: 'imperial',
+    name: 'Soft Imperial',
+    section: 'Keys',
+    colour: '#cfc4a8',
+    volume: 0.74,
+    pan: 0,
+    send: 0.18,
+    instrumentId: 'soft_imperial',
+    techniqueId: ''
+  },
+  {
+    id: 'celestial',
+    name: 'Viola Long',
+    section: 'Strings',
+    colour: '#d9a04a',
+    volume: 0.72,
+    pan: 0.16,
+    send: 0.34,
+    instrumentId: 'bbcso_viola',
+    techniqueId: 'bbcso_long'
+  },
+  {
+    id: 'cello',
+    name: 'Cello Long',
+    section: 'Strings',
+    colour: '#b87038',
+    volume: 0.80,
+    pan: 0.40,
+    send: 0.22,
+    instrumentId: 'bbcso_cello',
+    techniqueId: 'bbcso_long'
+  },
+  {
+    id: 'violins',
+    name: 'Violins Long',
+    section: 'Strings',
+    colour: '#d18f45',
+    volume: 0.78,
+    pan: -0.38,
+    send: 0.28,
+    instrumentId: 'bbcso_violin_1',
+    techniqueId: 'bbcso_long'
+  },
+  {
+    id: 'horn',
+    name: 'Horn Long',
+    section: 'Brass',
+    colour: '#4a90d9',
+    volume: 0.70,
+    pan: -0.16,
+    send: 0.30,
+    instrumentId: 'bbcso_horn',
+    techniqueId: 'bbcso_long'
   }
-  return notes
-}
+]
 
 function emptyInserts () {
   return [
@@ -93,6 +70,50 @@ function emptyInserts () {
     { name: '', bypassed: false },
     { name: '', bypassed: false }
   ]
+}
+
+function reverbSend (level) {
+  return [
+    { id: 'send_a', name: 'A', destination: BUS_REVERB, level, enabled: true, preFader: false },
+    { id: 'send_b', name: 'B', destination: BUS_DELAY, level: 0, enabled: false, preFader: false },
+    { id: 'send_c', name: 'C', destination: BUS_REVERB, level: 0, enabled: false, preFader: false }
+  ]
+}
+
+function notesFromPacked (rows) {
+  return (rows || []).map((row, index) => ({
+    id: index + 1,
+    pitch: row[0],
+    start: row[1],
+    duration: row[2],
+    velocity: row[3]
+  }))
+}
+
+function buildDemoMixer (tracks) {
+  const mixer = defaultWebMixer()
+  tracks.forEach((track) => {
+    if (track.type !== 'midi') return
+    const spec = demoTracks.find((item) => item.name === track.name)
+    mixer.tracks[String(track.id)] = {
+      volumeDb: dbFromFader(track.volume),
+      pan: track.pan,
+      mute: false,
+      solo: false,
+      inserts: [null, null, null, null, null],
+      sends: reverbSend(spec ? spec.send : 0.22)
+    }
+  })
+  mixer.buses[0].inserts = ensureInsertSlots([
+    createInsert('reverb-x', plugins, { presetId: 'concert-hall', state: { returnOnly: true, amount: 1, decay: 3.4, size: 0.82 } })
+  ])
+  mixer.buses[0].volumeDb = -4
+  mixer.master.inserts = ensureInsertSlots([
+    createInsert('equalizer-x', plugins, { presetId: 'master-clean' }),
+    createInsert('dynamic-x', plugins, { presetId: 'master' }),
+    createInsert('limiter-x', plugins, { presetId: 'orchestral' })
+  ])
+  return mixer
 }
 
 export function createDemoProject () {
@@ -119,10 +140,10 @@ export function createDemoProject () {
 
   const clips = []
   let clipId = 1
-  let noteId = 1
   let nextTrackId = 2
   let currentSection = ''
   let sectionParent = 0
+  let noteId = 1
 
   demoTracks.forEach((spec) => {
     if (spec.section !== currentSection) {
@@ -154,7 +175,6 @@ export function createDemoProject () {
 
     const trackIndex = tracks.length
     const id = nextTrackId++
-    const orchItem = mOrchestraInstrument(spec.instrumentId)
     tracks.push({
       id,
       parentId: sectionParent,
@@ -167,58 +187,52 @@ export function createDemoProject () {
       mute: false,
       solo: false,
       recordArm: false,
-      instrument: (orchItem && orchItem.name) || 'M Orchestra',
+      instrument: spec.name,
       instrumentId: spec.instrumentId,
       definitionId: spec.instrumentId,
       techniqueId: spec.techniqueId,
       section: spec.section,
-      loadState: 'Ready',
-      loadMessage: 'Cloud M Orchestra',
-      instrumentLoadState: 'ready',
-      instrumentLoadMessage: 'Cloud library',
-      controllerValues: { dynamics: 100, expression: 100, vibrato: 40 },
+      loadState: 'unavailable',
+      loadMessage: 'Requires PC engine',
+      instrumentLoadState: 'unavailable',
+      instrumentLoadMessage: 'Requires PC engine',
+      controllerValues: { dynamics: 100, expression: 100, vibrato: 28 },
       inserts: emptyInserts(),
-      sends: defaultSends(),
-      source: 'm-orchestra',
+      sends: reverbSend(spec.send),
+      source: 'remote-vst',
       meterLevel: 0
     })
 
-    for (let sectionStart = 0; sectionStart < DEMO_LENGTH; sectionStart += 32) {
-      const start = Math.max(sectionStart, spec.entryBeat)
-      const end = Math.min(sectionStart + 32, spec.exitBeat)
-      if (end - start < 1) continue
-      const notes = fillChordNotes(spec, start, end - start).map((note) => ({
-        ...note,
-        id: noteId++
-      }))
-      clips.push({
-        id: clipId++,
-        trackIndex,
-        startBeat: start,
-        lengthBeats: end - start,
-        name: spec.name + (sectionStart < 1 ? ' A' : ' B'),
-        colour: spec.colour,
-        midi: true,
-        kind: 'midi',
-        loopLengthBeats: end - start,
-        notes
-      })
-    }
+    const packed = DEMO_RETIME_NOTES[spec.id] || []
+    const notes = notesFromPacked(packed).map((note) => ({ ...note, id: noteId++ }))
+    clips.push({
+      id: clipId++,
+      trackIndex,
+      startBeat: 0,
+      lengthBeats: DEMO_LENGTH_BEATS,
+      name: spec.name,
+      colour: spec.colour,
+      midi: true,
+      kind: 'midi',
+      loopLengthBeats: DEMO_LENGTH_BEATS,
+      notes
+    })
   })
 
   return {
-    projectName: 'Untitled Orchestra',
-    bpm: 96,
+    projectName: 'Re-Time',
+    bpm: DEMO_BPM,
     timeSigNum: 4,
     timeSigDen: 4,
     loopStart: 0,
-    loopEnd: DEMO_LENGTH,
+    loopEnd: DEMO_LENGTH_BEATS,
     masterGain: 0.8,
     tracks,
     clips,
+    webMixer: buildDemoMixer(tracks),
     markers: [
       { id: 1, name: 'Intro', startBeat: 0, section: 'A' },
-      { id: 2, name: 'Climax', startBeat: 32, section: 'B' }
+      { id: 2, name: 'Theme', startBeat: 48, section: 'B' }
     ]
   }
 }

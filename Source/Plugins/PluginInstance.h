@@ -24,6 +24,12 @@ public:
     virtual bool isExternalPlugin() const { return false; }
 
     virtual void prepare (double sampleRate, int maximumBlockSize) = 0;
+    virtual void forceReprepare (double sampleRate, int maximumBlockSize) { prepare (sampleRate, maximumBlockSize); }
+    virtual bool hasValidBusLayout() const { return true; }
+    virtual bool isProcessReady() const { return true; }
+    virtual void allowProcessing() {}
+    virtual void blockProcessing() {}
+
     virtual void process (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi) = 0;
     virtual void reset() = 0;
 

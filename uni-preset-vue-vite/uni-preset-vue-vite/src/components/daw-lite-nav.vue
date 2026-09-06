@@ -8,6 +8,10 @@
       <daw-icon name="piano" :size="22" :color="session.workspaceView === 'piano' ? '#e6e6e6' : ''" />
       <text>Piano</text>
     </view>
+    <view class="item" :class="{ on: samplerOpen }" @click.stop="go('sampler')">
+      <daw-icon name="note" :size="22" :color="samplerOpen ? '#e6e6e6' : ''" />
+      <text>Sampler</text>
+    </view>
     <view class="item" :class="{ on: session.workspaceView === 'mixer' }" @click.stop="go('mixer')">
       <daw-icon name="mixer" :size="22" :color="session.workspaceView === 'mixer' ? '#e6e6e6' : ''" />
       <text>Mixer</text>
@@ -16,8 +20,13 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
 import DawIcon from './daw-icon.vue'
 import { session, setWorkspaceView } from '../store/session.js'
+
+// The instrument editor lives in the track sheet, which used to be reachable
+// only from the mixer, so it gets its own tab.
+const samplerOpen = computed(() => !!session.liteSheet && session.liteSheet.tab === 'sampler')
 
 function go (view) {
   setWorkspaceView(view)

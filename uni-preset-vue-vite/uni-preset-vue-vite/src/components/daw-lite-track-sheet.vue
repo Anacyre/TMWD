@@ -6,12 +6,13 @@
     @close="closeLiteSheet"
   >
     <view v-if="tab === 'sampler'" class="os noscroll">
-      <view class="icon-row">
+      <!-- M Orchestra carries its own change-instrument button in compact mode. -->
+      <view v-if="!mOrchestra" class="icon-row">
         <view class="icon-hit" aria-label="Change plugin" @click.stop="changeInstrument">
           <daw-icon name="copy" :size="18" />
         </view>
       </view>
-      <daw-m-orchestra v-if="mOrchestra" />
+      <daw-m-orchestra v-if="mOrchestra" compact />
       <daw-orchestra-sampler v-else />
     </view>
 

@@ -1384,7 +1384,7 @@ onUnmounted(() => {
 .top .corner { width: 128px; flex-shrink: 0; }
 .top .ruler { flex: 1; min-width: 0; }
 .phone .top .corner { width: 112px; }
-.lite .top .corner { width: 132px; }
+.lite .top .corner { width: 156px; }
 .vscroll {
   flex: 1 1 auto;
   min-height: 0;
@@ -1402,8 +1402,10 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 .lite .name { font-size: 12px; font-weight: 650; flex: 1; min-width: 0; }
-.lite .tiny { width: 28px; height: 28px; min-width: 28px; font-size: 10px; }
-.lite .tiny.fx { width: 28px; letter-spacing: 0.02em; font-size: 14px; line-height: 1; }
+/* Wider header + 36 px buttons: 28 px was a reliable source of mis-taps
+   between mute, solo and the track menu. */
+.lite .tiny { width: 36px; height: 36px; min-width: 36px; font-size: 11px; }
+.lite .tiny.fx { width: 36px; letter-spacing: 0.02em; font-size: 14px; line-height: 1; }
 .lite-head {
   flex-direction: column;
   align-items: stretch;
@@ -1452,9 +1454,9 @@ onUnmounted(() => {
   height: 24px;
 }
 @media (max-width: 360px) {
-  .lite .top .corner, .lite .headers { width: 124px; }
+  .lite .top .corner, .lite .headers { width: 138px; }
   .lite .name { font-size: 11px; }
-  .lite .tiny { width: 26px; height: 26px; min-width: 26px; }
+  .lite .tiny { width: 32px; height: 32px; min-width: 32px; }
   .lite-vol { height: 16px; }
 }
 .corner {
@@ -1518,7 +1520,7 @@ onUnmounted(() => {
   overflow: visible;
 }
 .phone .headers { width: 112px; }
-.lite .headers { width: 132px; }
+.lite .headers { width: 156px; }
 .add-track-row {
   display: flex;
   gap: 6px;
@@ -1527,7 +1529,7 @@ onUnmounted(() => {
 }
 .add-track {
   flex: 1;
-  height: 36px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;

@@ -237,6 +237,12 @@ const snapLabel = computed(() => snapPresets.find((item) => item.id === snapId.v
 
 const view = defaultView()
 view.snapId = '1/16'
+// 14 px rows are a desktop-mouse default; on touch they are hard to hit, so
+// lite starts zoomed in far enough that a note is a comfortable target.
+if (lite.value) {
+  view.pixelsPerSemitone = 22
+  view.pixelsPerBeat = 64
+}
 let canvasEl = null
 let layout = { gridX: 68, gridY: 40, gridW: 100, gridH: 100, velY: 0, velH: 56, keyW: 68 }
 let raf = 0
@@ -1062,10 +1068,10 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 .tools { height: 28px; background: #121212; }
-.tools.lite { height: 44px; overflow-x: auto; background: #121212; }
+.tools.lite { height: 52px; overflow-x: auto; background: #121212; }
 .icon-chip {
-  width: 40px;
-  height: 40px;
+  width: 44px;
+  height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1095,9 +1101,12 @@ onUnmounted(() => {
 }
 .note-lab { color: #e6e6e6; font-size: 12px; min-width: 52px; }
 .tools.lite .chip, .expr-bar .chip, .note-bar .chip {
-  min-height: 40px;
+  min-height: 44px;
+  min-width: 44px;
+  padding: 0 12px;
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .more-row { height: 28px; }
 .context { height: 22px; color: #b0b0b0; }

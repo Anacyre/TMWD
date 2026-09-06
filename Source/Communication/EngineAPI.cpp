@@ -4,9 +4,11 @@
 #include "../Audio/MOrchestra/MOrchestraEngine.h"
 #include "../Model/ProjectFile.h"
 #include "../Model/ProjectSchema.h"
+#include "../Plugins/HostedPluginInstance.h"
 #include "../Plugins/OrchestraSamplerModel.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 #include <functional>
 #include <limits>
 #include <memory>
@@ -89,21 +91,21 @@ namespace
 
     const DemoTrackSpec demoTracks[]
     {
-        { "Violin I",   "Strings",    0xffd9a04a, 74, 0.80f, -0.55f, DemoRole::pad,        2,  0.0, 64.0, "m_orch_violin_1",  "m_orch_long" },
-        { "Violin II",  "Strings",    0xffd18f45, 69, 0.78f, -0.30f, DemoRole::pad,        1,  0.0, 64.0, "m_orch_violin_2",  "m_orch_long" },
-        { "Viola",      "Strings",    0xffc47f3f, 62, 0.76f,  0.18f, DemoRole::pad,        0,  0.0, 64.0, "m_orch_viola",     "m_orch_long" },
-        { "Cello",      "Strings",    0xffb87038, 50, 0.78f,  0.42f, DemoRole::bass,       0,  8.0, 64.0, "m_orch_cello",     "m_orch_long" },
-        { "Bass",       "Strings",    0xffa66232, 38, 0.74f,  0.60f, DemoRole::bass,       0,  8.0, 64.0, "m_orch_bass",      "m_orch_long" },
-        { "Flute",      "Woodwinds",  0xff6dbf8a, 81, 0.68f, -0.22f, DemoRole::moving,     2, 16.0, 64.0, "m_orch_flute",     "m_orch_long" },
-        { "Oboe",       "Woodwinds",  0xff5faf7d, 74, 0.66f, -0.08f, DemoRole::moving,     1, 16.0, 48.0, "m_orch_oboe",      "m_orch_long" },
-        { "Clarinet",   "Woodwinds",  0xff53a071, 69, 0.68f,  0.08f, DemoRole::moving,     0, 24.0, 64.0, "m_orch_clarinet",  "m_orch_long" },
-        { "Bassoon",    "Woodwinds",  0xff479065, 50, 0.66f,  0.22f, DemoRole::pad,        1, 32.0, 64.0, "m_orch_bassoon",   "m_orch_long" },
-        { "Horn",       "Brass",      0xff4a90d9, 57, 0.70f, -0.35f, DemoRole::brass,      0, 32.0, 64.0, "m_orch_horn",      "m_orch_long" },
-        { "Trumpet",    "Brass",      0xff4283c4, 69, 0.66f,  0.14f, DemoRole::brass,      2, 48.0, 64.0, "m_orch_trumpet",   "m_orch_long" },
-        { "Trombone",   "Brass",      0xff3a76b0, 52, 0.68f,  0.30f, DemoRole::brass,      1, 48.0, 64.0, "m_orch_trombone",  "m_orch_long" },
-        { "Tuba",       "Brass",      0xff33699c, 38, 0.66f,  0.45f, DemoRole::bass,       0, 48.0, 64.0, "m_orch_tuba",      "m_orch_long" },
-        { "Timpani",    "Percussion", 0xffc46bb3, 38, 0.72f,  0.00f, DemoRole::percussion, 0,  0.0, 64.0, "m_orch_bass_drum", "m_orch_hit"  },
-        { "Percussion", "Percussion", 0xffab5c9e, 60, 0.62f,  0.10f, DemoRole::percussion, 0, 32.0, 64.0, "m_orch_snare",     "m_orch_hit"  }
+        { "Violin I",   "Strings",    0xffd9a04a, 74, 0.80f, -0.55f, DemoRole::pad,        2,  0.0, 64.0, "bbcso_violin_1",         "bbcso_long" },
+        { "Violin II",  "Strings",    0xffd18f45, 69, 0.78f, -0.30f, DemoRole::pad,        1,  0.0, 64.0, "bbcso_violin_2",         "bbcso_long" },
+        { "Viola",      "Strings",    0xffc47f3f, 62, 0.76f,  0.18f, DemoRole::pad,        0,  0.0, 64.0, "bbcso_viola",            "bbcso_long" },
+        { "Cello",      "Strings",    0xffb87038, 50, 0.78f,  0.42f, DemoRole::bass,       0,  8.0, 64.0, "bbcso_cello",            "bbcso_long" },
+        { "Bass",       "Strings",    0xffa66232, 38, 0.74f,  0.60f, DemoRole::bass,       0,  8.0, 64.0, "bbcso_bass",             "bbcso_long" },
+        { "Flute",      "Woodwinds",  0xff6dbf8a, 81, 0.68f, -0.22f, DemoRole::moving,     2, 16.0, 64.0, "bbcso_flute",            "bbcso_long" },
+        { "Oboe",       "Woodwinds",  0xff5faf7d, 74, 0.66f, -0.08f, DemoRole::moving,     1, 16.0, 48.0, "bbcso_oboe",             "bbcso_long" },
+        { "Clarinet",   "Woodwinds",  0xff53a071, 69, 0.68f,  0.08f, DemoRole::moving,     0, 24.0, 64.0, "bbcso_clarinet",         "bbcso_long" },
+        { "Bassoon",    "Woodwinds",  0xff479065, 50, 0.66f,  0.22f, DemoRole::pad,        1, 32.0, 64.0, "bbcso_bassoon",          "bbcso_long" },
+        { "Horn",       "Brass",      0xff4a90d9, 57, 0.70f, -0.35f, DemoRole::brass,      0, 32.0, 64.0, "bbcso_horn",             "bbcso_long" },
+        { "Trumpet",    "Brass",      0xff4283c4, 69, 0.66f,  0.14f, DemoRole::brass,      2, 48.0, 64.0, "bbcso_trumpet",          "bbcso_long" },
+        { "Trombone",   "Brass",      0xff3a76b0, 52, 0.68f,  0.30f, DemoRole::brass,      1, 48.0, 64.0, "bbcso_tenor_trombone",   "bbcso_long" },
+        { "Tuba",       "Brass",      0xff33699c, 38, 0.66f,  0.45f, DemoRole::bass,       0, 48.0, 64.0, "bbcso_tuba",             "bbcso_long" },
+        { "Timpani",    "Percussion", 0xffc46bb3, 38, 0.72f,  0.00f, DemoRole::percussion, 0,  0.0, 64.0, "bbcso_timpani",          "" },
+        { "Percussion", "Percussion", 0xffab5c9e, 60, 0.62f,  0.10f, DemoRole::percussion, 0, 32.0, 64.0, "bbcso_untuned_percussion", "" }
     };
 
     int nearestPitch (int pitchClass, int reference)
@@ -219,8 +221,16 @@ namespace
 //==============================================================================
 EngineAPI::EngineAPI()
 {
-    sessionId = juce::Uuid().toDashedString();
+    const auto id = juce::Uuid().toDashedString();
+    const auto bytes = juce::jmin ((int) sessionId.size() - 1, (int) id.getNumBytesAsUTF8());
+    std::memcpy (sessionId.data(), id.toRawUTF8(), (size_t) bytes);
+    sessionId[(size_t) bytes] = 0;
     refreshPresetAvailability();
+}
+
+juce::String EngineAPI::getSessionId() const
+{
+    return juce::String (juce::CharPointer_UTF8 (sessionId.data()));
 }
 
 EngineAPI::~EngineAPI()
@@ -274,6 +284,7 @@ void EngineAPI::shutdown()
 //==============================================================================
 void EngineAPI::play()
 {
+    engine.ensureAudioCallbackAttached();
     ensureAssignedInstrumentsLoaded (true);
     flushPendingUpdates();
     engine.start();
@@ -558,7 +569,7 @@ void EngineAPI::sanitizeTrackInstrumentFields (TrackData& track)
 
     if (techniqueAllowed && presetKnown)
     {
-        if (track.presetId.isEmpty() && ! definition->techniques.isEmpty())
+        if (track.presetId.isEmpty())
             track.presetId = instruments.resolvePresetId (*definition, track.techniqueId);
 
         return;
@@ -680,7 +691,7 @@ void EngineAPI::clearAllHostedInstruments()
     engine.collectUnusedInstruments();
 
     if (wasAttached)
-        engine.attachAudioCallback();
+        engine.ensureAudioCallbackAttached();
 }
 
 void EngineAPI::loadTrackInstrument (int trackIndex, const juce::String& definitionId, bool async)
@@ -859,6 +870,16 @@ void EngineAPI::finishReady (TrackData& track, const juce::StringArray& notes)
                                                   : notes.joinIntoString (" ");
     logSection ("Instrument", track.instrument + " READY hosted="
                                 + juce::String (countHostedInstances()));
+
+    const auto trackIndex = project.indexOfTrack (track.id);
+
+    if (trackIndex > 0)
+        if (auto* instance = engine.getTrackInstrument (trackIndex))
+            instance->allowProcessing();
+
+    syncMixer();
+    flushPendingUpdates();
+    engine.ensureAudioCallbackAttached();
     notify (tracksChanged);
 }
 
@@ -1027,6 +1048,114 @@ void EngineAPI::markReadyWhenSettled (int trackIndex, const juce::String& defini
         juce::Timer::callAfterDelay (delayMs, finish);
 }
 
+void EngineAPI::scheduleSynchronWarmupThenReady (int trackIndex, const juce::String& definitionId, int generation,
+                                                 juce::StringArray notes, bool wasAudioAttached, bool deferReady,
+                                                 const juce::String& displayName)
+{
+    juce::ignoreUnused (displayName);
+    pendingSynchronWarmups.fetch_add (1, std::memory_order_acq_rel);
+    synchronWarmupQueue.push_back ({ trackIndex, definitionId, generation, std::move (notes),
+                                     wasAudioAttached, deferReady });
+    startNextSynchronWarmup();
+}
+
+void EngineAPI::finishSynchronWarmup (bool wasAudioAttached)
+{
+    synchronWarmupActive = false;
+    pendingSynchronWarmups.fetch_sub (1, std::memory_order_acq_rel);
+
+    startNextSynchronWarmup();
+
+    if (wasAudioAttached && ! synchronWarmupActive
+        && pendingSynchronWarmups.load (std::memory_order_acquire) == 0)
+        engine.ensureAudioCallbackAttached();
+}
+
+void EngineAPI::startNextSynchronWarmup()
+{
+    if (synchronWarmupActive)
+        return;
+
+    while (! synchronWarmupQueue.empty()
+           && ! isCurrentLoad (synchronWarmupQueue.front().trackIndex,
+                               synchronWarmupQueue.front().generation))
+    {
+        synchronWarmupQueue.pop_front();
+        pendingSynchronWarmups.fetch_sub (1, std::memory_order_acq_rel);
+    }
+
+    if (synchronWarmupQueue.empty())
+        return;
+
+    const auto job = synchronWarmupQueue.front();
+    synchronWarmupQueue.pop_front();
+    synchronWarmupActive = true;
+
+    engine.detachAudioCallback();
+
+    if (auto* track = project.getTrack (job.trackIndex))
+    {
+        track->instrumentLoadMessage = "Waiting for the Synchron Player window...";
+        notify (tracksChanged);
+    }
+
+    const auto keepAlive = alive;
+
+    auto openEditorThenReady = [this, keepAlive, job]
+    {
+        if (auto* hosted = dynamic_cast<HostedPluginInstance*> (engine.getTrackInstrument (job.trackIndex)))
+            hosted->ensureNativeEditor();
+
+        juce::Timer::callAfterDelay (1000, [this, keepAlive, job]
+        {
+            if (! keepAlive->load())
+                return;
+
+            if (isCurrentLoad (job.trackIndex, job.generation))
+                markReadyWhenSettled (job.trackIndex, job.definitionId, job.generation, job.notes,
+                                      job.deferReady ? 250 : 0);
+
+            finishSynchronWarmup (job.wasAudioAttached);
+        });
+    };
+
+    juce::Timer::callAfterDelay (500, [this, keepAlive, job, openEditorThenReady]
+    {
+        if (! keepAlive->load())
+            return;
+
+        auto* instance = isCurrentLoad (job.trackIndex, job.generation)
+                             ? engine.getTrackInstrument (job.trackIndex)
+                             : nullptr;
+
+        if (instance != nullptr
+            && instance->getInstrumentId() == InstrumentRegistry::synchronPlayerId)
+        {
+            openEditorThenReady();
+            return;
+        }
+
+        juce::Timer::callAfterDelay (250, [this, keepAlive, job, openEditorThenReady]
+        {
+            if (! keepAlive->load())
+                return;
+
+            auto* again = isCurrentLoad (job.trackIndex, job.generation)
+                              ? engine.getTrackInstrument (job.trackIndex)
+                              : nullptr;
+
+            if (again != nullptr
+                && again->getInstrumentId() == InstrumentRegistry::synchronPlayerId)
+            {
+                openEditorThenReady();
+                return;
+            }
+
+            finishSynchronWarmup (job.wasAudioAttached);
+        });
+    });
+}
+
 void EngineAPI::completeInstrumentLoad (int trackIndex, const juce::String& definitionId, int generation,
                                         bool requireCapturedState, bool deferReady)
 {
@@ -1143,42 +1272,113 @@ void EngineAPI::finishInstrumentLoad (int trackIndex, const juce::String& defini
         return;
 
     juce::StringArray notes;
+    track->instrumentSlot.instrumentId = definition->sourcePlugin;
+    track->instrumentSlot.name = instruments.getDisplayName (definition->sourcePlugin);
+    const bool quietExternalLoad = definition->sourcePlugin == InstrumentRegistry::synchronPlayerId
+                                || definition->sourcePlugin == InstrumentRegistry::bbcsoDiscoverId;
+    const bool wasAudioAttached = engine.isAudioCallbackAttached();
 
-    if (target->isExternalPlugin())
-    {
-        if (! restorePresetToInstance (*target, *track, notes, requireCapturedState))
-        {
-            failInstrumentLoad (trackIndex, InstrumentLoadState::Error,
-                                track->instrumentLoadMessage.isNotEmpty()
-                                    ? track->instrumentLoadMessage
-                                    : definition->displayName + " could not be restored.");
-            return;
-        }
-    }
+    if (quietExternalLoad && wasAudioAttached)
+        engine.detachAudioCallback();
 
     if (created != nullptr)
     {
+        if (created->isExternalPlugin())
+        {
+            created->blockProcessing();
+            created->prepare (engine.getSampleRate(), engine.getBlockSize());
+
+            if (! restorePresetToInstance (*created, *track, notes, requireCapturedState))
+            {
+                if (wasAudioAttached && quietExternalLoad)
+                    engine.ensureAudioCallbackAttached();
+
+                return;
+            }
+
+            created->forceReprepare (engine.getSampleRate(), engine.getBlockSize());
+
+            if (! created->hasValidBusLayout())
+            {
+                if (wasAudioAttached && quietExternalLoad)
+                    engine.ensureAudioCallbackAttached();
+
+                failInstrumentLoad (trackIndex, InstrumentLoadState::Error,
+                                    definition->displayName + " could not configure stereo outputs for playback.");
+                return;
+            }
+        }
+
         engine.setTrackInstrument (trackIndex, std::move (created));
         syncMixer();
         flushPendingUpdates();
     }
 
-    if (auto* loaded = engine.getTrackInstrument (trackIndex))
-        loaded->setInstrumentDefinitionId (definitionId);
+    auto* loaded = engine.getTrackInstrument (trackIndex);
+
+    if (loaded == nullptr)
+    {
+        if (wasAudioAttached && quietExternalLoad)
+            engine.ensureAudioCallbackAttached();
+
+        return;
+    }
+
+    if (existing != nullptr && loaded->isExternalPlugin())
+    {
+        loaded->blockProcessing();
+
+        if (! restorePresetToInstance (*loaded, *track, notes, requireCapturedState))
+        {
+            if (wasAudioAttached && quietExternalLoad)
+                engine.ensureAudioCallbackAttached();
+
+            return;
+        }
+
+        loaded->forceReprepare (engine.getSampleRate(), engine.getBlockSize());
+
+        if (! loaded->hasValidBusLayout())
+        {
+            if (wasAudioAttached && quietExternalLoad)
+                engine.ensureAudioCallbackAttached();
+
+            failInstrumentLoad (trackIndex, InstrumentLoadState::Error,
+                                definition->displayName + " could not configure stereo outputs for playback.");
+            return;
+        }
+    }
+
+    if (auto* readyInstance = engine.getTrackInstrument (trackIndex))
+    {
+        readyInstance->setInstrumentDefinitionId (definitionId);
+
+        if (auto* hosted = dynamic_cast<HostedPluginInstance*> (readyInstance))
+            hosted->setNativeEditorTitle (definition->displayName);
+    }
 
     const auto usedDedicatedState = instruments.resolvePresetId (*definition, track->techniqueId).isNotEmpty();
+    const bool isSynchron = definition->sourcePlugin == InstrumentRegistry::synchronPlayerId;
 
-    if (! usedDedicatedState)
+    if (! usedDedicatedState && ! isSynchron)
         if (const auto* technique = instruments.findTechnique (track->techniqueId))
             applyTechniqueAction (trackIndex, *technique);
 
-    for (const auto& [id, value] : track->controllerValues)
-        if (const auto* controller = instruments.findController (id))
-            applyControllerDefinition (trackIndex, *controller, value);
+    if (! isSynchron)
+        for (const auto& [id, value] : track->controllerValues)
+            if (const auto* controller = instruments.findController (id))
+                applyControllerDefinition (trackIndex, *controller, value);
 
     const auto settleMs = target->isExternalPlugin()
-        ? (definition->sourcePlugin == InstrumentRegistry::synchronPlayerId ? 1200 : 250)
+        ? (isSynchron ? 0 : 250)
         : 0;
+
+    if (isSynchron)
+    {
+        scheduleSynchronWarmupThenReady (trackIndex, definitionId, generation, notes,
+                                         wasAudioAttached, deferReady, definition->displayName);
+        return;
+    }
 
     if (deferReady)
         markReadyWhenSettled (trackIndex, definitionId, generation, notes, settleMs);
@@ -1260,6 +1460,7 @@ bool EngineAPI::setTrackTechnique (int trackIndex, const juce::String& technique
             if (auto* instance = engine.getTrackInstrument (trackIndex))
             {
                 juce::StringArray notes;
+                instance->blockProcessing();
 
                 if (! restorePresetToInstance (*instance, *track, notes, true))
                 {
@@ -1268,6 +1469,27 @@ bool EngineAPI::setTrackTechnique (int trackIndex, const juce::String& technique
                                             ? definition->displayName + " could not be restored."
                                             : juce::String ("Technique state could not be restored."));
                     return false;
+                }
+
+                instance->forceReprepare (engine.getSampleRate(), engine.getBlockSize());
+
+                if (! instance->hasValidBusLayout())
+                {
+                    failInstrumentLoad (trackIndex, InstrumentLoadState::Error,
+                                        definition->displayName + " could not configure stereo outputs for playback.");
+                    return false;
+                }
+
+                if (definition->sourcePlugin == InstrumentRegistry::synchronPlayerId)
+                {
+                    if (auto* hosted = dynamic_cast<HostedPluginInstance*> (instance))
+                        hosted->setNativeEditorTitle (definition->displayName);
+
+                    const auto generation = trackLoadGeneration[(size_t) juce::jlimit (0, AudioEngine::maxTracks - 1, trackIndex)];
+                    scheduleSynchronWarmupThenReady (trackIndex, definition->id, generation, notes,
+                                                     engine.isAudioCallbackAttached(), true,
+                                                     definition->displayName);
+                    return true;
                 }
 
                 finishReady (*track, notes);
@@ -1653,6 +1875,8 @@ void EngineAPI::finishProjectLoad()
     tempoDirty = true;
     flushPendingUpdates();
 
+    juce::Array<int> synchronTracks;
+
     for (int i = 1; i < project.getNumTracks(); ++i)
     {
         auto* track = project.getTrack (i);
@@ -1662,20 +1886,40 @@ void EngineAPI::finishProjectLoad()
 
         sanitizeTrackInstrumentFields (*track);
 
+        const auto* definition = instruments.findDefinition (track->instrumentDefinitionId);
+        const bool isSynchron = definition != nullptr
+                                && definition->sourcePlugin == InstrumentRegistry::synchronPlayerId;
+
+        if (isSynchron)
+        {
+            synchronTracks.add (i);
+            continue;
+        }
+
         InstrumentLoadOptions options;
-        options.async = false;
+        options.async = true;
         options.applyDefinitionFields = false;
         options.requireCapturedState = true;
         loadTrackInstrument (i, track->instrumentDefinitionId, options);
     }
 
-    logSection ("Instrument", "project load kept " + juce::String (countHostedInstances())
-                                + " hosted instance(s) across "
-                                + juce::String (juce::jmax (0, project.getNumTracks() - 1))
-                                + " MIDI track(s)");
+    for (int i = 0; i < synchronTracks.size(); ++i)
+    {
+        const auto trackIndex = synchronTracks.getUnchecked (i);
+        auto* track = project.getTrack (trackIndex);
 
-    if (wasAttached)
-        engine.attachAudioCallback();
+        if (track == nullptr)
+            continue;
+
+        InstrumentLoadOptions options;
+        options.async = true;
+        options.applyDefinitionFields = false;
+        options.requireCapturedState = true;
+        loadTrackInstrument (trackIndex, track->instrumentDefinitionId, options);
+    }
+
+    if (wasAttached && pendingSynchronWarmups.load() == 0)
+        engine.ensureAudioCallbackAttached();
 
     notify (projectChanged | tracksChanged | clipsChanged | notesChanged | mixerChanged | tempoChanged);
 }
@@ -2481,7 +2725,7 @@ juce::var EngineAPI::describeDiagnostics() const
 
     if (auto* object = var.getDynamicObject())
     {
-        object->setProperty ("sessionId", sessionId);
+        object->setProperty ("sessionId", getSessionId());
         object->setProperty ("audio", describeAudioStatus());
         object->setProperty ("bufferSize", engine.getBlockSize());
         object->setProperty ("sampleRate", engine.getSampleRate());
@@ -2510,7 +2754,7 @@ juce::var EngineAPI::describeSession() const
 {
     auto* root = new juce::DynamicObject();
     root->setProperty ("type", "session.state");
-    root->setProperty ("sessionId", sessionId);
+    root->setProperty ("sessionId", getSessionId());
     root->setProperty ("schemaVersion", ProjectSchema::currentVersion);
     root->setProperty ("maxAudioSessions", maxAudioSessions);
     root->setProperty ("project", describeProject());
@@ -2682,7 +2926,7 @@ juce::var EngineAPI::handleMessage (const juce::var& message)
     {
         auto* object = new juce::DynamicObject();
         object->setProperty ("project", describeProject());
-        object->setProperty ("sessionId", sessionId);
+        object->setProperty ("sessionId", getSessionId());
         object->setProperty ("schemaVersion", ProjectSchema::currentVersion);
         return makeOk (object);
     }
@@ -3776,7 +4020,7 @@ juce::var EngineAPI::describeProject() const
     auto* root = new juce::DynamicObject();
     root->setProperty ("name", project.getName());
     root->setProperty ("schemaVersion", ProjectSchema::currentVersion);
-    root->setProperty ("sessionId", sessionId);
+    root->setProperty ("sessionId", getSessionId());
     root->setProperty ("bpm", project.getBpm());
     root->setProperty ("timeSigNumerator", project.getTimeSigNumerator());
     root->setProperty ("timeSigDenominator", project.getTimeSigDenominator());
@@ -4043,8 +4287,11 @@ void EngineAPI::loadDemoOrchestra()
                                      { 24.0, juce::jlimit (0.0f, 1.0f, spec.volume + 0.12f) },
                                      { 32.0, spec.volume } };
 
-        loadTrackInstrument (index, spec.instrumentId, false);
-        setTrackTechnique (index, spec.techniqueId);
+        if (const auto* definition = instruments.findDefinition (spec.instrumentId))
+            applyTrackDefinitionFields (*track, *definition);
+
+        if (juce::String (spec.techniqueId).isNotEmpty())
+            track->techniqueId = spec.techniqueId;
 
         for (double sectionStart = 0.0; sectionStart < demoLengthBeats; sectionStart += 32.0)
         {

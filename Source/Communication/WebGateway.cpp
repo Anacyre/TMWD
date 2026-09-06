@@ -3,6 +3,10 @@
 #include <cmath>
 #include <cstring>
 
+#if JUCE_WINDOWS
+ #include <winsock2.h>
+#endif
+
 namespace
 {
     constexpr int maxHttpBytes = 64 * 1024;
@@ -10,7 +14,17 @@ namespace
 
     juce::String jsonLine (const juce::var& value)
     {
-        return juce::JSON::toString (value, true);
+        return juce::JSON::toString (value, false);
+    }
+
+    void ensureWinsock()
+    {
+       #if JUCE_WINDOWS
+        // Hosted VST3s often call WSACleanup(). That can drop JUCE's startup
+        // count to zero so the next socket() reads freed Winsock state.
+        WSADATA data;
+        WSAStartup (MAKEWORD (2, 2), &data);
+       #endif
     }
 
     juce::uint32 rol (juce::uint32 v, int n) noexcept
@@ -377,7 +391,14 @@ private:
         }
         else
         {
-            return false;
+            header[1] = 127;
+            auto n = (juce::uint64) size;
+            for (int i = 9; i >= 2; --i)
+            {
+                header[i] = (juce::uint8) (n & 0xff);
+                n >>= 8;
+            }
+            headerSize = 10;
         }
 
         juce::MemoryBlock frame;
@@ -664,7 +685,14 @@ WebGateway::~WebGateway()
 bool WebGateway::start (int preferredPort)
 {
     stop();
+    ensureWinsock();
     webRoot = findWebRoot();
+    {
+        const auto id = api.getSessionId();
+        const auto bytes = juce::jmin ((int) cachedSessionId.size() - 1, (int) id.getNumBytesAsUTF8());
+        std::memcpy (cachedSessionId.data(), id.toRawUTF8(), (size_t) bytes);
+        cachedSessionId[(size_t) bytes] = 0;
+    }
     juce::Logger::writeToLog ("Web gateway: binding 0.0.0.0:"
                               + juce::String (firstPort) + "-" + juce::String (lastPort)
                               + " (localhost + LAN)");
@@ -673,9 +701,9 @@ bool WebGateway::start (int preferredPort)
 
     for (int candidate = first; candidate <= lastPort; ++candidate)
     {
-        listener.close();
+        listener = std::make_unique<juce::StreamingSocket>();
 
-        if (listener.createListener (candidate, {}))
+        if (listener->createListener (candidate, "0.0.0.0"))
         {
             port = candidate;
             serving.store (true);
@@ -692,6 +720,8 @@ bool WebGateway::start (int preferredPort)
 
             return true;
         }
+
+        listener.reset();
     }
 
     port = 0;
@@ -705,7 +735,9 @@ void WebGateway::stop()
     serving.store (false);
     stopTimer();
     signalThreadShouldExit();
-    listener.close();
+
+    if (listener != nullptr)
+        listener->close();
 
     if (audioPump != nullptr)
     {
@@ -725,6 +757,7 @@ void WebGateway::stop()
 
     const juce::ScopedLock sl (lock);
     connections.clear();
+    listener.reset();
     port = 0;
 }
 
@@ -808,10 +841,10 @@ void WebGateway::run()
 {
     while (! threadShouldExit())
     {
-        if (listener.waitUntilReady (true, 250) != 1)
+        if (listener == nullptr || listener->waitUntilReady (true, 250) != 1)
             continue;
 
-        std::unique_ptr<juce::StreamingSocket> accepted (listener.waitForNextConnection());
+        std::unique_ptr<juce::StreamingSocket> accepted (listener->waitForNextConnection());
 
         if (accepted == nullptr)
             continue;
@@ -990,7 +1023,7 @@ juce::var WebGateway::makeHealth() const
     auto* object = new juce::DynamicObject();
     object->setProperty ("ok", true);
     object->setProperty ("port", port);
-    object->setProperty ("sessionId", api.getSessionId());
+    object->setProperty ("sessionId", juce::String (juce::CharPointer_UTF8 (cachedSessionId.data())));
     object->setProperty ("schemaVersion", ProjectSchema::currentVersion);
     object->setProperty ("maxAudioSessions", EngineAPI::maxAudioSessions);
     object->setProperty ("ws", getWebSocketUrl());

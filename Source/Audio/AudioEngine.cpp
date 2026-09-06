@@ -5,6 +5,11 @@ namespace
 {
     constexpr int preallocatedBlockSize = 4096;
     constexpr int masterChannels = 2;
+
+    bool isInstrumentReadyForProcessing (InstrumentLoadState state) noexcept
+    {
+        return state == InstrumentLoadState::Loaded || state == InstrumentLoadState::Active;
+    }
 }
 
 AudioEngine::AudioEngine (PluginHost& pluginHostToUse)
@@ -51,6 +56,13 @@ void AudioEngine::detachAudioCallback()
 
     deviceManager.removeAudioCallback (this);
     audioCallbackAttached = false;
+    waitForAudioCallbackIdle();
+}
+
+void AudioEngine::waitForAudioCallbackIdle()
+{
+    for (int i = 0; i < 500 && audioCallbackInFlight.load (std::memory_order_acquire) > 0; ++i)
+        juce::Thread::sleep (2);
 }
 
 void AudioEngine::attachAudioCallback()
@@ -60,6 +72,17 @@ void AudioEngine::attachAudioCallback()
 
     deviceManager.addAudioCallback (this);
     audioCallbackAttached = true;
+}
+
+void AudioEngine::ensureAudioCallbackAttached()
+{
+    if (audioCallbackAttached)
+        return;
+
+    if (deviceManager.getCurrentAudioDevice() == nullptr)
+        return;
+
+    attachAudioCallback();
 }
 
 void AudioEngine::shutdown()
@@ -267,7 +290,16 @@ void AudioEngine::syncMixerFromProject (const Project& project)
         if (track->isMidi())
         {
             ensureInstrument (i, track->instrumentSlot.instrumentId);
-            node.active.store (node.instrument.load() != nullptr);
+
+            if (auto* instrument = node.instrument.load())
+            {
+                const auto ready = isInstrumentReadyForProcessing (track->instrumentLoadState);
+                node.active.store (instrument->isExternalPlugin() ? ready : true);
+            }
+            else
+            {
+                node.active.store (false);
+            }
         }
         else
         {
@@ -289,6 +321,11 @@ void AudioEngine::ensureInstrument (int trackIndex, const juce::String& instrume
                                                   : juce::String (InstrumentRegistry::testSynthId);
 
     if (existing != nullptr && existing->getInstrumentId() == wanted)
+        return;
+
+    // Mixer sync must not replace a hosted VST with Test Synth when the slot
+    // still has a leftover built-in id during async Orchestra Sampler loads.
+    if (existing != nullptr && existing->isExternalPlugin())
         return;
 
     // Hosted VST3s are loaded only through EngineAPI, so a mixer sync never instantiates
@@ -327,7 +364,10 @@ void AudioEngine::setTrackInstrument (int trackIndex, std::unique_ptr<PluginInst
     // audio thread can read the pointer without ever running a destructor in a callback.
     ownedInstruments.push_back (std::move (instance));
     nodes[(size_t) trackIndex].instrument.store (raw);
-    nodes[(size_t) trackIndex].active.store (true);
+    nodes[(size_t) trackIndex].active.store (! raw->isExternalPlugin());
+
+    if (raw->isExternalPlugin())
+        raw->blockProcessing();
 
     if (heavy)
         attachAudioCallback();
@@ -521,11 +561,25 @@ void AudioEngine::prepareNodes (double sampleRate, int blockSize)
     }
 }
 
+void AudioEngine::queueAllNotesOff (int trackIndex)
+{
+    if (! juce::isPositiveAndBelow (trackIndex, maxTracks))
+        return;
+
+    const auto channel = juce::jlimit (1, 16, nodes[(size_t) trackIndex].midiChannel.load());
+    auto& midi = trackMidi[(size_t) trackIndex];
+    midi.addEvent (juce::MidiMessage::controllerEvent (channel, 64, 0), 0);
+    midi.addEvent (juce::MidiMessage::controllerEvent (channel, 123, 0), 0);
+}
+
 void AudioEngine::resetAllInstruments()
 {
-    for (auto& node : nodes)
-        if (auto* instrument = node.instrument.load())
-            instrument->reset();
+    // Real-time safe: never call PluginInstance virtuals here.  A vtable mismatch once
+    // routed reset() into saveState() and allocated on this thread.  CC123 reaches
+    // built-ins and hosted VSTs through the normal MIDI path in the same block.
+    for (int i = 0; i < maxTracks; ++i)
+        if (nodes[(size_t) i].instrument.load() != nullptr)
+            queueAllNotesOff (i);
 }
 
 //==============================================================================
@@ -536,6 +590,15 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const*,
                                                     int numSamples,
                                                     const juce::AudioIODeviceCallbackContext&)
 {
+    struct CallbackScope
+    {
+        std::atomic<int>& counter;
+        CallbackScope (std::atomic<int>& c) : counter (c) { counter.fetch_add (1, std::memory_order_acq_rel); }
+        ~CallbackScope() { counter.fetch_sub (1, std::memory_order_acq_rel); }
+    };
+
+    const CallbackScope callbackScope (audioCallbackInFlight);
+
     const auto writeSilence = [outputChannelData, numOutputChannels, numSamples]
     {
         for (int channel = 0; channel < numOutputChannels; ++channel)
@@ -622,7 +685,7 @@ void AudioEngine::audioDeviceIOCallbackWithContext (const float* const*,
         auto& node = nodes[(size_t) i];
         auto* instrument = node.instrument.load();
 
-        if (instrument == nullptr || ! node.active.load())
+        if (instrument == nullptr || ! node.active.load() || ! instrument->isProcessReady())
             continue;
 
         auto& midi = trackMidi[(size_t) i];

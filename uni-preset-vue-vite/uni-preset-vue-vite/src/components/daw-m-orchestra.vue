@@ -1,11 +1,21 @@
 <template>
-  <view class="mo">
+  <view class="mo" :class="{ dense }">
     <view class="top">
-      <view class="brand">
-        <text class="logo">M Orchestra</text>
-        <text class="sub">Cloud orchestral plugin</text>
+      <view class="brand" @click.stop="dense && (libOpen = !libOpen)">
+        <text class="logo">{{ dense ? currentName : 'M Orchestra' }}</text>
+        <text class="sub" :class="{ err: dense && isError }">{{ subText }}</text>
       </view>
       <text class="status" :class="{ ok: isReady, err: isError }">{{ statusText }}</text>
+      <view
+        v-if="dense"
+        class="swap"
+        :class="{ on: libOpen }"
+        title="Browse instruments"
+        aria-label="Browse instruments"
+        @click.stop="libOpen = !libOpen"
+      >
+        <daw-icon name="grid" :size="16" />
+      </view>
       <view class="swap" title="Change instrument" aria-label="Change instrument" @click.stop="changePlugin">
         <daw-icon name="swap" :size="16" />
       </view>
@@ -18,7 +28,7 @@
           :key="family.id"
           class="fam"
           :class="{ on: familyId === family.id }"
-          @click="familyId = family.id"
+          @click="onFamilyTap(family.id)"
         >
           <text class="fam-ico">{{ familyMark(family.id) }}</text>
           <text class="fam-lab">{{ family.label }}</text>
@@ -26,7 +36,7 @@
       </view>
 
       <view class="stage">
-        <view class="hero">
+        <view v-if="!dense" class="hero">
           <view class="ring">
             <view class="halo" />
             <text class="fam-name">{{ currentFamilyLabel }}</text>
@@ -46,15 +56,18 @@
         </view>
 
         <view class="knobs">
-          <view v-for="ctrl in knobs" :key="ctrl.id" class="knob-cell">
+          <view v-for="ctrl in visibleKnobs" :key="ctrl.id" class="knob-cell">
             <dsp-knob
               :model-value="controllerValue(ctrl)"
               :disabled="!ctrl.mapped"
               :label="ctrl.displayName"
-              size="md"
+              :size="dense ? 'sm' : 'md'"
               accent="#c9a46c"
               @update:model-value="onKnob(ctrl, $event)"
             />
+          </view>
+          <view v-if="hasHiddenKnobs" class="more" @click.stop="knobsExpanded = !knobsExpanded">
+            {{ knobsExpanded ? 'Less' : 'More' }}
           </view>
         </view>
 
@@ -64,7 +77,7 @@
             :key="key.pitch"
             class="key"
             :class="{ black: key.black, down: held[key.pitch] }"
-            :style="key.black ? { left: key.left + '%' } : null"
+            :style="{ left: key.left + '%', width: key.width + '%' }"
             @pointerdown.prevent="noteOn(key.pitch)"
             @pointerup="noteOff(key.pitch)"
             @pointercancel="noteOff(key.pitch)"
@@ -72,7 +85,7 @@
         </view>
       </view>
 
-      <view class="library">
+      <view v-if="!dense || libOpen" class="library">
         <text class="lib-cap">{{ currentFamilyLabel }}</text>
         <view class="grid">
           <view
@@ -93,7 +106,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import DspKnob from './dsp/dsp-knob.vue'
 import DawIcon from './daw-icon.vue'
 import {
@@ -116,11 +129,37 @@ import {
   setController,
   previewNoteOn,
   previewNoteOff,
-  openPluginPicker
+  openPluginPicker,
+  isLite
 } from '../store/session.js'
+
+const props = defineProps({
+  compact: { type: Boolean, default: false }
+})
 
 const familyId = ref('strings')
 const held = reactive({})
+const libOpen = ref(false)
+const knobsExpanded = ref(false)
+const narrow = ref(false)
+
+// The lite track sheet stacks everything into one tall panel, so the same
+// component drops the hero ring and the side library when space is tight.
+const dense = computed(() => props.compact || isLite() || narrow.value)
+
+function measure () {
+  narrow.value = typeof window !== 'undefined' && window.innerWidth < 720
+}
+
+measure()
+
+onMounted(() => {
+  if (typeof window !== 'undefined') window.addEventListener('resize', measure)
+})
+
+onUnmounted(() => {
+  if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
+})
 const track = computed(() => getSelectedTrack())
 const definition = computed(() => track.value ? definitionById(track.value.definitionId) : null)
 const selectedId = computed(() => (track.value && track.value.definitionId) || '')
@@ -193,20 +232,42 @@ const knobs = computed(() => {
     .filter((ctrl) => ctrl.id !== 'pedal')
 })
 
+// With the status chip hidden in dense mode, the subtitle carries load state so
+// waiting instruments do not need a toast.
+const subText = computed(() => {
+  if (!dense.value) return 'Cloud orchestral plugin'
+  if (!isReady.value && statusText.value) return statusText.value
+  return currentFamilyLabel.value + ' · ' + techniqueLabel.value
+})
+
+const visibleKnobs = computed(() => (
+  dense.value && !knobsExpanded.value ? knobs.value.slice(0, 3) : knobs.value
+))
+
+const hasHiddenKnobs = computed(() => dense.value && knobs.value.length > 3)
+
+// A shorter span on phones keeps each white key wide enough for a thumb.
 const keys = computed(() => {
+  const top = dense.value ? 67 : 72
   const whites = []
   const blacks = []
   let whiteIndex = 0
-  for (let pitch = 48; pitch <= 72; pitch++) {
+  for (let pitch = 48; pitch <= top; pitch++) {
     const pc = pitch % 12
     const black = pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10
-    if (black) blacks.push({ pitch, black: true, left: (whiteIndex - 0.35) * (100 / 15) })
+    if (black) blacks.push({ pitch, black: true, whiteIndex })
     else {
-      whites.push({ pitch, black: false })
+      whites.push({ pitch, black: false, whiteIndex })
       whiteIndex += 1
     }
   }
-  return whites.concat(blacks)
+  const step = 100 / Math.max(1, whiteIndex)
+  return whites.map((key) => ({ ...key, left: key.whiteIndex * step, width: step }))
+    .concat(blacks.map((key) => ({
+      ...key,
+      left: (key.whiteIndex - 0.34) * step,
+      width: step * 0.68
+    })))
 })
 
 function familyMark (id) {
@@ -238,8 +299,14 @@ function onKnob (ctrl, value) {
   setController(track.value, ctrl.id, value)
 }
 
+function onFamilyTap (id) {
+  familyId.value = id
+  if (dense.value) libOpen.value = true
+}
+
 function selectInstrument (item) {
   if (!item.available || !track.value) return
+  if (dense.value) libOpen.value = false
   if (item.id === selectedId.value) return
   loadInstrument(track.value, item.id)
 }
@@ -391,11 +458,12 @@ function changePlugin () {
   touch-action: none;
   flex-shrink: 0;
 }
+/* Left and width come from the key map so the span can shrink on phones. */
 .key {
-  position: absolute; top: 0; bottom: 0; width: calc(100% / 15);
+  position: absolute; top: 0; bottom: 0;
   background: #ece6dc; border: 1px solid #c8c2b8;
 }
-.key.black { height: 48%; width: calc(100% / 22); background: #161616; z-index: 2; border-color: #000; }
+.key.black { height: 48%; background: #161616; z-index: 2; border-color: #000; }
 .key.down { background: #c9a46c; }
 .key.black.down { background: #8a7349; }
 .library {
@@ -429,9 +497,90 @@ function changePlugin () {
 }
 .card.on { border-color: #c9a46c; }
 .card.dim { opacity: 0.38; cursor: default; }
-.card-ico { font-size: 18px; filter: grayscale(0.2); }
+.card-ico { font-size: 18px; }
 .card-name { font-size: 10px; letter-spacing: 0.04em; text-align: center; color: #e6e6e6; }
 .card-miss { font-size: 9px; color: #8d8d8d; }
+.more {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  padding: 0 14px;
+  border: 1px solid #3a3a3a;
+  border-radius: 999px;
+  color: #b0b0b0;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* Dense layout: one title line, chip families, single-column library that
+   collapses after a pick, three knobs, and a shorter thumb-friendly keyboard. */
+.mo.dense .top { height: 48px; padding: 0 10px; gap: 8px; }
+.mo.dense .logo {
+  font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: none;
+  color: #e6e6e6;
+}
+.mo.dense .sub { font-size: 10px; letter-spacing: 0.1em; }
+.mo.dense .sub.err { color: #d08a8a; }
+.mo.dense .brand { flex: 1; min-width: 0; }
+.mo.dense .status { display: none; }
+.mo.dense .swap { width: 40px; height: 40px; }
+.mo.dense .swap.on { border-color: #c9a46c; color: #c9a46c; }
+.mo.dense .body { flex-direction: column; }
+.mo.dense .families {
+  width: auto;
+  height: auto;
+  display: flex;
+  flex-direction: row;
+  gap: 6px;
+  border-right: 0;
+  border-bottom: 1px solid #2a2a2a;
+  padding: 6px 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  flex-shrink: 0;
+}
+.mo.dense .fam {
+  flex-direction: row;
+  align-items: center;
+  gap: 5px;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid #2f2f2f;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+.mo.dense .fam-ico { font-size: 13px; }
+.mo.dense .fam-lab { font-size: 10px; }
+.mo.dense .stage { padding: 8px 10px 6px; }
+.mo.dense .arts { flex-wrap: wrap; gap: 6px; margin-bottom: 6px; }
+.mo.dense .art { min-height: 36px; display: flex; align-items: center; padding: 0 12px; }
+.mo.dense .knobs { gap: 6px; margin: 2px 0 8px; align-items: center; }
+.mo.dense .knob-cell { min-width: 62px; }
+.mo.dense .keys { height: 56px; }
+.mo.dense .key.black { height: 54%; }
+.mo.dense .library {
+  width: auto;
+  max-height: 46%;
+  border-left: 0;
+  border-top: 1px solid #2a2a2a;
+}
+.mo.dense .grid { grid-template-columns: 1fr; gap: 0; }
+.mo.dense .card {
+  min-height: 46px;
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 10px;
+  border: 0;
+  border-bottom: 1px solid #242424;
+  border-radius: 0;
+  background: transparent;
+  padding: 0 6px;
+}
+.mo.dense .card.on { background: #1c1c1c; box-shadow: inset 2px 0 #c9a46c; }
+.mo.dense .card-name { font-size: 13px; text-align: left; letter-spacing: 0; }
 @media (max-width: 700px) {
   .body { flex-direction: column; }
   .families {

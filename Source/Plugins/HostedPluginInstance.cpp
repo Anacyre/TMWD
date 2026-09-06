@@ -1,13 +1,137 @@
 #include "HostedPluginInstance.h"
 
+#if JUCE_WINDOWS
+ #include <excpt.h>
+#endif
+
+namespace
+{
+    bool layoutIsPlayable (const juce::AudioPluginInstance& plugin) noexcept
+    {
+        return plugin.getTotalNumInputChannels() == 0
+            && plugin.getTotalNumOutputChannels() > 0;
+    }
+
+    juce::AudioChannelSet preferredMainOutputLayout (juce::AudioProcessor::Bus& mainBus)
+    {
+        for (const auto channels : { 2, 1 })
+        {
+            const auto layout = mainBus.supportedLayoutWithChannels (channels);
+
+            if (! layout.isDisabled() && mainBus.isLayoutSupported (layout))
+                return layout;
+        }
+
+        const auto current = mainBus.getCurrentLayout();
+
+        if (! current.isDisabled() && current.size() <= 2)
+            return current;
+
+        return {};
+    }
+
+   #if JUCE_WINDOWS
+    bool processBlockSEH (juce::AudioPluginInstance& instance,
+                          juce::AudioBuffer<float>& buffer,
+                          juce::MidiBuffer& midi)
+    {
+        __try
+        {
+            instance.processBlock (buffer, midi);
+            return true;
+        }
+        __except (EXCEPTION_EXECUTE_HANDLER)
+        {
+            return false;
+        }
+    }
+   #endif
+}
+
 HostedPluginInstance::HostedPluginInstance (std::unique_ptr<juce::AudioPluginInstance> pluginToOwn,
                                             juce::String instrumentIdToUse,
                                             juce::String displayNameToUse)
     : plugin (std::move (pluginToOwn)),
       instrumentId (std::move (instrumentIdToUse)),
-      displayName (std::move (displayNameToUse))
+      displayName (std::move (displayNameToUse)),
+      editorTitle (displayName)
 {
     jassert (plugin != nullptr);
+}
+
+HostedPluginInstance::~HostedPluginInstance()
+{
+    destroyNativeEditor();
+}
+
+void HostedPluginInstance::destroyNativeEditor()
+{
+    nativeEditorReady.store (false, std::memory_order_release);
+    nativeEditorWindow.reset();
+}
+
+bool HostedPluginInstance::ensureNativeEditor()
+{
+    if (plugin == nullptr)
+        return false;
+
+    if (nativeEditorWindow != nullptr && plugin->getActiveEditor() != nullptr)
+    {
+        nativeEditorReady.store (true, std::memory_order_release);
+        nativeEditorWindow->setName (editorTitle);
+        nativeEditorWindow->setVisible (true);
+        nativeEditorWindow->toFront (true);
+        return true;
+    }
+
+    if (auto* existing = plugin->getActiveEditor())
+    {
+        nativeEditorReady.store (true, std::memory_order_release);
+        existing->toFront (true);
+        return true;
+    }
+
+    if (! plugin->hasEditor())
+        return false;
+
+    juce::Logger::writeToLog ("[Plugin] opening native editor for " + editorTitle);
+    auto* created = plugin->createEditorAndMakeActive();
+
+    if (created == nullptr)
+        return false;
+
+    class HostWindow  : public juce::DocumentWindow
+    {
+    public:
+        HostWindow (juce::AudioProcessorEditor* editorToOwn, juce::String title)
+            : DocumentWindow (title.isNotEmpty() ? title : juce::String ("Plugin Editor"),
+                              juce::Colour (0xff121212),
+                              juce::DocumentWindow::minimiseButton)
+        {
+            setUsingNativeTitleBar (true);
+            setContentOwned (editorToOwn, true);
+            setResizable (true, false);
+            setResizeLimits (400, 280, 2400, 1600);
+            centreWithSize (juce::jlimit (480, 1600, editorToOwn->getWidth()),
+                            juce::jlimit (320, 1100, editorToOwn->getHeight()));
+            setVisible (true);
+        }
+
+        void closeButtonPressed() override {}
+    };
+
+    nativeEditorWindow = std::make_unique<HostWindow> (created, editorTitle);
+    nativeEditorReady.store (true, std::memory_order_release);
+    juce::Logger::writeToLog ("[Plugin] native editor window ready for " + editorTitle);
+    return true;
+}
+
+void HostedPluginInstance::setNativeEditorTitle (const juce::String& title)
+{
+    editorTitle = title.isNotEmpty() ? title : displayName;
+
+    if (nativeEditorWindow != nullptr)
+        nativeEditorWindow->setName (editorTitle);
 }
 
 void HostedPluginInstance::configureBuses()
@@ -15,8 +139,27 @@ void HostedPluginInstance::configureBuses()
     if (plugin == nullptr)
         return;
 
-    // setBusesLayout asserts that these arrays have exactly getBusCount() entries.
-    // BBCSO / Synchron expose many output buses; never rebuild the arrays from scratch.
+    busesConfigured = false;
+
+    if (instrumentId == InstrumentRegistry::synchronPlayerId)
+    {
+        busesConfigured = plugin->getTotalNumOutputChannels() > 0;
+        return;
+    }
+
+    for (int bus = 0; bus < plugin->getBusCount (true); ++bus)
+        if (auto* inputBus = plugin->getBus (true, bus))
+            if (inputBus->isEnabled())
+                inputBus->enable (false);
+
+    plugin->disableNonMainBuses();
+
+    if (layoutIsPlayable (*plugin))
+    {
+        busesConfigured = true;
+        return;
+    }
+
     auto layout = plugin->getBusesLayout();
 
     for (int i = 0; i < layout.inputBuses.size(); ++i)
@@ -24,20 +167,31 @@ void HostedPluginInstance::configureBuses()
 
     if (auto* main = plugin->getBus (false, 0))
     {
-        const auto stereo = main->supportedLayoutWithChannels (2);
+        const auto mainLayout = preferredMainOutputLayout (*main);
 
-        if (! stereo.isDisabled())
-            layout.outputBuses.getReference (0) = stereo;
+        if (! mainLayout.isDisabled())
+            layout.outputBuses.getReference (0) = mainLayout;
     }
 
     if (plugin->checkBusesLayoutSupported (layout) && plugin->setBusesLayout (layout))
-    {
         plugin->disableNonMainBuses();
-        return;
+
+    if (! layoutIsPlayable (*plugin))
+    {
+        for (int bus = 1; bus < plugin->getBusCount (false); ++bus)
+            if (auto* outputBus = plugin->getBus (false, bus))
+                if (outputBus->isEnabled())
+                    outputBus->enable (false);
+
+        plugin->disableNonMainBuses();
     }
 
-    if (! plugin->disableNonMainBuses())
-        plugin->enableAllBuses();
+    busesConfigured = layoutIsPlayable (*plugin);
+
+    if (! busesConfigured)
+        juce::Logger::writeToLog ("[Plugin] " + displayName
+                                  + " could not be reduced to stereo (outs="
+                                  + juce::String (plugin->getTotalNumOutputChannels()) + ")");
 }
 
 void HostedPluginInstance::prepare (double sampleRate, int maximumBlockSize)
@@ -48,6 +202,7 @@ void HostedPluginInstance::prepare (double sampleRate, int maximumBlockSize)
     const auto rate = sampleRate > 0.0 ? sampleRate : 44100.0;
     const auto block = juce::jmax (16, maximumBlockSize);
     const auto alreadyPrepared = prepared
+        && busesConfigured
         && juce::approximatelyEqual (preparedSampleRate, rate)
         && preparedBlockSize == block;
 
@@ -57,36 +212,126 @@ void HostedPluginInstance::prepare (double sampleRate, int maximumBlockSize)
         plugin->setNonRealtime (false);
         plugin->setRateAndBufferSizeDetails (rate, block);
         plugin->prepareToPlay (rate, block);
+        plugin->suspendProcessing (false);
         preparedSampleRate = rate;
         preparedBlockSize = block;
         prepared = true;
     }
 
-    const auto channels = juce::jmax (2, plugin->getTotalNumInputChannels(),
-                                      plugin->getTotalNumOutputChannels());
+    const auto channels = juce::jmax (2, plugin->getTotalNumOutputChannels());
     work.setSize (channels, juce::jmax (block, 4096), false, true, true);
+}
+
+void HostedPluginInstance::forceReprepare (double sampleRate, int maximumBlockSize)
+{
+    prepared = false;
+    busesConfigured = false;
+    prepare (sampleRate, maximumBlockSize);
+}
+
+bool HostedPluginInstance::hasValidBusLayout() const
+{
+    if (plugin == nullptr || ! prepared || ! busesConfigured)
+        return false;
+
+    if (instrumentId == InstrumentRegistry::synchronPlayerId)
+        return plugin->getTotalNumOutputChannels() > 0;
+
+    return plugin->getTotalNumInputChannels() == 0
+        && plugin->getTotalNumOutputChannels() > 0;
+}
+
+bool HostedPluginInstance::isProcessReady() const
+{
+    if (! hasValidBusLayout() || ! processingAllowed.load (std::memory_order_acquire))
+        return false;
+
+    if (instrumentId == InstrumentRegistry::synchronPlayerId)
+        return nativeEditorReady.load (std::memory_order_acquire)
+            && ! processCrashed.load (std::memory_order_acquire);
+
+    return true;
+}
+
+void HostedPluginInstance::allowProcessing()
+{
+    if (! hasValidBusLayout())
+    {
+        processingAllowed.store (false, std::memory_order_release);
+        return;
+    }
+
+    if (plugin != nullptr)
+        plugin->suspendProcessing (false);
+
+    processingAllowed.store (true, std::memory_order_release);
+}
+
+bool HostedPluginInstance::runOfflineWarmup (int)
+{
+    // Do not call processBlock here. Vienna Synchron Player writes through a
+    // null object (AV at 0x20) when processed on the message thread before
+    // its player is constructed. Audio-thread mute window covers the rest.
+    return plugin != nullptr && prepared;
+}
+
+void HostedPluginInstance::blockProcessing()
+{
+    processingAllowed.store (false, std::memory_order_release);
+
+    if (plugin != nullptr)
+        plugin->suspendProcessing (true);
+}
+
+bool HostedPluginInstance::runProcessBlockSafe (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
+{
+    if (plugin == nullptr)
+        return false;
+
+   #if JUCE_WINDOWS
+    if (! processBlockSEH (*plugin, buffer, midi))
+    {
+        processCrashed.store (true, std::memory_order_release);
+        blockProcessing();
+        juce::Logger::writeToLog ("[Plugin] " + displayName + " crashed during process; track silenced.");
+        return false;
+    }
+    return true;
+   #else
+    plugin->processBlock (buffer, midi);
+    return true;
+   #endif
 }
 
 void HostedPluginInstance::process (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
-    if (plugin == nullptr || ! prepared)
+    const auto warmupActive = offlineWarmupActive.load (std::memory_order_acquire);
+    const auto crashed = processCrashed.load (std::memory_order_acquire);
+    const auto ready = isProcessReady();
+
+    if (plugin == nullptr || warmupActive || ! ready || crashed)
     {
         buffer.clear();
         return;
     }
 
     const auto numSamples = buffer.getNumSamples();
-    const auto pluginIns = plugin->getTotalNumInputChannels();
     const auto pluginOuts = plugin->getTotalNumOutputChannels();
 
-    if (pluginIns <= buffer.getNumChannels() && pluginOuts <= buffer.getNumChannels())
+    juce::MidiBuffer midiToUse;
+    midiToUse = midi;
+
+    if (pluginOuts <= buffer.getNumChannels())
     {
-        plugin->processBlock (buffer, midi);
-        capturePeak (buffer);
+        if (! runProcessBlockSafe (buffer, midiToUse))
+            buffer.clear();
+        else
+            capturePeak (buffer);
+
         return;
     }
 
-    if (work.getNumSamples() < numSamples)
+    if (work.getNumSamples() < numSamples || work.getNumChannels() < pluginOuts)
     {
         buffer.clear();
         return;
@@ -94,17 +339,17 @@ void HostedPluginInstance::process (juce::AudioBuffer<float>& buffer, juce::Midi
 
     work.clear();
 
-    for (int ch = 0; ch < juce::jmin (buffer.getNumChannels(), work.getNumChannels()); ++ch)
-        work.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+    juce::AudioBuffer<float> view (work.getArrayOfWritePointers(), pluginOuts, 0, numSamples);
 
-    juce::AudioBuffer<float> view (work.getArrayOfWritePointers(),
-                                   juce::jmax (1, pluginOuts),
-                                   0, numSamples);
-    plugin->processBlock (view, midi);
+    if (! runProcessBlockSafe (view, midiToUse))
+    {
+        buffer.clear();
+        return;
+    }
 
     buffer.clear();
 
-    for (int ch = 0; ch < juce::jmin (buffer.getNumChannels(), pluginOuts, work.getNumChannels()); ++ch)
+    for (int ch = 0; ch < juce::jmin (buffer.getNumChannels(), pluginOuts); ++ch)
         buffer.copyFrom (ch, 0, work, ch, 0, numSamples);
 
     capturePeak (buffer);
@@ -133,8 +378,14 @@ juce::String HostedPluginInstance::getPluginVersion() const
 
 void HostedPluginInstance::reset()
 {
-    if (plugin != nullptr)
-        plugin->reset();
+    if (plugin == nullptr)
+        return;
+
+    if (auto* mm = juce::MessageManager::getInstanceWithoutCreating())
+        if (! mm->isThisTheMessageThread())
+            return;
+
+    plugin->reset();
 }
 
 juce::MemoryBlock HostedPluginInstance::saveState() const
@@ -152,7 +403,12 @@ bool HostedPluginInstance::restoreState (const juce::MemoryBlock& state)
     if (plugin == nullptr || state.isEmpty())
         return false;
 
+    plugin->suspendProcessing (true);
     plugin->setStateInformation (state.getData(), (int) state.getSize());
+    prepared = false;
+    busesConfigured = false;
+    processingAllowed.store (false, std::memory_order_release);
+    nativeEditorReady.store (false, std::memory_order_release);
     return true;
 }
 

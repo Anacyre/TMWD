@@ -45,6 +45,10 @@ public:
         editor without deadlocking against processBlock. */
     void detachAudioCallback();
     void attachAudioCallback();
+    /** Blocks until any in-flight audioDeviceIOCallbackWithContext call returns. */
+    void waitForAudioCallbackIdle();
+    /** Re-add the IO callback after a VST load detached it and the device stopped. */
+    void ensureAudioCallbackAttached();
     bool isAudioCallbackAttached() const noexcept { return audioCallbackAttached; }
 
     bool isRunning() const noexcept          { return deviceRunning.load(); }
@@ -159,6 +163,7 @@ private:
     void prepareNodes (double sampleRate, int blockSize);
     void ensureInstrument (int trackIndex, const juce::String& instrumentId);
     void collectRetiredSequences();
+    void queueAllNotesOff (int trackIndex);
     void resetAllInstruments();
     void renderMetronome (const Transport::Segment* segments, int numSegments,
                           juce::AudioBuffer<float>& master, int numSamples);
@@ -188,6 +193,7 @@ private:
     std::atomic<bool> deviceRunning { false };
     std::atomic<bool> panicRequested { false };
     std::atomic<bool> metronomeEnabled { false };
+    std::atomic<int> audioCallbackInFlight { 0 };
     std::atomic<double> currentSampleRate { 44100.0 };
     std::atomic<int> currentBlockSize { 512 };
     std::atomic<int> timeSigNumerator { 4 };

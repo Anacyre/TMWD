@@ -1,8 +1,11 @@
-name = "dawweb"
+# The workers.dev hostname is <name>.<account subdomain>.workers.dev, so this
+# name is what puts the site on tech-media-sound-station.tmclassweb.workers.dev.
+name = "tech-media-sound-station"
 compatibility_date = "2026-08-28"
+workers_dev = true
 
-[build]
-command = "npm run build"
+# The H5 bundle is built by `npm run deploy` before wrangler runs, so there is
+# no [build] block here; adding one would build the site twice.
 
 [assets]
 directory = "./uni-preset-vue-vite/uni-preset-vue-vite/dist/build/h5"

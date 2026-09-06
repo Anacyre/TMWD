@@ -11,11 +11,14 @@
           v-for="item in pluginItems"
           :key="item.id"
           class="plugin"
-          :class="{ on: selected && selected.id === item.id, dim: item.available === false }"
+          :class="{ on: selected && selected.id === item.id, 'needs-pc': item.available === false }"
           @click="onPluginTap(item)"
           @dblclick="choosePlugin(item)"
         >
-          <text class="pname">{{ item.displayName }}</text>
+          <view class="row">
+            <text class="pname">{{ item.displayName }}</text>
+            <text v-if="item.available === false" class="tag">Needs PC</text>
+          </view>
           <text class="pdetail">{{ item.detail }}</text>
         </view>
       </view>
@@ -34,12 +37,15 @@
             v-for="item in currentItems"
             :key="item.id"
             class="item"
-            :class="{ on: selected && selected.id === item.id, dim: !item.available }"
+            :class="{ on: selected && selected.id === item.id, 'needs-pc': item.available === false }"
             @click="onPatchTap(item)"
             @dblclick="choosePatch(item)"
           >
-            <text>{{ item.displayName }}</text>
-            <text class="src">{{ item.available === false ? (item.sourcePlugin || '需要电脑上的 DawWeb 引擎') : (item.sourcePlugin || '') }}</text>
+            <view class="row">
+              <text>{{ item.displayName }}</text>
+              <text v-if="item.available === false" class="tag">Needs PC</text>
+            </view>
+            <text class="src">{{ item.available === false ? '在电脑上运行 DawWeb 引擎后可用' : (item.sourcePlugin || '') }}</text>
           </view>
         </scroll-view>
       </view>
@@ -223,21 +229,50 @@ function confirm () {
   border-right: 1px solid #2a2a2a;
   height: 100%;
 }
-.cat { padding: 7px 12px; color: #8d8d8d; font-size: 12px; cursor: pointer; }
+.cat {
+  padding: 7px 12px;
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  color: #8d8d8d;
+  font-size: 12px;
+  cursor: pointer;
+}
 .cat.on { background: #232323; color: #e6e6e6; border-left: 2px solid #4da3ff; }
 .list { flex: 1; height: 100%; background: #0e0e0e; }
 .item {
   padding: 8px 12px;
+  min-height: 44px;
   color: #e6e6e6;
   font-size: 13px;
   cursor: pointer;
   display: flex;
   flex-direction: column;
+  justify-content: center;
+  box-sizing: border-box;
 }
 .item:hover { background: #1c1c1c; }
 .item.on { background: #232323; box-shadow: inset 2px 0 #4da3ff; }
-.item.dim { color: #6a6a6a; }
 .src { color: #6a6a6a; font-size: 11px; }
+/* Engine-only patches keep their colour and get a badge, so the list does not
+   read as "half the library is broken" while running in the browser. */
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.tag {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: #6fd0f5;
+  background: rgba(77, 199, 255, 0.12);
+  border: 1px solid rgba(77, 199, 255, 0.32);
+}
+.needs-pc .src, .needs-pc .pdetail { color: #7f96a1; }
 .foot {
   height: 40px;
   border-top: 1px solid #2a2a2a;

@@ -65,6 +65,9 @@
       <view v-else-if="name === 'scale'" class="scale-icon">
         <view /><view /><view /><view /><view />
       </view>
+      <view v-else-if="name === 'cloud'" class="cloud">
+        <view class="puff" /><view class="base" />
+      </view>
     </view>
   </view>
 </template>
@@ -655,6 +658,29 @@ const boxStyle = computed(() => {
   border-radius: 50%;
   background: currentColor;
   box-shadow: 0.12em -0.22em 0 -0.04em currentColor;
+}
+.cloud {
+  left: 50%;
+  top: 50%;
+  width: 0.86em;
+  height: 0.56em;
+  transform: translate(-50%, -50%);
+}
+.cloud .puff {
+  left: 0.16em;
+  top: 0;
+  width: 0.44em;
+  height: 0.44em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.cloud .base {
+  left: 0;
+  bottom: 0.02em;
+  width: 0.86em;
+  height: 0.28em;
+  border-radius: 0.14em;
+  background: currentColor;
 }
 .status-dot {
   left: 50%;

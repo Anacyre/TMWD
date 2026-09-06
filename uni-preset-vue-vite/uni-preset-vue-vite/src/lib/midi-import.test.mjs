@@ -44,6 +44,18 @@ const p1 = parseMidiFile(mid1.buffer.slice(mid1.byteOffset, mid1.byteOffset + mi
 assert.equal(p1.notes.length, 2)
 assert.deepEqual(p1.notes.map((n) => n.pitch), [62, 64])
 
+// Track-name meta before the first note (FL Studio / format-1 exports).
+const namedTrack = Buffer.concat([
+  varLen(0), Buffer.from([0xff, 0x03, 0x05, 0x43, 0x65, 0x6c, 0x6c, 0x6f]),
+  varLen(0), Buffer.from([0x90, 50, 88]),
+  varLen(480), Buffer.from([0x80, 50, 0]),
+  varLen(0), Buffer.from([0xff, 0x2f, 0x00])
+])
+const namedMidi = buildMidi([namedTrack])
+const named = parseMidiFile(namedMidi.buffer.slice(namedMidi.byteOffset, namedMidi.byteOffset + namedMidi.byteLength))
+assert.equal(named.notes.length, 1, 'track-name meta must not drop notes')
+assert.equal(named.notes[0].pitch, 50)
+
 // Different pitches => different content
 const noteTrack2 = Buffer.concat([
   varLen(0), Buffer.from([0x90, 48, 80]),

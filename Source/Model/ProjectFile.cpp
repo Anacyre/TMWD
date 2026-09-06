@@ -301,11 +301,13 @@ bool ProjectFile::fromVar (const juce::var& parsed, Project& project, juce::Stri
             track.colour = juce::Colour ((juce::uint32) (int) entry.getProperty ("colour", (int) 0xff4a90d9));
             track.section = entry.getProperty ("section", {}).toString();
             track.instrument = entry.getProperty ("instrument", {}).toString();
-            track.instrumentDefinitionId = entry.getProperty ("instrumentId", {}).toString();
+            track.instrumentDefinitionId = entry.getProperty ("instrumentId",
+                entry.getProperty ("definitionId", {})).toString();
             track.instrumentSource = ProjectSchema::inferSource (entry.getProperty ("source", {}).toString(),
                                                                  track.instrumentDefinitionId);
             track.presetId = entry.getProperty ("presetId", {}).toString();
-            track.techniqueId = entry.getProperty ("technique", {}).toString();
+            track.techniqueId = entry.getProperty ("technique",
+                entry.getProperty ("techniqueId", {})).toString();
             track.legatoEnabled = (bool) entry.getProperty ("legato", false);
             track.instrumentSlot.instrumentId = entry.getProperty ("sourcePlugin", {}).toString();
             track.instrumentSlot.name = track.instrument;

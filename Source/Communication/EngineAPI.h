@@ -8,6 +8,7 @@
 #include "../Plugins/PluginStateStore.h"
 #include <array>
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <map>
 #include <memory>
@@ -158,7 +159,7 @@ public:
     juce::var describeNotes() const;
     juce::var takeNoteDelta();
 
-    juce::String getSessionId() const { return sessionId; }
+    juce::String getSessionId() const;
     static constexpr int maxAudioSessions = 1;
 
     void beginEdit (const juce::String& name);
@@ -212,6 +213,11 @@ private:
                                   bool requireCapturedState);
     void markReadyWhenSettled (int trackIndex, const juce::String& definitionId, int generation,
                                const juce::StringArray& notes, int delayMs);
+    void scheduleSynchronWarmupThenReady (int trackIndex, const juce::String& definitionId, int generation,
+                                          juce::StringArray notes, bool wasAudioAttached, bool deferReady,
+                                          const juce::String& displayName);
+    void startNextSynchronWarmup();
+    void finishSynchronWarmup (bool wasAudioAttached);
     void refreshPresetAvailability();
     void finishReady (TrackData& track, const juce::StringArray& notes);
     void finishProjectLoad();
@@ -233,11 +239,31 @@ private:
     int loadEpoch = 0;
     std::array<int, AudioEngine::maxTracks> trackLoadGeneration {};
     std::shared_ptr<std::atomic<bool>> alive { std::make_shared<std::atomic<bool>> (true) };
+    std::atomic<int> pendingSynchronWarmups { 0 };
+
+    /*  Synchron Player needs its native editor open before processBlock is safe, and
+        that sequence detaches the audio callback.  Overlapping loads would leave the
+        callback detached and later instances silent, so they run one at a time.
+    */
+    struct SynchronWarmupJob
+    {
+        int trackIndex = 0;
+        juce::String definitionId;
+        int generation = 0;
+        juce::StringArray notes;
+        bool wasAudioAttached = false;
+        bool deferReady = false;
+    };
+
+    std::deque<SynchronWarmupJob> synchronWarmupQueue;
+    bool synchronWarmupActive = false;
     std::map<juce::uint64, juce::uint32> scheduledNoteOffs;
     juce::uint32 noteOffGeneration = 0;
     double loopStartBeats = 0.0;
     double loopEndBeats = 32.0;
-    juce::String sessionId;
+    // UTF-8 UUID, written once in the constructor. Never a juce::String: concurrent
+    // copies of the same StringHolder crash in StringHolderUtils::retain.
+    std::array<char, 48> sessionId {};
 
     struct EditSnapshot
     {

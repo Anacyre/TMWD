@@ -210,26 +210,21 @@ void PluginHost::createInstanceAsync (const juce::String& instrumentId,
             descriptionCache[id] = description;
         }
 
-        juce::Logger::writeToLog ("[Plugin] creating " + name + " asynchronously");
-        formatManager.createPluginInstanceAsync (description, rate, block,
-            [keepAlive, callback, id, name] (std::unique_ptr<juce::AudioPluginInstance> plugin,
-                                              const juce::String& errorMessage)
-            {
-                if (! keepAlive->load())
-                    return;
+        juce::Logger::writeToLog ("[Plugin] creating " + name + " on message thread");
+        juce::String createError;
+        auto plugin = formatManager.createPluginInstance (description, rate, block, createError);
 
-                if (plugin == nullptr)
-                {
-                    juce::Logger::writeToLog ("[Plugin] " + name + " failed: " + errorMessage);
-                    callback ({}, errorMessage.isNotEmpty() ? errorMessage
-                                                            : name + " failed to load.");
-                    return;
-                }
+        if (plugin == nullptr)
+        {
+            juce::Logger::writeToLog ("[Plugin] " + name + " failed: " + createError);
+            callback ({}, createError.isNotEmpty() ? createError
+                                                   : name + " failed to load.");
+            return;
+        }
 
-                juce::Logger::writeToLog ("[Plugin] " + name + " factory instance created");
-                auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin), id, name);
-                callback (std::move (instance), {});
-            });
+        juce::Logger::writeToLog ("[Plugin] " + name + " factory instance created");
+        auto instance = std::make_unique<HostedPluginInstance> (std::move (plugin), id, name);
+        callback (std::move (instance), {});
     };
 
     if (juce::MessageManager::getInstance()->isThisTheMessageThread())

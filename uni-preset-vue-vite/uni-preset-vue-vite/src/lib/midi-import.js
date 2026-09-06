@@ -52,6 +52,23 @@ function parseTrackEvents (bytes, start, end, notesOut) {
 
     let status = bytes[pos]
 
+    if (status === 0xff) {
+      if (pos >= end) break
+      runningStatus = 0
+      pos += 1
+      if (pos >= end) break
+      const meta = bytes[pos++]
+      const lenInfo = readVarLen(bytes, pos)
+      pos = lenInfo.offset
+      const metaEnd = Math.min(end, pos + lenInfo.value)
+      if (meta === 0x2f) {
+        flushActive(active, notesOut, tick, PPQ)
+        break
+      }
+      pos = metaEnd
+      continue
+    }
+
     if (status >= 0xf0 && status <= 0xf7) {
       if (status === 0xf0 || status === 0xf7) {
         runningStatus = 0
@@ -106,21 +123,6 @@ function parseTrackEvents (bytes, start, end, notesOut) {
       continue
     }
 
-    if (status === 0xff) {
-      if (pos >= end) break
-      runningStatus = 0
-      const meta = bytes[pos++]
-      const lenInfo = readVarLen(bytes, pos)
-      pos = lenInfo.offset
-      const metaEnd = Math.min(end, pos + lenInfo.value)
-      if (meta === 0x2f) {
-        flushActive(active, notesOut, tick, PPQ)
-        break
-      }
-      pos = metaEnd
-      continue
-    }
-
     if (hi === 0xa0 || hi === 0xb0 || hi === 0xe0) {
       pos = Math.min(end, pos + 2)
       continue
@@ -140,7 +142,7 @@ function parseTrackEvents (bytes, start, end, notesOut) {
  * Parse a Standard MIDI File into clip-relative notes (beats from 0).
  * @returns {{ ppq: number, lengthBeats: number, notes: Array<{pitch:number,start:number,duration:number,velocity:number}> }}
  */
-export function parseMidiFile (arrayBuffer) {
+export function parseMidiFile (arrayBuffer, options = {}) {
   const bytes = new Uint8Array(arrayBuffer || [])
   if (bytes.length < 14 || readStr(bytes, 0, 4) !== 'MThd') {
     throw new Error('Not a MIDI file')
@@ -177,14 +179,15 @@ export function parseMidiFile (arrayBuffer) {
     maxTick = Math.max(maxTick, note.startTick + note.durationTick)
   })
 
+  const shift = options.keepFileOrigin ? 0 : minTick
   const notes = rawNotes.map((note) => ({
     pitch: note.pitch,
-    start: (note.startTick - minTick) / ppq,
+    start: (note.startTick - shift) / ppq,
     duration: Math.max(1 / PPQ, note.durationTick / ppq),
     velocity: note.velocity
   }))
 
-  const lengthBeats = Math.max(1, Math.ceil(((maxTick - minTick) / ppq) * 4) / 4)
+  const lengthBeats = Math.max(1, Math.ceil(((maxTick - shift) / ppq) * 4) / 4)
 
   return { ppq, lengthBeats, notes }
 }

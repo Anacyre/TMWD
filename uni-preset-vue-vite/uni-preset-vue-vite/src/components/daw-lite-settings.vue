@@ -26,9 +26,14 @@
       <text>Metronome</text>
       <view class="chip" @click="toggleMetronome">{{ session.metronome ? 'On' : 'Off' }}</view>
     </view>
-    <view class="engine">
-      <view class="led" :class="engineState()" />
-      <text>{{ engineStateLabel() }}</text>
+    <text class="cap host-cap">Playback engine</text>
+    <view class="mode" :class="cloud ? 'cloud' : 'local'">
+      <view class="mode-head">
+        <view class="led" :class="engineState()" />
+        <text class="mode-name">{{ cloud ? 'Cloud (browser)' : 'PC engine' }}</text>
+        <text class="mode-state">{{ engineStateLabel() }}</text>
+      </view>
+      <text class="mode-sub">{{ modeDetail }}</text>
     </view>
     <text class="cap host-cap">Engine host</text>
     <input
@@ -54,13 +59,19 @@ import {
   engineState,
   engineStateLabel,
   engineHostValue,
-  setEngineHost
+  setEngineHost,
+  isCloudMode
 } from '../store/session.js'
 import { engineHostHintText, parseEngineHost } from '../bridge/engine.js'
 
 const lite = computed(() => isLite())
 const host = ref(engineHostValue())
 const hostHint = computed(() => engineHostHintText({ parsed: parseEngineHost(host.value) }))
+const cloud = computed(() => isCloudMode())
+const modeDetail = computed(() => (cloud.value
+  ? 'M Orchestra, mixing and effects run in this browser. BBCSO / Synchron need NewProject.exe running on your PC.'
+  : 'Connected to the PC engine — BBCSO and Synchron Player are available on this device.'
+))
 
 function onHost (e) {
   const value = (e.target && e.target.value) || ''
@@ -131,14 +142,26 @@ function onHost (e) {
   border-radius: 6px;
   font-size: 13px;
 }
-.engine {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
+.mode {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 1px solid #2a2a2a;
+  border-radius: 8px;
+  background: #161616;
+}
+.mode.cloud { border-color: #21414f; background: #14212a; }
+.mode-head { display: flex; align-items: center; gap: 8px; }
+.mode-name { color: #e6e6e6; font-size: 14px; flex: 1; min-width: 0; }
+.mode-state { color: #8d8d8d; font-size: 11px; }
+.mode-sub {
+  display: block;
+  margin-top: 6px;
   color: #8d8d8d;
   font-size: 12px;
+  line-height: 1.4;
 }
+.mode.cloud .mode-name { color: #cfe8f2; }
+.mode.cloud .mode-sub { color: #8fb4c4; }
 .led {
   width: 8px;
   height: 8px;
