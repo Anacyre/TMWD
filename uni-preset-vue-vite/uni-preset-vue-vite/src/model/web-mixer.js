@@ -311,8 +311,9 @@ export function laneFromOpen (open) {
 /** True when the browser generates this track's audio and therefore owns its strip. */
 export function isBrowserOwnedTrack (track, options = {}) {
   if (!track || track.type === 'master' || track.type === 'group') return false
-  if (track.source === 'web-sampler' || track.source === 'm-orchestra') return true
-  if (String(track.definitionId || '').startsWith('m_orch_')) return true
+  if (track.source === 'web-sampler' || track.source === 'm-orchestra' || track.source === 'orchestra-v') return true
+  const def = String(track.definitionId || '')
+  if (def.startsWith('m_orch_') || def.startsWith('ov_')) return true
   return !!options.localPlayback && track.source !== 'remote-vst'
 }
 
@@ -426,8 +427,11 @@ export function setLaneInserts (webMixer, lane, inserts) {
 
 export function reorderLaneInserts (webMixer, lane, fromIndex, toIndex) {
   const list = laneInserts(webMixer, lane).slice()
-  if (fromIndex < 0 || toIndex < 0 || fromIndex >= list.length || toIndex >= list.length) return
-  const [item] = list.splice(fromIndex, 1)
-  list.splice(toIndex, 0, item)
+  const from = Number(fromIndex)
+  const to = Number(toIndex)
+  if (!Number.isInteger(from) || !Number.isInteger(to)) return
+  if (from < 0 || to < 0 || from >= list.length || to >= list.length) return
+  const [item] = list.splice(from, 1)
+  list.splice(to, 0, item)
   setLaneInserts(webMixer, lane, list)
 }

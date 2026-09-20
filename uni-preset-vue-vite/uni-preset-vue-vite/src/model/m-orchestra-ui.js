@@ -1,4 +1,7 @@
-/** M Orchestra plugin catalogue for the dedicated plugin UI (not the DAW instrument browser). */
+/** M Orchestra plugin catalogue for the dedicated plugin UI (not the DAW instrument browser).
+ * Also the home of the shared plugin ids and the Insert Plugin list. */
+
+import { ORCHESTRA_V_PLUGIN_ID } from './orchestra-v-ui.js'
 
 export const M_ORCHESTRA_PLUGIN_ID = 'm_orchestra'
 export const M_ORCHESTRA_DEFAULT_ID = 'm_orch_violin_1'
@@ -114,6 +117,12 @@ export const CLOUD_CONTROLLERS = [
 export function insertablePlugins (options = {}) {
   const engine = !!options.engineConnected
   const list = [
+    {
+      id: ORCHESTRA_V_PLUGIN_ID,
+      displayName: 'Orchestra V',
+      detail: 'Browser sampler, SFZ region engine',
+      available: true
+    },
     { id: M_ORCHESTRA_PLUGIN_ID, displayName: 'M Orchestra', detail: 'Browser cloud samples', available: true },
     {
       id: ORCHESTRA_SAMPLER_PLUGIN_ID,

@@ -23,7 +23,7 @@
           "parentId": { "type": "integer" },
           "collapsed": { "type": "boolean" },
           "instrumentId": { "type": "string" },
-          "source": { "enum": ["empty", "remote-vst", "web-sampler", "m-orchestra"] },
+          "source": { "enum": ["empty", "remote-vst", "web-sampler", "m-orchestra", "orchestra-v"] },
           "technique": { "type": "string" },
           "legato": { "type": "boolean" },
           "controllers": { "type": "object" },

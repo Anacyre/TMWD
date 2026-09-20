@@ -1,4 +1,4 @@
-import { ensureFxWorklet, createChainNode, pushChain, createAnalyser } from '../dsp/runtime.js'
+import { ensureFxWorklet, createChainNode, pushChain, createAnalyser, invalidateFxWorklet } from '../dsp/runtime.js'
 import { remoteProcessInserts, trackLaneKey, unassignedProcessInserts, laneInserts } from '../model/web-mixer.js'
 import { dbToGain, dbFromFader, isTrackAudible, isBusAudible, SMOOTH_SEC, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
 import { ROUTING_DIRECT, ROUTING_MIXER, ROUTING_FALLBACK } from './graph.js'
@@ -23,8 +23,9 @@ export function mixerHasInserts (webMixer) {
 export function isWebOwnedTrack (track, options = {}) {
   if (!track || track.type === 'master' || track.type === 'group') return false
   if (track.source === 'web-sampler') return true
-  if (track.source === 'm-orchestra') return true
-  if (String(track.definitionId || '').startsWith('m_orch_')) return true
+  if (track.source === 'm-orchestra' || track.source === 'orchestra-v') return true
+  const def = String(track.definitionId || '')
+  if (def.startsWith('m_orch_') || def.startsWith('ov_')) return true
   return !!options.localPlayback && track.source !== 'remote-vst'
 }
 
@@ -271,25 +272,7 @@ function recoverFromAttachFailure (graph, error, webMixer) {
   wireDryBypass(graph, error)
 }
 
-export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], options = {}) {
-  if (graph.mixerNodes) {
-    graph.mixerNodes.onMeters = onMeters
-    syncMixerGraph(graph, webMixer, tracks, options)
-    return graph.mixerNodes
-  }
-  graph.lastMixer = webMixer || graph.lastMixer
-  try {
-  await ensureFxWorklet(graph.context)
-  } catch (err) {
-    recoverFromAttachFailure(graph, err.message || String(err), webMixer)
-    throw err
-  }
-  if (graph.mixerNodes) {
-    graph.mixerNodes.onMeters = onMeters
-    syncMixerGraph(graph, webMixer, tracks, options)
-    return graph.mixerNodes
-  }
-
+function wireMixerNodes (graph, webMixer, onMeters, tracks, options) {
   const ctx = graph.context
   const nodes = {
     onMeters,
@@ -337,6 +320,39 @@ export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], 
   setRouting(graph, ROUTING_MIXER, '')
   syncMixerGraph(graph, webMixer, tracks, options)
   return nodes
+}
+
+export async function attachMixerGraph (graph, webMixer, onMeters, tracks = [], options = {}) {
+  if (graph.mixerNodes) {
+    graph.mixerNodes.onMeters = onMeters
+    syncMixerGraph(graph, webMixer, tracks, options)
+    return graph.mixerNodes
+  }
+  graph.lastMixer = webMixer || graph.lastMixer
+  const ctx = graph.context
+  if (ctx && typeof ctx.resume === 'function' && (ctx.state === 'suspended' || ctx.state === 'interrupted')) {
+    try { await ctx.resume() } catch (err) { /* autoplay policy */ }
+  }
+  try {
+    await ensureFxWorklet(ctx)
+    if (graph.mixerNodes) {
+      graph.mixerNodes.onMeters = onMeters
+      syncMixerGraph(graph, webMixer, tracks, options)
+      return graph.mixerNodes
+    }
+    try {
+      return wireMixerNodes(graph, webMixer, onMeters, tracks, options)
+    } catch (nodeErr) {
+      // Safari can resolve addModule before the processor is actually registered.
+      graph.mixerNodes = null
+      invalidateFxWorklet(ctx)
+      await ensureFxWorklet(ctx)
+      return wireMixerNodes(graph, webMixer, onMeters, tracks, options)
+    }
+  } catch (err) {
+    recoverFromAttachFailure(graph, err.message || String(err), webMixer)
+    throw err
+  }
 }
 
 export function getLaneAnalyser (graph, laneKey) {

@@ -1,14 +1,15 @@
 <template>
-  <view v-if="open" class="mask" @click="onMask">
+  <view v-if="open" class="mask" @click="onMask" @tap="onMask">
     <view
       class="sheet lite-plugin-surface"
       :class="{ tall, centered }"
       @click.stop
+      @tap.stop
     >
       <view class="head">
         <view class="head-row">
           <text v-if="title" class="title">{{ title }}</text>
-          <view class="close-x" aria-label="Dismiss" @click.stop="emit('close')">×</view>
+          <view class="close-x" aria-label="Dismiss" @click.stop="emit('close')" @tap.stop="emit('close')">×</view>
         </view>
       </view>
       <slot />

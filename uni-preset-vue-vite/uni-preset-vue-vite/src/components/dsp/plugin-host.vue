@@ -1,8 +1,8 @@
 <template>
-  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="close" @pointerdown="onHostDown">
+  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="onHostClick" @pointerdown="onHostDown">
       <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite }]" @click.stop @pointerdown="onHostDown">
         <view class="grab" :class="{ 'head-lite': lite }">
-          <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin">
+          <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin" @tap="changePlugin">
             <daw-icon name="swap" :size="18" />
           </view>
           <view
@@ -11,11 +11,12 @@
             title="Remove plugin"
             aria-label="Remove plugin"
             @click="remove"
+            @tap="remove"
           >
             <daw-icon name="trash" :size="18" />
           </view>
           <text v-if="visNotice" class="grab-state">{{ visNotice }}</text>
-          <view class="grab-btn close" title="Close" aria-label="Close" @click="close">
+          <view class="grab-btn close" title="Close" aria-label="Close" @click="close" @tap="close">
             <daw-icon name="close" :size="18" />
           </view>
         </view>
@@ -83,7 +84,7 @@ import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from '../daw-icon.vue'
 import { session, closePlugin, persistWebMixer, getFxAnalyser, getFxMeterPayload, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
 import { resolveOpenInsert, fxMeterLaneKey, laneFromOpen } from '../../model/web-mixer.js'
-import { pickPluginSpectrum, pickPreSpectrum, metersForInsert, visualState, visualStateLabel } from '../../dsp/runtime.js'
+import { pickPluginSpectrum, pickPreSpectrum, metersForInsert, visualState, visualStateLabel, VIS_UNATTACHED } from '../../dsp/runtime.js'
 import PluginReverbX from './plugin-reverb-x.vue'
 import PluginEqualizerX from './plugin-equalizer-x.vue'
 import PluginBoostX from './plugin-boost-x.vue'
@@ -114,9 +115,20 @@ const meters = computed(() => liveMeters.value)
 const spectrum = computed(() => liveSpectrum.value)
 const preSpectrum = computed(() => livePreSpectrum.value)
 const visState = computed(() => liveState.value)
-const visNotice = computed(() => visualStateLabel(liveState.value))
+const visNotice = computed(() => {
+  if (liveState.value !== VIS_UNATTACHED) return visualStateLabel(liveState.value)
+  const err = session.diagnostics.browserFxError
+  return err || visualStateLabel(liveState.value)
+})
 
 let raf = 0
+let openedAt = 0
+const OPEN_GUARD_MS = 450
+
+function recentlyOpened () {
+  return Date.now() - openedAt < OPEN_GUARD_MS
+}
+
 function tick () {
   const key = meterKey.value
   const posted = getFxMeterPayload(key)
@@ -146,7 +158,10 @@ watch(() => session.openPlugin, (open) => {
   livePreSpectrum.value = []
   liveMeters.value = {}
   liveState.value = ''
-  if (open) startTick()
+  if (open) {
+    openedAt = Date.now()
+    startTick()
+  }
 }, { immediate: true })
 
 // A hidden tab must not keep burning RAF frames and battery on FFT redraws.
@@ -166,6 +181,10 @@ onUnmounted(() => {
 })
 
 function close () { closePlugin() }
+function onHostClick () {
+  if (recentlyOpened()) return
+  closePlugin()
+}
 function remove () {
   const open = session.openPlugin
   if (!open) return
@@ -181,6 +200,16 @@ function changePlugin () {
     : session.tracks.findIndex((track) => track.type === 'master')
   closePlugin()
   if (isLite()) {
+    if (lane && lane.type === 'bus') {
+      openLiteSheet({
+        kind: 'bus',
+        tab: 'fx',
+        picker: true,
+        replaceIndex: open.index,
+        busId: lane.id
+      })
+      return
+    }
     openLiteSheet({
       kind: 'track',
       tab: 'fx',
@@ -192,6 +221,7 @@ function changePlugin () {
 }
 let holdTimer = 0
 function onHostDown (e) {
+  if (recentlyOpened()) return
   // Header buttons own their own gestures; a long press there must not swap the
   // plugin out from under the tap.
   const target = e.target

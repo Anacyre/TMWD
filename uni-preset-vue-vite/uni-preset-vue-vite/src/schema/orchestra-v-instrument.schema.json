@@ -1,0 +1,121 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://dawweb.local/schema/orchestra-v-instrument.schema.json",
+  "title": "Orchestra V instrument definition",
+  "description": "Data contract between the Orchestra V catalogue and the SFZ region compiler. One entry describes how a catalogue instrument is built out of the sample packs of one library.",
+  "type": "object",
+  "required": ["id", "displayName", "library", "family", "available"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^ov_[a-z0-9_]+$",
+      "description": "Stable definition id stored on the track."
+    },
+    "displayName": { "type": "string", "minLength": 1 },
+    "library": {
+      "enum": ["vms-solo", "vms-symphonic"],
+      "description": "Which library in audio/orchestra-v/libraries.js holds this instrument's samples."
+    },
+    "family": {
+      "enum": ["strings", "woodwinds", "brass", "percussion", "keyboard", "others"]
+    },
+    "icon": { "type": "string" },
+    "mirrors": {
+      "type": "string",
+      "description": "The Orchestra Sampler catalogue id this instrument stands in for."
+    },
+    "available": {
+      "type": "boolean",
+      "description": "False when the library ships no samples for this instrument; the grid shows it greyed out."
+    },
+    "unavailableReason": { "type": "string" },
+    "sourcePack": {
+      "type": "string",
+      "description": "Manifest pack name within the library, e.g. \"violin\" or \"Tutti Strings\"."
+    },
+    "pedal": {
+      "type": "boolean",
+      "description": "True when a held sustain pedal (CC64) should keep released notes sounding, as on a piano."
+    },
+    "percFolder": {
+      "type": "string",
+      "description": "Restrict a pitched instrument to one sub-folder of its pack."
+    },
+    "keymap": {
+      "type": "array",
+      "description": "Percussion layout. Each entry pins one sample folder to one MIDI key.",
+      "items": {
+        "type": "object",
+        "required": ["key", "folder", "name"],
+        "additionalProperties": false,
+        "properties": {
+          "key": { "type": "integer", "minimum": 0, "maximum": 127 },
+          "folder": { "type": "string", "minLength": 1 },
+          "name": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "keyRange": {
+      "type": "array",
+      "description": "Advisory playable range [lo, hi]; the compiler still clamps to what the samples cover.",
+      "items": { "type": "integer", "minimum": 0, "maximum": 127 },
+      "minItems": 2,
+      "maxItems": 2
+    },
+    "articulations": {
+      "type": "array",
+      "description": "Ordered preference list. The first entry is the default technique.",
+      "items": { "enum": ["long", "short", "pluck", "sustain", "hit"] },
+      "minItems": 1
+    },
+    "velocityLayers": {
+      "type": "object",
+      "description": "How dynamic layers are turned into velocity zones.",
+      "additionalProperties": false,
+      "properties": {
+        "crossfadeWidth": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 32,
+          "description": "Half-width in MIDI velocity units of the equal-power fade across a layer boundary."
+        },
+        "maxLayers": { "type": "integer", "minimum": 1, "maximum": 16 }
+      }
+    },
+    "roundRobin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "maxVariations": { "type": "integer", "minimum": 1, "maximum": 16 }
+      }
+    },
+    "voiceModel": {
+      "type": "object",
+      "description": "Per-instrument voicing, carried over from the M Orchestra library metadata.",
+      "additionalProperties": false,
+      "properties": {
+        "sectionSize": { "type": "integer", "minimum": 1 },
+        "maxVoices": { "type": "integer", "minimum": 1 },
+        "detuneCents": { "type": "number", "minimum": 0 },
+        "gamma": { "type": "number", "exclusiveMinimum": 0 },
+        "noise": { "enum": ["none", "bow", "breath", "air"] },
+        "vibrato": { "type": "boolean" },
+        "solo": { "type": "boolean" },
+        "gainTrim": {
+          "type": "number",
+          "exclusiveMinimum": 0,
+          "maximum": 2,
+          "description": "Output trim. Defaults to 0.55 because a synthesised section sums several detuned copies of one recording; a library that already recorded the ensemble sets it near unity."
+        },
+        "velocityTrack": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Share of the level that velocity controls, 0.45 by default. Instruments recorded at a single dynamic need more, because nothing else varies with how hard the key is struck."
+        }
+      }
+    }
+  }
+}

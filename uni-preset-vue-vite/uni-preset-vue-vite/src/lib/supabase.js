@@ -17,6 +17,43 @@ export function publicAssetUrl (path, bucket = WEB_ASSET_BUCKET) {
   return data && data.publicUrl ? data.publicUrl : `${url}/storage/v1/object/public/${bucket}/${path}`
 }
 
+export const ORCHESTRA_LOCAL_PREFIX = '/m-orchestra/'
+
+function envMeta () {
+  return typeof import.meta !== 'undefined' ? import.meta.env : null
+}
+
+function localLibraryUrl (bucket, rel) {
+  const env = envMeta()
+  if (env && env.DEV && typeof location !== 'undefined' && location.origin) {
+    return location.origin + '/' + bucket + '/' + rel
+  }
+  return ''
+}
+
 export function publicOrchestraUrl (path) {
-  return publicAssetUrl(path, M_ORCHESTRA_BUCKET)
+  const rel = String(path || '').replace(/^\/+/, '')
+  const env = envMeta()
+  const envBase = env && env.VITE_M_ORCHESTRA_BASE
+  if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
+  const local = localLibraryUrl(M_ORCHESTRA_BUCKET, rel)
+  if (local) return local
+  return publicAssetUrl(rel, M_ORCHESTRA_BUCKET)
+}
+
+/**
+ * Object URL for a sample library bucket. In H5 dev the Vite plugin serves each bucket
+ * from disk (`.sample-cache/<id>` or the M Orchestra folder) because the default
+ * Supabase project no longer hosts these objects.
+ */
+export function publicLibraryUrl (bucket, path) {
+  const rel = String(path || '').replace(/^\/+/, '')
+  if (!bucket || bucket === M_ORCHESTRA_BUCKET) return publicOrchestraUrl(path)
+  const env = envMeta()
+  const envKey = 'VITE_' + String(bucket).replace(/[^A-Za-z0-9]/g, '_').toUpperCase() + '_BASE'
+  const envBase = env && env[envKey]
+  if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
+  const local = localLibraryUrl(bucket, rel)
+  if (local) return local
+  return publicAssetUrl(rel, bucket)
 }

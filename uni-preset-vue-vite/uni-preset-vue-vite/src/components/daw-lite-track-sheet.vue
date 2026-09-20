@@ -6,13 +6,14 @@
     @close="closeLiteSheet"
   >
     <view v-if="tab === 'sampler'" class="os noscroll">
-      <!-- M Orchestra carries its own change-instrument button in compact mode. -->
-      <view v-if="!mOrchestra" class="icon-row">
+      <!-- Both browser samplers carry their own change-instrument button in compact mode. -->
+      <view v-if="!mOrchestra && !orchestraV" class="icon-row">
         <view class="icon-hit" aria-label="Change plugin" @click.stop="changeInstrument">
           <daw-icon name="copy" :size="18" />
         </view>
       </view>
-      <daw-m-orchestra v-if="mOrchestra" compact />
+      <daw-orchestra-v v-if="orchestraV" compact />
+      <daw-m-orchestra v-else-if="mOrchestra" compact />
       <daw-orchestra-sampler v-else />
     </view>
 
@@ -23,7 +24,7 @@
           :key="'s' + index"
           class="fx-row"
         >
-          <view class="fx-main" @click.stop="onSlot(index, slot)">
+          <view class="fx-main" @click.stop="onSlot(index, slot)" @tap.stop="onSlot(index, slot)">
             <text class="fx-name">{{ slotLabel(slot) }}</text>
             <view v-if="!slot" class="icon-hit" aria-label="Add effect">
               <daw-icon name="plus" :size="16" />
@@ -38,6 +39,7 @@
             :class="{ dim: slot.enabled === false }"
             aria-label="Bypass"
             @click.stop="toggleInsertEnabled(lane, index)"
+            @tap.stop="toggleInsertEnabled(lane, index)"
           >
             <daw-icon name="power" :size="16" :active="slot.enabled !== false" />
           </view>
@@ -49,6 +51,7 @@
           :key="plugin.id"
           class="pick"
           @click.stop="choose(plugin.id)"
+          @tap.stop="choose(plugin.id)"
         >
           <text class="fx-name">{{ plugin.name }}</text>
         </view>
@@ -63,6 +66,7 @@ import DawLiteSheet from './daw-lite-sheet.vue'
 import DawIcon from './daw-icon.vue'
 import DawOrchestraSampler from './daw-orchestra-sampler.vue'
 import DawMOrchestra from './daw-m-orchestra.vue'
+import DawOrchestraV from './daw-orchestra-v.vue'
 import {
   session,
   closeLiteSheet,
@@ -78,11 +82,13 @@ import { laneInserts, MIXER_INSERT_SLOTS } from '../model/web-mixer.js'
 import { PLUGIN_SHORT } from '../model/mixer-model.js'
 import { plugins } from '../dsp/registry.js'
 import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
+import { isOrchestraVTrack } from '../model/orchestra-v-ui.js'
 
 const picker = ref(false)
 const tab = ref('fx')
 
 const track = computed(() => {
+  if (session.liteSheet && session.liteSheet.kind === 'bus') return null
   const index = session.liteSheet && session.liteSheet.trackIndex != null
     ? session.liteSheet.trackIndex
     : session.selectedTrack
@@ -90,6 +96,9 @@ const track = computed(() => {
 })
 
 const lane = computed(() => {
+  if (session.liteSheet && session.liteSheet.kind === 'bus') {
+    return { type: 'bus', id: session.liteSheet.busId }
+  }
   if (!track.value || track.value.type === 'master') return { type: 'master' }
   return { type: 'track', id: track.value.id }
 })
@@ -100,8 +109,13 @@ const slots = computed(() => {
 })
 
 const catalogue = computed(() => listPlugins())
-const mOrchestra = computed(() => isMOrchestraTrack(track.value))
+const orchestraV = computed(() => isOrchestraVTrack(track.value))
+const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
 const title = computed(() => {
+  if (session.liteSheet && session.liteSheet.kind === 'bus') {
+    const bus = (session.webMixer.buses || []).find((item) => item.id === session.liteSheet.busId)
+    return (bus && bus.name) || 'Return'
+  }
   if (tab.value === 'sampler') return (track.value && (track.value.instrument || track.value.name)) || 'Instrument'
   return (track.value && track.value.name) || 'Track'
 })
@@ -122,8 +136,10 @@ function onSlot (index, slot) {
     if (session.liteSheet) session.liteSheet.replaceIndex = index
     return
   }
-  closeLiteSheet()
+  // Open the plugin first so the host covers the sheet. Closing first lets an
+  // iPad ghost-click hit the mixer and immediately dismiss the preloaded FX.
   openPlugin(lane.value, index)
+  closeLiteSheet()
 }
 
 function choose (pluginId) {
@@ -160,6 +176,7 @@ function changeInstrument () {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  cursor: pointer;
 }
 .fx-name { flex: 1; min-width: 0; }
 .icon-row { display: flex; justify-content: flex-end; margin-bottom: 8px; }

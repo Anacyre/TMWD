@@ -9,6 +9,7 @@
       <view class="icon-btn" @click.stop="closeEditor" @tap.stop="closeEditor">×</view>
     </view>
     <daw-piano-roll v-if="session.editorTab === 'piano'" embedded />
+    <daw-orchestra-v v-else-if="pluginTabOn && (session.editorTab === 'orchestra-v' || orchestraV)" />
     <daw-m-orchestra v-else-if="pluginTabOn && (session.editorTab === 'm-orchestra' || mOrchestra)" />
     <daw-orchestra-sampler v-else-if="pluginTabOn" />
     <view v-else-if="session.editorTab === 'automation'" class="info">
@@ -33,16 +34,25 @@ import { computed } from 'vue'
 import DawPianoRoll from './daw-piano-roll.vue'
 import DawOrchestraSampler from './daw-orchestra-sampler.vue'
 import DawMOrchestra from './daw-m-orchestra.vue'
+import DawOrchestraV from './daw-orchestra-v.vue'
 import { session, getSelectedTrack, setEditorTab, closeEditor, openPluginPicker } from '../store/session.js'
 import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
+import { isOrchestraVTrack } from '../model/orchestra-v-ui.js'
 
 const track = computed(() => getSelectedTrack())
-const mOrchestra = computed(() => isMOrchestraTrack(track.value))
-const pluginTabOn = computed(() => session.editorTab === 'sampler' || session.editorTab === 'm-orchestra')
-const pluginTabLabel = computed(() => mOrchestra.value ? 'M Orchestra' : 'Orchestra Sampler')
+const orchestraV = computed(() => isOrchestraVTrack(track.value))
+const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
+const pluginTabOn = computed(() => session.editorTab === 'sampler'
+  || session.editorTab === 'm-orchestra'
+  || session.editorTab === 'orchestra-v')
+const pluginTabLabel = computed(() => {
+  if (orchestraV.value) return 'Orchestra V'
+  return mOrchestra.value ? 'M Orchestra' : 'Orchestra Sampler'
+})
 
 function openPluginTab () {
-  setEditorTab(mOrchestra.value ? 'm-orchestra' : 'sampler')
+  if (orchestraV.value) setEditorTab('orchestra-v')
+  else setEditorTab(mOrchestra.value ? 'm-orchestra' : 'sampler')
 }
 </script>
 

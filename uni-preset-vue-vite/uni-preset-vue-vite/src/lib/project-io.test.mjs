@@ -22,6 +22,27 @@ function assert (ok, message) {
 }
 
 {
+  const project = migrateProject({
+    version: 1,
+    name: 'Orchestra V',
+    bpm: 120,
+    tracks: [{
+      trackId: 3,
+      name: 'Violins 1',
+      type: 'midi',
+      definitionId: 'ov_violin_1',
+      techniqueId: 'ov_pizz',
+      controllerValues: { dynamics: 0.9, micHall: 0.4 }
+    }],
+    clips: []
+  })
+  const track = project.tracks[0]
+  assert(track.source === 'orchestra-v', 'infers orchestra-v from an ov_ definitionId')
+  assert(track.techniqueId === 'ov_pizz', 'the chosen technique survives a save')
+  assert(track.controllerValues.micHall === 0.4, 'mic mix positions survive a save')
+}
+
+{
   const session = {
     projectId: 'p_test',
     projectName: 'Session',

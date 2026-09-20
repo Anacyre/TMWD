@@ -1,8 +1,12 @@
 import { defineConfig } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
+import { dawFxWorkletPlugin } from './scripts/daw-fx-worklet-vite-plugin.mjs'
+import { dawOrchestraSamplesPlugin } from './scripts/daw-orchestra-samples-vite-plugin.mjs'
 
 export default defineConfig({
   plugins: [
+    dawOrchestraSamplesPlugin(),
+    dawFxWorkletPlugin(),
     uni(),
   ],
   build: {
@@ -15,10 +19,17 @@ export default defineConfig({
             rest of audio/m-orchestra must be left alone: cloud.js is a static
             import of the store, so forcing it into a shared chunk would drag
             the engine and manifest into the entry graph.
+
+            Each Orchestra V library manifest gets the same treatment: they are
+            one object literal per sample, which is the shape that makes terser
+            expensive, and a library the session never touches should not be
+            part of the engine download.
         */
         manualChunks (id) {
           const path = id.split('\\').join('/')
           if (path.includes('/audio/m-orchestra/manifest.json')) return 'm-orchestra-manifest'
+          const library = path.match(/\/audio\/orchestra-v\/([\w-]+)-manifest\.json$/)
+          if (library) return 'orchestra-v-manifest-' + library[1]
           if (path.includes('/src/model/piano-roll-')) return 'piano-roll'
           return undefined
         }

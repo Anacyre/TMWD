@@ -2,63 +2,66 @@ import { createInsert } from '../dsp/plugin.js'
 import { plugins } from '../dsp/registry.js'
 import { BUS_REVERB, BUS_DELAY, defaultSends, dbFromFader } from './mixer-model.js'
 import { defaultWebMixer, ensureInsertSlots } from './web-mixer.js'
+import { defaultControllerValues, orchestraVUsesPedal } from './orchestra-v-ui.js'
 import { DEMO_BPM, DEMO_LENGTH_BEATS, DEMO_RETIME_NOTES } from './demo-retime-data.js'
 
+/** Every track plays an Orchestra V instrument from the VMS Symphonic library, so the demo
+ * makes a sound in a plain browser with the PC engine nowhere in sight. */
 const demoTracks = [
   {
     id: 'imperial',
-    name: 'Soft Imperial',
+    name: 'Piano',
     section: 'Keys',
     colour: '#cfc4a8',
     volume: 0.74,
     pan: 0,
     send: 0.18,
-    instrumentId: 'soft_imperial',
-    techniqueId: ''
+    instrumentId: 'ov_sym_piano',
+    techniqueId: 'ov_long'
   },
   {
     id: 'celestial',
-    name: 'Viola Long',
+    name: 'Tutti Strings Long',
     section: 'Strings',
     colour: '#d9a04a',
     volume: 0.72,
     pan: 0.16,
     send: 0.34,
-    instrumentId: 'bbcso_viola',
-    techniqueId: 'bbcso_long'
+    instrumentId: 'ov_sym_tutti_strings',
+    techniqueId: 'ov_long'
   },
   {
     id: 'cello',
-    name: 'Cello Long',
+    name: 'Celli Long',
     section: 'Strings',
     colour: '#b87038',
     volume: 0.80,
     pan: 0.40,
     send: 0.22,
-    instrumentId: 'bbcso_cello',
-    techniqueId: 'bbcso_long'
+    instrumentId: 'ov_sym_celli',
+    techniqueId: 'ov_long'
   },
   {
     id: 'violins',
-    name: 'Violins Long',
+    name: '1st Violins Long',
     section: 'Strings',
     colour: '#d18f45',
     volume: 0.78,
     pan: -0.38,
     send: 0.28,
-    instrumentId: 'bbcso_violin_1',
-    techniqueId: 'bbcso_long'
+    instrumentId: 'ov_sym_violins_1',
+    techniqueId: 'ov_long'
   },
   {
     id: 'horn',
-    name: 'Horn Long',
+    name: 'Horns Long',
     section: 'Brass',
     colour: '#4a90d9',
     volume: 0.70,
     pan: -0.16,
     send: 0.30,
-    instrumentId: 'bbcso_horn',
-    techniqueId: 'bbcso_long'
+    instrumentId: 'ov_sym_horns',
+    techniqueId: 'ov_long'
   }
 ]
 
@@ -192,14 +195,15 @@ export function createDemoProject () {
       definitionId: spec.instrumentId,
       techniqueId: spec.techniqueId,
       section: spec.section,
-      loadState: 'unavailable',
-      loadMessage: 'Requires PC engine',
-      instrumentLoadState: 'unavailable',
-      instrumentLoadMessage: 'Requires PC engine',
-      controllerValues: { dynamics: 100, expression: 100, vibrato: 28 },
+      loadState: 'Ready',
+      loadMessage: 'Orchestra V',
+      instrumentLoadState: 'ready',
+      instrumentLoadMessage: 'SFZ region map',
+      controllerValues: defaultControllerValues(),
+      pedal: orchestraVUsesPedal(spec.instrumentId) ? { mapped: true } : null,
       inserts: emptyInserts(),
       sends: reverbSend(spec.send),
-      source: 'remote-vst',
+      source: 'orchestra-v',
       meterLevel: 0
     })
 

@@ -288,7 +288,7 @@ import {
 import { laneInserts, MIXER_INSERT_SLOTS, fxMeterLaneKey, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { PLUGIN_SHORT, formatVolumeDb, formatPan, dbFromFader, faderFromDb, canAddInsert, defaultSends } from '../model/mixer-model.js'
 import { plugins } from '../dsp/registry.js'
-import { beginPointerDrag } from '../lib/pointer-drag.js'
+import { beginPointerDrag, pointerCoord } from '../lib/pointer-drag.js'
 
 const picker = ref(null)
 const catalogue = computed(() => listPlugins())
@@ -526,31 +526,57 @@ function beginRemoteSend (send, event) {
 let dragSlot = null
 let longPress = 0
 
+function clearSlotDragTimer () {
+  if (longPress) {
+    clearTimeout(longPress)
+    longPress = 0
+  }
+}
+
 function beginSlotDrag (nextLane, index, event) {
   const list = laneInserts(session.webMixer, nextLane)
   if (!list[index]) return
-  const startY = event.clientY
-  // Touch needs a long press so a tap still opens the plugin instead of dragging.
-  const delay = event.pointerType === 'mouse' ? 0 : 280
-  longPress = setTimeout(() => {
-    dragSlot = { lane: nextLane, index, startY }
-  }, delay)
-  beginPointerDrag(event, {
-    onMove: (ev) => {
-      if (!dragSlot) return
-      const delta = Math.round((ev.clientY - dragSlot.startY) / 36)
-      const target = Math.min(MIXER_INSERT_SLOTS - 1, Math.max(0, dragSlot.index + delta))
-      if (target === dragSlot.index) return
-      reorderInserts(dragSlot.lane, dragSlot.index, target)
-      dragSlot.index = target
-      dragSlot.startY = ev.clientY
-    },
-    onEnd: () => {
-      clearTimeout(longPress)
-      dragSlot = null
-      flushTrackMix()
+  const start = pointerCoord(event)
+  if (!start) return
+  const isMouse = !event.pointerType || event.pointerType === 'mouse'
+  const startDrag = () => {
+    longPress = 0
+    dragSlot = { lane: nextLane, index, startY: start.y }
+    beginPointerDrag(event, {
+      onMove: (ev) => {
+        if (!dragSlot) return
+        const now = pointerCoord(ev)
+        if (!now) return
+        const delta = Math.round((now.y - dragSlot.startY) / 36)
+        if (!Number.isFinite(delta) || delta === 0) return
+        const target = Math.min(MIXER_INSERT_SLOTS - 1, Math.max(0, dragSlot.index + delta))
+        if (target === dragSlot.index) return
+        reorderInserts(dragSlot.lane, dragSlot.index, target)
+        dragSlot.index = target
+        dragSlot.startY = now.y
+      },
+      onEnd: () => {
+        clearSlotDragTimer()
+        dragSlot = null
+        flushTrackMix()
+      }
+    })
+  }
+  // Touch: do not capture the pointer on tap — iPad Safari otherwise swallows
+  // click/tap, so preloaded inserts can never be opened. Long-press still reorders.
+  if (!isMouse) {
+    clearSlotDragTimer()
+    longPress = setTimeout(startDrag, 280)
+    const cancel = () => {
+      clearSlotDragTimer()
+      window.removeEventListener('pointerup', cancel)
+      window.removeEventListener('pointercancel', cancel)
     }
-  })
+    window.addEventListener('pointerup', cancel)
+    window.addEventListener('pointercancel', cancel)
+    return
+  }
+  startDrag()
 }
 </script>
 
@@ -753,6 +779,7 @@ function beginSlotDrag (nextLane, index, event) {
   min-height: 28px;
   height: 28px;
   flex-shrink: 0;
+  cursor: pointer;
   background: #222;
   color: #c8c4bc;
   font-size: 10px;

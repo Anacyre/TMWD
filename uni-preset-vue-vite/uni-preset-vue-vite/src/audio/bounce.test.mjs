@@ -34,6 +34,25 @@ function assert (ok, message) {
 }
 
 {
+  const session = {
+    bpm: 120,
+    tracks: [
+      { id: 1, type: 'master', mute: false },
+      { id: 2, type: 'midi', source: 'orchestra-v', definitionId: 'ov_violin_1', techniqueId: 'ov_pizz', mute: false }
+    ],
+    clips: [{
+      trackIndex: 1,
+      startBeat: 0,
+      midi: true,
+      notes: [{ pitch: 62, startTick: 0, durationTick: 480, velocity: 90 }]
+    }]
+  }
+  const { events } = collectBounceEvents(session)
+  assert(events.length === 1 && events[0].kind === 'orchestra-v', 'bounce routes Orchestra V notes to its own renderer')
+  assert(events[0].track.techniqueId === 'ov_pizz', 'the track technique rides along to the offline render')
+}
+
+{
   const empty = collectBounceEvents({ tracks: [], clips: [] })
   assert(empty.events.length === 0, 'an empty project has nothing to bounce')
 }

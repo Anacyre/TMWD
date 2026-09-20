@@ -255,6 +255,18 @@ function bakeEqualPower (audioBuffer, start, end, xfade) {
   }
 }
 
+/** Bake the short equal-power seam a published loop needs so it wraps without a click.
+ * Returns the wrap points in seconds; the expensive loop search stays in the publisher. */
+export function bakeLoopSeam (audioBuffer, loopStart, loopEnd, crossfadeSec, maxRatio = 0.1) {
+  const sr = audioBuffer.sampleRate
+  const start = Math.max(0, Math.min(audioBuffer.length - 2, Math.round(loopStart * sr)))
+  const end = Math.max(start + 2, Math.min(audioBuffer.length - 1, Math.round(loopEnd * sr)))
+  const maxCrossfade = Math.floor((end - start) * maxRatio)
+  const crossfade = Math.max(0, Math.min(maxCrossfade, Math.round((crossfadeSec || 0.08) * sr)))
+  if (crossfade > 8) bakeEqualPower(audioBuffer, start, end, crossfade)
+  return { loopStart: (start + crossfade) / sr, loopEnd: end / sr, crossfade: crossfade / sr }
+}
+
 /** Find a long, correlated sustain loop and bake an equal-power crossfade into the buffer. */
 export function prepareLoop (audioBuffer, pb) {
   const sr = audioBuffer.sampleRate

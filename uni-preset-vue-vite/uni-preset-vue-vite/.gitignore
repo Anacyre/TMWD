@@ -11,6 +11,11 @@ node_modules
 .DS_Store
 dist
 *.local
+public/daw-fx-chain.js
+
+# Encoded output of scripts/publish-sample-library.mjs. Rebuildable from the WAV originals,
+# and the bucket is where the browser reads it from.
+.sample-cache
 
 # Editor directories and files
 .idea

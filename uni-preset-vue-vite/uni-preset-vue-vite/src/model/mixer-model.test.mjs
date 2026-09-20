@@ -19,6 +19,7 @@ import {
   isBrowserOwnedTrack,
   laneInserts,
   setLaneInserts,
+  reorderLaneInserts,
   defaultWebMixer
 } from './web-mixer.js'
 import { createInsert } from '../dsp/plugin.js'
@@ -96,6 +97,8 @@ assert(t1Chain.length === 1 && t1Chain[0].pluginId === 'dynamic-x', 'track strip
 const orchTrack = { id: 7, type: 'midi', source: 'm-orchestra' }
 const vstTrack = { id: 8, type: 'midi', source: 'remote-vst' }
 assert(isBrowserOwnedTrack(orchTrack), 'M Orchestra track is browser owned')
+assert(isBrowserOwnedTrack({ id: 10, type: 'midi', source: 'orchestra-v' }), 'Orchestra V track is browser owned')
+assert(isBrowserOwnedTrack({ id: 11, type: 'midi', definitionId: 'ov_cello' }), 'an ov_ definition is browser owned')
 assert(!isBrowserOwnedTrack(vstTrack), 'remote VST track is engine owned')
 assert(isBrowserOwnedTrack({ id: 9, type: 'midi', source: 'empty' }, { localPlayback: true }),
   'browser-only playback owns plain tracks')
@@ -113,6 +116,15 @@ const fromLane = laneInserts(wm, { type: 'track', id: 1 })[0]
 fromLane.state.outputGainDb = 6
 assert(fromLane === wm.tracks['1'].inserts[0], 'laneInserts returns live insert refs')
 assert(wm.tracks['1'].inserts[0].state.outputGainDb === 6, 'param edits stick on stored insert')
+
+const order = defaultWebMixer()
+const a = createInsert('equalizer-x', plugins)
+const b = createInsert('dynamic-x', plugins)
+setLaneInserts(order, { type: 'master' }, [a, b, null, null, null])
+reorderLaneInserts(order, { type: 'master' }, 0, Number.NaN)
+assert(order.master.inserts[0].pluginId === 'equalizer-x', 'NaN reorder index does not drop a preloaded insert')
+reorderLaneInserts(order, { type: 'master' }, 0, 1)
+assert(order.master.inserts[0].pluginId === 'dynamic-x', 'valid reorder still moves inserts')
 
 assert(plugins['limiter-x'], 'Limiter X is registered')
 assert(plugins['limiter-x'].parameters.find((p) => p.id === 'limiter.gain'), 'limiter.gain automatable')

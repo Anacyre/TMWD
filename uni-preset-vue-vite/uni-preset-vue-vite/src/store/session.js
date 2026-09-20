@@ -17,6 +17,7 @@ import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneI
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
 import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains, setLaneMix, setMasterMix, setFxMeterDetail } from '../audio/mixer-graph.js'
+import { invalidateFxWorklet, hasNativeAudioWorklet } from '../dsp/runtime.js'
 import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
 import {
   putProject,
@@ -38,6 +39,7 @@ import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '.
 import { bounceSessionToWav } from '../audio/bounce.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
+import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
@@ -64,6 +66,29 @@ import {
   insertablePlugins,
   mOrchestraInstrument
 } from '../model/m-orchestra-ui.js'
+import {
+  ORCHESTRA_V_PLUGIN_ID,
+  ORCHESTRA_V_DEFAULT_ID,
+  isOrchestraVTrack,
+  isOrchestraVDefinition,
+  orchestraVInstrument,
+  orchestraVUsesPedal,
+  techniquesFor,
+  defaultTechniqueFor,
+  defaultControllerValues
+} from '../model/orchestra-v-ui.js'
+
+/** Both browser samplers expose the same note/controller surface, so the transport,
+ * preview and preload paths only need to know which facade a track belongs to. */
+function cloudSamplerFor (track) {
+  if (isOrchestraVTrack(track)) return orchestraVCloud
+  if (isMOrchestraTrack(track)) return mOrchestraCloud
+  return null
+}
+
+function isCloudSamplerTrack (track) {
+  return !!cloudSamplerFor(track)
+}
 
 export const TRACK_HEIGHT = 50
 export const RULER_HEIGHT = 36
@@ -440,6 +465,9 @@ function readableFxError (raw) {
   const text = String(raw || '')
   if (/class statement must have a name/i.test(text) || /must have a name/i.test(text)) {
     return 'FX processor failed to load in this browser build'
+  }
+  if (/AudioWorklet unavailable/i.test(text)) {
+    return 'AudioWorklet unavailable — use HTTPS or localhost, or tap to retry'
   }
   return text
 }
@@ -862,8 +890,9 @@ function stopLocalClock () {
 function preloadSelectedOrchestra (graph) {
   if (!graph) return
   const track = session.tracks[session.selectedTrack]
-  if (!track || track.source !== 'm-orchestra' || !track.definitionId) return
-  mOrchestraCloud.preloadInstrument(graph, track.definitionId).catch(() => {})
+  if (!track || !track.definitionId) return
+  const cloud = cloudSamplerFor(track)
+  if (cloud) cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
 }
 
 async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
@@ -872,7 +901,7 @@ async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
   session.clips.forEach((clip) => {
     if (!clip || clip.midi === false) return
     const track = session.tracks[clip.trackIndex]
-    if (!track || !isMOrchestraTrack(track)) return
+    if (!track || !isCloudSamplerTrack(track)) return
     const pitches = jobs.get(track) || []
     ;(clip.notes || []).forEach((note) => {
       if (!note || note.muted) return
@@ -884,7 +913,7 @@ async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
     if (pitches.length) jobs.set(track, pitches)
   })
   await Promise.all([...jobs].map(([track, pitches]) => (
-    mOrchestraCloud.preloadNotes(graph, track, pitches).catch(() => {})
+    cloudSamplerFor(track).preloadNotes(graph, track, pitches).catch(() => {})
   )))
 }
 
@@ -1074,7 +1103,7 @@ export function onTrackInstrumentClick (trackIndex) {
 
 function trackHasInstrument (track) {
   if (!track) return false
-  if (isMOrchestraTrack(track)) return true
+  if (isCloudSamplerTrack(track)) return true
   if (track.source === 'web-sampler' || track.definitionId === WEB_SAMPLER_PLUGIN_ID) return true
   if (track.definitionId) return true
   return false
@@ -1090,7 +1119,8 @@ export function openPluginUI (trackIndex) {
   }
   session.editorVisible = true
   session.workspaceView = 'sampler'
-  if (isMOrchestraTrack(track)) session.editorTab = 'm-orchestra'
+  if (isOrchestraVTrack(track)) session.editorTab = 'orchestra-v'
+  else if (isMOrchestraTrack(track)) session.editorTab = 'm-orchestra'
   else if (track.source === 'web-sampler' || track.definitionId === WEB_SAMPLER_PLUGIN_ID) session.editorTab = 'info'
   else if (track.definitionId && track.definitionId !== TEST_SYNTH_PLUGIN_ID) session.editorTab = 'sampler'
   else session.editorTab = 'info'
@@ -1130,7 +1160,9 @@ export function insertPlugin (track, pluginId) {
     session.editorTab = 'sampler'
     return
   }
-  if (pluginId === M_ORCHESTRA_PLUGIN_ID) {
+  if (pluginId === ORCHESTRA_V_PLUGIN_ID) {
+    loadOrchestraV(track, ORCHESTRA_V_DEFAULT_ID)
+  } else if (pluginId === M_ORCHESTRA_PLUGIN_ID) {
     loadCloudOrchestra(track, M_ORCHESTRA_DEFAULT_ID)
   } else if (pluginId === TEST_SYNTH_PLUGIN_ID) {
     track.definitionId = TEST_SYNTH_PLUGIN_ID
@@ -1149,7 +1181,8 @@ export function insertPlugin (track, pluginId) {
   }
   session.editorVisible = true
   session.workspaceView = 'sampler'
-  if (pluginId === M_ORCHESTRA_PLUGIN_ID) session.editorTab = 'm-orchestra'
+  if (pluginId === ORCHESTRA_V_PLUGIN_ID) session.editorTab = 'orchestra-v'
+  else if (pluginId === M_ORCHESTRA_PLUGIN_ID) session.editorTab = 'm-orchestra'
   else if (pluginId === TEST_SYNTH_PLUGIN_ID) session.editorTab = 'info'
   else session.editorTab = 'sampler'
 }
@@ -1626,9 +1659,12 @@ export function orchestraPatchCatalogue () {
         const plugin = String(item.sourcePlugin || '')
         return id !== WEB_SAMPLER_PLUGIN_ID
           && id !== TEST_SYNTH_PLUGIN_ID
+          && id !== ORCHESTRA_V_PLUGIN_ID
           && plugin !== M_ORCHESTRA_PLUGIN_ID
+          && plugin !== ORCHESTRA_V_PLUGIN_ID
           && plugin !== TEST_SYNTH_PLUGIN_ID
           && !id.startsWith('m_orch_')
+          && !isOrchestraVDefinition(id)
       }).map((item) => {
         const id = String(item.id || '')
         const plugin = String(item.sourcePlugin || '')
@@ -1649,12 +1685,13 @@ export function needsPcEngine (definitionId) {
   if (!definitionId) return false
   if (definitionId === 'web_sampler') return false
   if (String(definitionId).startsWith('m_orch_') || definitionId === M_ORCHESTRA_PLUGIN_ID) return false
+  if (isOrchestraVDefinition(definitionId) || definitionId === ORCHESTRA_V_PLUGIN_ID) return false
   return true
 }
 
 function trackWantsRemoteVst (track) {
   if (!track || track.type === 'master' || track.type === 'group') return false
-  if (track.source === 'web-sampler' || isMOrchestraTrack(track)) return false
+  if (track.source === 'web-sampler' || isCloudSamplerTrack(track)) return false
   return track.source === 'remote-vst' || needsPcEngine(track.definitionId)
 }
 
@@ -1694,6 +1731,10 @@ export function loadInstrument (track, definitionId) {
   }
   if (String(definitionId).startsWith('m_orch_') || definitionId === M_ORCHESTRA_PLUGIN_ID) {
     loadCloudOrchestra(track, definitionId === M_ORCHESTRA_PLUGIN_ID ? M_ORCHESTRA_DEFAULT_ID : definitionId)
+    return
+  }
+  if (isOrchestraVDefinition(definitionId) || definitionId === ORCHESTRA_V_PLUGIN_ID) {
+    loadOrchestraV(track, definitionId === ORCHESTRA_V_PLUGIN_ID ? ORCHESTRA_V_DEFAULT_ID : definitionId)
     return
   }
   if (!isEngineConnected()) {
@@ -1763,6 +1804,39 @@ export function loadCloudOrchestra (track, definitionId) {
   })
 }
 
+export function loadOrchestraV (track, definitionId) {
+  if (!track || track.type === 'master') return
+  const id = definitionId || ORCHESTRA_V_DEFAULT_ID
+  const item = orchestraVInstrument(id)
+  if (item && !item.available) {
+    showToast((item.name || 'That instrument') + ' has no samples in the cloud library yet')
+    return
+  }
+  track.source = 'orchestra-v'
+  track.definitionId = id
+  track.instrument = (item && item.name) || 'Orchestra V'
+  // Keep the current technique when the new instrument can play it; a flute has no
+  // pizzicato, so switching from the violins must not leave the track silent.
+  const keep = techniquesFor(id).find((entry) => entry.id === track.techniqueId && entry.available)
+  track.techniqueId = keep ? keep.id : defaultTechniqueFor(id)
+  track.controllerValues = { ...defaultControllerValues(), ...(track.controllerValues || {}) }
+  // Only instruments that damp on pedal release get the sustain lane in the piano roll.
+  track.pedal = orchestraVUsesPedal(id) ? { mapped: true } : null
+  track.loadState = 'Ready'
+  track.loadMessage = 'Orchestra V'
+  track.instrumentLoadState = 'ready'
+  track.instrumentLoadMessage = 'SFZ region map'
+  orchestraVCloud.loadInstrument(id).catch((err) => {
+    console.warn('[orchestra-v] compile failed', err)
+  })
+  unlockAudio().then((graph) => {
+    if (!graph) return
+    return orchestraVCloud.preloadInstrument(graph, id)
+  }).catch((err) => {
+    console.warn('[orchestra-v] preload failed', err)
+  })
+}
+
 export function loadWebSampler (track, patch = {}) {
   if (!track || track.type === 'master') return
   const next = createWebSamplerInstrument({
@@ -1789,7 +1863,7 @@ export function unloadInstrument (track) {
 export function setTechnique (track, techniqueId) {
   if (!track) return
   track.techniqueId = techniqueId
-  if (isMOrchestraTrack(track)) return
+  if (isCloudSamplerTrack(track)) return
   fire('instrument.setTechnique', { trackId: track.id, techniqueId })
 }
 
@@ -1797,8 +1871,9 @@ export function setController (track, controllerId, value) {
   if (!track) return
   if (!track.controllerValues) track.controllerValues = {}
   track.controllerValues[controllerId] = value
-  if (isMOrchestraTrack(track)) {
-    mOrchestraCloud.applyControllers(track)
+  const cloud = cloudSamplerFor(track)
+  if (cloud) {
+    cloud.applyControllers(track)
     return
   }
   fire('instrument.setController', { trackId: track.id, controllerId, value })
@@ -1815,8 +1890,8 @@ export function previewNoteOn (track, pitch, velocity = 0.8) {
   unlockAudio().then(async () => {
     await ensureMixerAttached()
     refreshMixerGraph()
-    if (isMOrchestraTrack(track)) {
-      previewMOrchestra(track, pitch, velocity)
+    if (isCloudSamplerTrack(track)) {
+      previewCloudSampler(track, pitch, velocity)
       startBrowserMeterLoop()
       return
     }
@@ -1834,10 +1909,11 @@ export function previewNoteOn (track, pitch, velocity = 0.8) {
 
 export function previewNoteOff (track, pitch) {
   if (!track) return
-  if (isMOrchestraTrack(track)) {
+  const cloud = cloudSamplerFor(track)
+  if (cloud) {
     const previewId = 'preview-' + track.id + '-' + pitch
-    mOrchestraCloud.cancelPending(previewId, track.id)
-    mOrchestraCloud.noteOff(previewId, track.id)
+    cloud.cancelPending(previewId, track.id)
+    cloud.noteOff(previewId, track.id)
     maybeStopBrowserMeters()
     return
   }
@@ -2091,6 +2167,7 @@ export function setInterfaceMode (mode) {
     const invalid = session.workspaceView === 'sampler'
       || session.editorTab === 'sampler'
       || session.editorTab === 'm-orchestra'
+      || session.editorTab === 'orchestra-v'
       || session.editorTab === 'info'
       || session.editorTab === 'automation'
     if (invalid || (session.workspaceView !== 'arrangement' && session.workspaceView !== 'piano' && session.workspaceView !== 'mixer')) {
@@ -2981,9 +3058,17 @@ function tickLocalMetronome (positionBeats) {
   try { src.start() } catch (err) { /* already started */ }
 }
 
+function audioContextCtor () {
+  if (typeof AudioContext !== 'undefined') return AudioContext
+  if (typeof webkitAudioContext !== 'undefined') return webkitAudioContext
+  return null
+}
+
 function ensureGraph () {
-  if (audioGraph || typeof AudioContext === 'undefined') return audioGraph
-  const context = new AudioContext()
+  if (audioGraph) return audioGraph
+  const Ctor = audioContextCtor()
+  if (!Ctor) return audioGraph
+  const context = new Ctor()
   audioGraph = createAudioGraph(context)
   return audioGraph
 }
@@ -3006,14 +3091,35 @@ export function audioContextState () {
   return audioGraph && audioGraph.context ? audioGraph.context.state : ''
 }
 
+function recreateGraphInsideGesture () {
+  const old = audioGraph
+  if (old) {
+    detachMixerGraph(old)
+    try { old.context.close() } catch (err) { /* already closed */ }
+  }
+  audioGraph = null
+  mixerAttachPromise = null
+  clickBuffer = null
+  clickLoadPromise = null
+  lastMetroBeat = -1
+  return ensureGraph()
+}
+
 export async function unlockAudioForUser () {
-  const graph = ensureGraph()
+  let graph = ensureGraph()
   if (!graph) return null
   try {
     if (graph.context.state === 'suspended' || graph.context.state === 'interrupted') {
       await graph.context.resume()
     }
-    session.audioBlocked = graph.context.state !== 'running'
+    // iOS often omits audioWorklet until AudioContext is created in a gesture.
+    if (!hasNativeAudioWorklet(graph.context)) {
+      graph = recreateGraphInsideGesture()
+      if (graph && (graph.context.state === 'suspended' || graph.context.state === 'interrupted')) {
+        await graph.context.resume()
+      }
+    }
+    session.audioBlocked = !graph || graph.context.state !== 'running'
   } catch (err) {
     session.audioBlocked = true
     showToast('Tap again to enable sound')
@@ -3053,6 +3159,20 @@ async function unlockAudio () {
 
 let dryMixToast = false
 let mixerAttachPromise = null
+let fxGestureArmed = false
+
+function armFxAttachOnGesture () {
+  if (typeof window === 'undefined' || fxGestureArmed) return
+  fxGestureArmed = true
+  const once = () => {
+    window.removeEventListener('pointerdown', once, true)
+    window.removeEventListener('keydown', once, true)
+    fxGestureArmed = false
+    unlockAudioForUser().catch(() => {})
+  }
+  window.addEventListener('pointerdown', once, true)
+  window.addEventListener('keydown', once, true)
+}
 
 export async function ensureMixerAttached () {
   if (mixerAttachPromise) return mixerAttachPromise
@@ -3067,7 +3187,9 @@ export async function ensureMixerAttached () {
 async function doEnsureMixerAttached () {
   const graph = ensureGraph()
   if (!graph) return null
-  if (graph.context.state === 'suspended') await graph.context.resume()
+  if (graph.context.state === 'suspended' || graph.context.state === 'interrupted') {
+    try { await graph.context.resume() } catch (err) { /* autoplay policy */ }
+  }
   try {
     await attachMixerGraph(graph, session.webMixer, (lane, meters) => {
       session.fxMeters[lane] = {
@@ -3099,9 +3221,11 @@ async function doEnsureMixerAttached () {
   } catch (err) {
     console.error('[mixer] browser FX attach failed:', err)
     graph.mixerNodes = null
+    invalidateFxWorklet(graph.context)
     session.diagnostics.browserFxAttached = false
     session.diagnostics.browserFxError = readableFxError(err.message || String(err))
     ensureOutputRouting(graph, session.webMixer)
+    armFxAttachOnGesture()
     if (!dryMixToast) {
       dryMixToast = true
       const muted = mixerHasInserts(session.webMixer)
@@ -3172,9 +3296,10 @@ export async function startRemoteAudio () {
     if (!audioUnsub) audioUnsub = onEngineAudio(onRemotePacket)
     await connectEngineAudio()
     session.remoteAudioOn = true
-    soundingNotes.forEach((voiceKey, key) => {
+    soundingNotes.forEach((voiceKey) => {
       releaseWebSampler(voiceKey)
       mOrchestraCloud.noteOff(voiceKey)
+      orchestraVCloud.noteOff(voiceKey)
     })
     soundingNotes.clear()
     refreshMixerGraph()
@@ -3234,7 +3359,7 @@ function tickLocalNotes (nowBeats) {
     if (!clip || clip.midi === false) return
     const track = session.tracks[clip.trackIndex]
     if (!track || track.type === 'master' || !isTrackAudible(clip.trackIndex)) return
-    const browserOwned = track.source === 'web-sampler' || isMOrchestraTrack(track)
+    const browserOwned = track.source === 'web-sampler' || isCloudSamplerTrack(track)
     if (session.remoteAudioOn && !browserOwned) return
     ;(clip.notes || []).forEach((note) => {
       if (note.muted) return
@@ -3245,8 +3370,8 @@ function tickLocalNotes (nowBeats) {
         const key = (clip.id || 0) + ':' + (note.id || 0) + ':' + (slice.startTick || start) + ':' + slice.pitch
         next.add(key)
         if (!soundingNotes.has(key)) {
-          const voiceKey = isMOrchestraTrack(track)
-            ? previewMOrchestra(track, slice.pitch, noteVelocity(slice), key)
+          const voiceKey = isCloudSamplerTrack(track)
+            ? previewCloudSampler(track, slice.pitch, noteVelocity(slice), key)
             : previewWebSampler(track, slice.pitch, noteVelocity(slice), key)
           soundingNotes.set(key, voiceKey)
         }
@@ -3259,11 +3384,13 @@ function tickLocalNotes (nowBeats) {
     const clip = session.clips.find((item) => String(item.id) === clipKey)
     const track = clip ? session.tracks[clip.trackIndex] : null
     releaseWebSampler(voiceKey)
-    if (track && isMOrchestraTrack(track)) {
-      mOrchestraCloud.cancelPending(voiceKey, track.id)
-      mOrchestraCloud.noteOff(voiceKey, track.id)
+    const cloud = track && cloudSamplerFor(track)
+    if (cloud) {
+      cloud.cancelPending(voiceKey, track.id)
+      cloud.noteOff(voiceKey, track.id)
     } else {
       mOrchestraCloud.noteOff(voiceKey)
+      orchestraVCloud.noteOff(voiceKey)
     }
     soundingNotes.delete(key)
   })
@@ -3273,20 +3400,24 @@ function allLocalNotesOff () {
   soundingNotes.forEach((voiceKey) => {
     releaseWebSampler(voiceKey)
     mOrchestraCloud.noteOff(voiceKey)
+    orchestraVCloud.noteOff(voiceKey)
   })
   mOrchestraCloud.allNotesOff()
+  orchestraVCloud.allNotesOff()
   soundingNotes.clear()
 }
 
-function previewMOrchestra (track, pitch, velocity, id) {
+function previewCloudSampler (track, pitch, velocity, id) {
   const logicalId = id || ('preview-' + track.id + '-' + pitch)
+  const cloud = cloudSamplerFor(track)
+  if (!cloud) return logicalId
   ensureMixerAttached().then(async (graph) => {
     if (!graph) return
     await graph.context.resume()
-    const engineKey = await mOrchestraCloud.noteOn(graph, track, pitch, velocity, logicalId)
+    const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId)
     if (engineKey && !graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
-    console.warn('[m-orchestra] preview failed:', err)
+    console.warn('[cloud-sampler] preview failed:', err)
   })
   return logicalId
 }

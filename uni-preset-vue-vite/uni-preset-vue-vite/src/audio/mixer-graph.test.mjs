@@ -143,6 +143,8 @@ function reachable (start) {
 {
   assert(isWebOwnedTrack({ id: 1, type: 'midi', source: 'm-orchestra' }), 'orchestra track is web owned')
   assert(isWebOwnedTrack({ id: 2, type: 'midi', source: 'web-sampler' }), 'sampler track is web owned')
+  assert(isWebOwnedTrack({ id: 5, type: 'midi', source: 'orchestra-v' }), 'Orchestra V track is web owned')
+  assert(isWebOwnedTrack({ id: 6, type: 'midi', definitionId: 'ov_violin_1' }), 'an ov_ definition is web owned')
   assert(!isWebOwnedTrack({ id: 3, type: 'midi', source: 'remote-vst' }), 'VST track is engine owned')
   assert(!isWebOwnedTrack({ id: 4, type: 'master' }), 'master is not a track strip')
 }

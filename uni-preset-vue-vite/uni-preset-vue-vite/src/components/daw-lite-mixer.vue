@@ -62,13 +62,54 @@
               >S</view>
             </view>
             <view class="fx-block">
-              <view class="fx-btn" @click.stop="openFx(track)">FX</view>
+              <view class="fx-btn" @click.stop="openFx(track)" @tap.stop="openFx(track)">FX</view>
               <view class="dots">
                 <view
                   v-for="n in 5"
                   :key="'d' + track.id + n"
                   class="dot"
                   :class="{ on: slotLit(track, n - 1) }"
+                />
+              </view>
+            </view>
+          </view>
+          <view
+            v-for="bus in buses"
+            :key="bus.id"
+            class="ch return"
+          >
+            <text class="name">{{ bus.name }}</text>
+            <view class="fader-row">
+              <daw-meter class="meter" :level="lanePeak(bus.id === 'bus_delay' ? 'delay' : 'bus')" />
+              <daw-fader
+                class="vol"
+                orientation="vertical"
+                :model-value="busFader(bus)"
+                @update:model-value="onBusVolume(bus, $event)"
+                @drag-start="mixDragging = true"
+                @drag-end="mixDragging = false"
+              />
+            </view>
+            <text class="db">{{ busVolumeLabel(bus) }}</text>
+            <view class="pan-block ghost">
+              <text class="pan-lab">RET</text>
+            </view>
+            <view class="togs">
+              <view
+                class="tog"
+                :class="{ on: bus.mute, mute: bus.mute }"
+                @click.stop="toggleBusMute(bus)"
+                @tap.stop="toggleBusMute(bus)"
+              >M</view>
+            </view>
+            <view class="fx-block">
+              <view class="fx-btn" @click.stop="openBusFx(bus)" @tap.stop="openBusFx(bus)">FX</view>
+              <view class="dots">
+                <view
+                  v-for="n in 5"
+                  :key="'bd' + bus.id + n"
+                  class="dot"
+                  :class="{ on: busSlotLit(bus, n - 1) }"
                 />
               </view>
             </view>
@@ -105,7 +146,7 @@
           >M</view>
         </view>
         <view class="fx-block">
-          <view class="fx-btn" @click.stop="openFx(master)">FX</view>
+          <view class="fx-btn" @click.stop="openFx(master)" @tap.stop="openFx(master)">FX</view>
           <view class="dots">
             <view
               v-for="n in 5"
@@ -134,9 +175,10 @@ import {
   endMixDrag,
   isTrackAudible,
   openLiteSheet,
-  ensureMixerAttached
+  ensureMixerAttached,
+  persistWebMixer
 } from '../store/session.js'
-import { formatVolumeDb, formatPan, dbFromFader } from '../model/mixer-model.js'
+import { formatVolumeDb, formatPan, dbFromFader, faderFromDb } from '../model/mixer-model.js'
 import { fxMeterLaneKey, laneInserts } from '../model/web-mixer.js'
 
 const mixDragging = ref(false)
@@ -145,14 +187,18 @@ const laneChannels = computed(() => (
   session.tracks.filter((track) => track.type !== 'master')
 ))
 const master = computed(() => session.tracks.find((track) => track.type === 'master') || null)
-const rowWidth = computed(() => Math.max(320, laneChannels.value.length * 96 + 24))
+const buses = computed(() => session.webMixer.buses || [])
+const rowWidth = computed(() => Math.max(320, (laneChannels.value.length + buses.value.length) * 96 + 24))
 
 const fxLabel = computed(() => {
-  if (!session.diagnostics.browserFxAttached) return 'FX off'
+  if (!session.diagnostics.browserFxAttached) {
+    return session.diagnostics.browserFxError ? 'FX error' : 'FX off'
+  }
   const mode = session.diagnostics.routingMode
   return mode === 'fallback' ? 'FX bypassed' : 'FX on'
 })
 const routingWarning = computed(() => {
+  if (session.diagnostics.browserFxError) return session.diagnostics.browserFxError
   const list = session.diagnostics.routingWarnings || []
   return list.length ? list[0] : ''
 })
@@ -207,6 +253,35 @@ function slotLit (track, index) {
   return !!(slot && slot.pluginId && slot.enabled !== false)
 }
 
+function busSlotLit (bus, index) {
+  const slot = bus && bus.inserts && bus.inserts[index]
+  return !!(slot && slot.pluginId && slot.enabled !== false)
+}
+
+function busFader (bus) {
+  if (!bus) return 0.8
+  if (bus.volumeDb != null) return faderFromDb(bus.volumeDb)
+  return bus.volume == null ? 0.8 : bus.volume
+}
+
+function busVolumeLabel (bus) {
+  const db = bus && bus.volumeDb != null ? bus.volumeDb : dbFromFader(bus && bus.volume)
+  return formatVolumeDb(db)
+}
+
+function onBusVolume (bus, value) {
+  if (!bus) return
+  bus.volume = value
+  bus.volumeDb = dbFromFader(value)
+  persistWebMixer()
+}
+
+function toggleBusMute (bus) {
+  if (!bus) return
+  bus.mute = !bus.mute
+  persistWebMixer()
+}
+
 function onMixDragStart (track, param) {
   mixDragging.value = true
   beginMixDrag(track, param)
@@ -221,6 +296,11 @@ function openFx (track) {
   const index = trackIndex(track)
   selectTrack(index)
   openLiteSheet({ kind: 'track', tab: track.type === 'master' ? 'fx' : 'fx', trackIndex: index })
+}
+
+function openBusFx (bus) {
+  if (!bus) return
+  openLiteSheet({ kind: 'bus', tab: 'fx', busId: bus.id })
 }
 
 onMounted(() => {
@@ -336,6 +416,7 @@ onMounted(() => {
 .ch.on { border-color: #505050; background: #1a1a1a; }
 .ch.group { background: #161616; }
 .ch.dim { opacity: 0.42; }
+.ch.return { border-color: #2e3a46; }
 .accent {
   position: absolute;
   left: 0;
@@ -429,6 +510,7 @@ onMounted(() => {
   width: 100%;
   color: #c8c8c8;
   min-height: 34px;
+  cursor: pointer;
 }
 .dots {
   display: flex;

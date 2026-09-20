@@ -2,7 +2,7 @@ import JSZip from 'jszip'
 import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
 import { playbackFrom, acceptManifestLoop as acceptPublishedLoop } from './playback.js'
-import { pickLayer, pickSample as pickFromManifest, splitSustainRelease } from './pick.js'
+import { bakeLoopSeam, pickLayer, pickSample as pickFromManifest, splitSustainRelease } from './pick.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
 import { trackInputNode } from '../mixer-graph.js'
 
@@ -177,27 +177,10 @@ function applyManifestLoop (audio, sample) {
     return { loop: false, loopStart: 0, loopEnd: 0 }
   }
   const started = nowMs()
-  const sr = audio.sampleRate
-  const loopStart = sample.loopStart
-  const loopEnd = sample.loopEnd
-  if (loopEnd - loopStart < (pb().minLoopSec || 1.45)) return { loop: false, loopStart: 0, loopEnd: 0 }
-  const start = Math.max(0, Math.min(audio.length - 2, Math.round(loopStart * sr)))
-  const end = Math.max(start + 2, Math.min(audio.length - 1, Math.round(loopEnd * sr)))
-  const maxCrossfade = Math.floor((end - start) * 0.1)
-  const crossfade = Math.max(0, Math.min(maxCrossfade, Math.round((sample.crossfadeSec || 0.08) * sr)))
-  if (crossfade > 8) {
-    for (let channel = 0; channel < audio.numberOfChannels; channel++) {
-      const data = audio.getChannelData(channel)
-      for (let i = 0; i < crossfade; i++) {
-        const t = i / Math.max(1, crossfade - 1)
-        const fadeOut = Math.cos(t * Math.PI * 0.5)
-        const fadeIn = Math.sin(t * Math.PI * 0.5)
-        data[end - crossfade + i] = data[end - crossfade + i] * fadeOut + data[start + i] * fadeIn
-      }
-    }
-  }
+  if (sample.loopEnd - sample.loopStart < (pb().minLoopSec || 1.45)) return { loop: false, loopStart: 0, loopEnd: 0 }
+  const seam = bakeLoopSeam(audio, sample.loopStart, sample.loopEnd, sample.crossfadeSec)
   profile.loopMs += nowMs() - started
-  return { loop: true, loopStart: (start + crossfade) / sr, loopEnd: end / sr }
+  return { loop: true, loopStart: seam.loopStart, loopEnd: seam.loopEnd }
 }
 
 async function decodeSample (context, sample, priority = true) {

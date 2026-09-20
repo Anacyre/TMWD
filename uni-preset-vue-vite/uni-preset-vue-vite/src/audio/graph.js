@@ -149,7 +149,9 @@ export async function attachRemotePlayer (graph, onStatus) {
   const blob = new Blob([workletSource], { type: 'application/javascript' })
   const url = URL.createObjectURL(blob)
   await graph.context.audioWorklet.addModule(url)
-  URL.revokeObjectURL(url)
+  setTimeout(() => {
+    try { URL.revokeObjectURL(url) } catch (err) { /* already revoked */ }
+  }, 60000)
 
   const node = new AudioWorkletNode(graph.context, 'remote-vst-player', {
     numberOfInputs: 0,

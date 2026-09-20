@@ -36,6 +36,7 @@ function inferSource (track) {
   if (track.source) return track.source
   const def = track.definitionId || track.instrumentId || ''
   if (String(def).startsWith('m_orch_')) return 'm-orchestra'
+  if (String(def).startsWith('ov_')) return 'orchestra-v'
   if (track.webSampler && (track.webSampler.sampleName || track.webSampler.assetHash)) return 'web-sampler'
   if (def) return 'remote-vst'
   return 'empty'
