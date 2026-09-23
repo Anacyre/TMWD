@@ -4,8 +4,10 @@ name = "tech-media-sound-station"
 compatibility_date = "2026-08-28"
 workers_dev = true
 
-# The H5 bundle is built by `npm run deploy` before wrangler runs, so there is
-# no [build] block here; adding one would build the site twice.
+# Cloudflare Workers CI often runs `npx wrangler deploy` only. Wrangler runs this
+# before uploading static assets (same command as root `npm run build:web`).
+[build]
+command = "npm run build:web"
 
 [assets]
 directory = "./uni-preset-vue-vite/uni-preset-vue-vite/dist/build/h5"
