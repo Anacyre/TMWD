@@ -13,8 +13,8 @@ dist
 *.local
 public/daw-fx-chain.js
 
-# Encoded output of scripts/publish-sample-library.mjs. Rebuildable from the WAV originals,
-# and the bucket is where the browser reads it from.
+# Encoded output of scripts/publish-sample-library.mjs. Rebuildable from the WAV originals.
+# sample-libraries/ is the copy Cloudflare CI actually ships; do not ignore it.
 .sample-cache
 
 # Editor directories and files

@@ -252,6 +252,10 @@ async function fetchSampleBytes (library, objectPath) {
   const started = nowMs()
   const response = await fetch(sampleUrl(library, objectPath))
   if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
+  const type = String(response.headers.get('content-type') || '')
+  // The Cloudflare site answers missing assets with index.html and status 200.
+  // Decoding that page is what made every Orchestra V note silent.
+  if (type.includes('text/html')) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
   const bytes = await response.arrayBuffer()
   profile.fetchMs += nowMs() - started
   profile.networkFetches += 1
