@@ -55,5 +55,10 @@ export function publicLibraryUrl (bucket, path) {
   if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
   const local = localLibraryUrl(bucket, rel)
   if (local) return local
+  // The default Supabase project answers 400 for this bucket. The deploy step copies
+  // the encoded files next to the app, so the Cloudflare site serves them itself.
+  if (bucket === 'vms-symphonic' && typeof location !== 'undefined' && location.origin) {
+    return location.origin + '/' + bucket + '/' + rel
+  }
   return publicAssetUrl(rel, bucket)
 }

@@ -21,7 +21,7 @@
     "publish:m-orchestra": "node scripts/publish-m-orchestra.mjs --upload",
     "test": "node src/bridge/engine-host.test.mjs && node src/audio/mixer-graph.test.mjs && node src/lib/project-io.test.mjs && node src/lib/project-db.test.mjs && node src/lib/file-drop.test.mjs && node src/lib/midi-import.test.mjs && node src/audio/m-orchestra/loop.test.mjs && node src/lib/pointer-drag.test.mjs && node src/dsp/visuals.test.mjs && node src/dsp/fx-worklet.test.mjs && node src/dsp/runtime.test.mjs && node src/audio/bounce.test.mjs && node src/model/mixer-model.test.mjs && node src/model/note-model.test.mjs && node src/model/playlist-model.test.mjs && node src/model/expression-lane.test.mjs && node src/audio/m-orchestra/sample-cache.test.mjs && node src/audio/orchestra-v/sfz.test.mjs && node src/audio/orchestra-v/select.test.mjs && node src/audio/orchestra-v/release.test.mjs && node src/model/orchestra-v-ui.test.mjs && node src/dsp/reverb-x.test.mjs && node src/dsp/limiter-x.test.mjs && node src/dsp/dynamic-x.test.mjs",
     "build:custom": "uni build -p",
-    "build:h5": "uni build",
+    "build:h5": "uni build && node scripts/stage-symphonic-samples.mjs",
     "build:h5:ssr": "uni build --ssr",
     "build:mp-alipay": "uni build -p mp-alipay",
     "build:mp-baidu": "uni build -p mp-baidu",
@@ -55,6 +55,7 @@
     "@dcloudio/uni-mp-xhs": "3.0.0-5000720260410001",
     "@dcloudio/uni-quickapp-webview": "3.0.0-5000720260410001",
     "@supabase/supabase-js": "^2.112.4",
+    "@wasm-audio-decoders/ogg-vorbis": "^0.1.20",
     "jszip": "^3.10.1",
     "vue": "^3.4.21",
     "vue-i18n": "^9.1.9"

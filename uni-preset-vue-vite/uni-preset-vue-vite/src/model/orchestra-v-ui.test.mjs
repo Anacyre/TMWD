@@ -258,8 +258,8 @@ function validate (value, spec, path) {
   assert(piano.zones.length, 'the piano compiles zones')
   assert(piano.zones.every((zone) => zone.loopMode === 'no_loop'),
     'a piano must never loop, or a held key would sustain forever')
-  assert(piano.zones.every((zone) => zone.releaseMode === 'segment'),
-    'releasing a piano key crossfades into the recorded damper tail')
+  assert(piano.zones.every((zone) => zone.releaseMode === 'envelope'),
+    'releasing a piano key damps with an envelope from the current playback')
   assert(piano.zones.every((zone) => zone.decays), 'the piano body is measured as decaying')
 
   const violins = compileRegions(own.samples, findDefinition('ov_sym_violins_1'), own)

@@ -13,7 +13,8 @@
  *   free     the file already contains its entire decay, so cutting it off would chop a
  *            spiccato or pizzicato in half; let it ring and collect it when the buffer ends
  *   segment  crossfade into the release tail baked into the same file
- *   envelope no usable tail left to reach for, so ride the gain down
+ *   envelope no usable tail, or a decaying body (piano) that must fade from
+ *            wherever it currently is rather than jumping to the recorded tail
  *
  * `elapsedSec` is wall-clock since note-on. Scaling it by the voice's playback rate converts
  * it into a position in the buffer, which matters because a pitch-shifted sample runs through
@@ -23,6 +24,9 @@ export function releasePlan (voice, opts = {}) {
   if (!voice || voice.releasing) return { action: 'none' }
   if (!opts.force && voice.pedal && opts.pedalDown) return { action: 'hold' }
   if (voice.releaseMode === 'free') return { action: 'free' }
+  // A piano (and anything else that decays while held) is already the note we want to hear.
+  // Jumping to the last 1–2 s of the file would skip most of the decay and sound like a cut.
+  if (voice.decays || voice.releaseMode === 'envelope') return { action: 'envelope' }
 
   const decoded = voice.decoded
   const duration = decoded && decoded.audio ? decoded.audio.duration : 0

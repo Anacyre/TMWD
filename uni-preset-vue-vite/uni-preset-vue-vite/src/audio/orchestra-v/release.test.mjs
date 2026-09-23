@@ -23,14 +23,14 @@ const plan = (v, o) => releasePlan(v, o).action
 
 // --- a held sustain pedal keeps the note sounding ------------------------------
 {
-  const piano = voice({ pedal: true, decoded: { loop: false } })
+  const piano = voice({ pedal: true, decays: true, decoded: { loop: false } })
 
   assert.equal(plan(piano, { pedalDown: true, elapsedSec: 0.5 }), 'hold',
     'with the pedal down the key lifting must not damp the string')
-  assert.equal(plan(piano, { pedalDown: false, elapsedSec: 0.5 }), 'segment',
-    'with the pedal up the same note-off plays the recorded release')
-  assert.equal(plan(piano, { pedalDown: true, elapsedSec: 0.5, force: true }), 'segment',
-    'lifting the pedal, voice capping and all-notes-off force past the hold')
+  assert.equal(plan(piano, { pedalDown: false, elapsedSec: 0.5 }), 'envelope',
+    'with the pedal up a piano key damps from the current playback, not a jump to the tail')
+  assert.equal(plan(piano, { pedalDown: true, elapsedSec: 0.5, force: true }), 'envelope',
+    'lifting the pedal, voice capping and all-notes-off force a damper envelope')
 
   const strings = voice({ pedal: false })
   assert.equal(plan(strings, { pedalDown: true, elapsedSec: 0.5 }), 'segment',
@@ -41,9 +41,9 @@ const plan = (v, o) => releasePlan(v, o).action
 {
   // The hold is a decision, not a state change: nothing is consumed, so re-asking after the
   // pedal comes up yields the real release. This is what liftPedal relies on.
-  const piano = voice({ pedal: true, decoded: { loop: false } })
+  const piano = voice({ pedal: true, decays: true, decoded: { loop: false } })
   assert.equal(plan(piano, { pedalDown: true, elapsedSec: 1 }), 'hold')
-  assert.equal(plan(piano, { pedalDown: false, elapsedSec: 1 }), 'segment')
+  assert.equal(plan(piano, { pedalDown: false, elapsedSec: 1 }), 'envelope')
 }
 
 // --- one-shots are never cut short --------------------------------------------
@@ -61,8 +61,9 @@ const plan = (v, o) => releasePlan(v, o).action
 {
   // Piano does not loop, so a long-held note walks into its own release tail unaided. Firing
   // the segment again at that point would restart audio the ear has already moved past.
-  const piano = voice({ pedal: true, decoded: { loop: false } })
-  assert.equal(plan(piano, { elapsedSec: 3.9 }), 'segment', 'just before the splice, crossfade')
+  const piano = voice({ pedal: true, decays: true, decoded: { loop: false } })
+  assert.equal(plan(piano, { elapsedSec: 0.3 }), 'envelope', 'early in the body, fade from here')
+  assert.equal(plan(piano, { elapsedSec: 3.9 }), 'envelope', 'just before the splice, still a damper fade')
   assert.equal(plan(piano, { elapsedSec: 4.0 }), 'envelope', 'at the splice the tail is already playing')
   assert.equal(plan(piano, { elapsedSec: 5.5 }), 'envelope', 'deep into the tail, just fade out')
 

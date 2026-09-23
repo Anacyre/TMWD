@@ -204,6 +204,44 @@ function cachePath (library, objectPath) {
   return library === 'vms-solo' ? objectPath : library + '/' + objectPath
 }
 
+let vorbisDecoder = null
+let vorbisChain = Promise.resolve()
+
+/** Safari cannot decode Ogg Vorbis with decodeAudioData. Decode to PCM instead. */
+function decodeVorbis (context, bytes) {
+  const run = vorbisChain.then(async () => {
+    if (!vorbisDecoder) {
+      const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
+      vorbisDecoder = new OggVorbisDecoder()
+      await vorbisDecoder.ready
+    } else {
+      await vorbisDecoder.reset()
+    }
+    const decoded = await vorbisDecoder.decode(new Uint8Array(bytes))
+    const channels = decoded.channelData || []
+    const length = decoded.samplesDecoded || (channels[0] && channels[0].length) || 0
+    const rate = decoded.sampleRate || context.sampleRate
+    if (!length) throw new Error('empty vorbis decode')
+    const audio = context.createBuffer(Math.max(1, channels.length), length, rate)
+    channels.forEach((channel, index) => {
+      audio.copyToChannel(channel.subarray(0, length), index)
+    })
+    return audio
+  })
+  vorbisChain = run.then(() => {}, () => {})
+  return run
+}
+
+async function decodeSampleBytes (context, bytes) {
+  try {
+    const audio = await context.decodeAudioData(bytes.slice(0))
+    if (audio && audio.length > 0 && audio.duration > 0) return audio
+  } catch (err) {
+    /* iPad / Safari rejects application/ogg */
+  }
+  return decodeVorbis(context, bytes)
+}
+
 async function fetchSampleBytes (library, objectPath) {
   const stored = cachePath(library, objectPath)
   const cached = await readEncodedSample(stored)
@@ -242,14 +280,14 @@ async function decodeZone (context, library, zone, rules, priority = true) {
   const promise = decodeQueue.run(async () => {
     const bytes = await fetchSampleBytes(library, zone.sample)
     const started = nowMs()
-    const audio = await context.decodeAudioData(bytes.slice(0))
+    const audio = await decodeSampleBytes(context, bytes)
     profile.decodeMs += nowMs() - started
 
     let loop = false
     let loopStart = 0
     let loopEnd = 0
-    // Where note-off should pick the recording up again. A library that records the release
-    // tail after the body says so outright; otherwise we have to find one.
+    // Where note-off should pick the recording up again. A body-plus-release library
+    // publishes this as `mainSec` (4 s into a 6 s take, 1 s into a 2 s take).
     let releaseStart = zone.mainSec > 0 ? Math.min(zone.mainSec, audio.duration) : 0
 
     if (zone.loopMode === 'loop_continuous' && zone.loopEnd > zone.loopStart) {
@@ -422,41 +460,65 @@ function disposeVoice (voice) {
   try { voice.tail.disconnect() } catch (err) { /* already gone */ }
 }
 
-function stopBody (voice, at, fadeSec) {
-  crossfade(voice.body.gain, FADE_OUT, at, fadeSec)
-  voice.sources.forEach((src) => {
+function stopSources (sources, at, fadeSec) {
+  sources.forEach((src) => {
     try { src.loop = false } catch (err) { /* ignore */ }
-    try { src.stop(at + fadeSec + 0.01) } catch (err) { /* ended */ }
+    try { src.stop(at + fadeSec + 0.02) } catch (err) { /* ended */ }
   })
 }
 
+function stopBody (voice, at, fadeSec) {
+  crossfade(voice.body.gain, FADE_OUT, at, fadeSec)
+  stopSources(voice.bodySources || [], at, fadeSec)
+}
+
 /**
- * Play the release tail the recording already contains.
+ * Play the release tail the recording already contains (last 2 s of a 6 s long take,
+ * last 1 s of a 2 s short take).
  *
  * The body and its tail were recorded as one continuous note, so at the splice point the
  * level matches but the phase does not: jumping straight there clicks. An equal-power
- * crossfade of a few tens of milliseconds hides the seam without dulling the attack of the
- * release itself.
+ * crossfade hides the seam. The tail source must not go through `stopBody`, which used to
+ * halt every BufferSource on the voice and made the release last only the fade (a cut).
  */
 function playReleaseSegment (voice, context, at) {
   const decoded = voice.decoded
   const from = decoded.releaseStart
-  const remaining = decoded.audio.duration - from
-  const fade = Math.max(0.01, Math.min(0.12, voice.releaseCrossfadeSec))
+  const rate = Math.max(0.05, voice.baseRate || 1)
+  const remaining = Math.max(0.05, decoded.audio.duration - from)
+  const fade = Math.max(0.08, Math.min(0.14, voice.releaseCrossfadeSec || 0.08))
 
   const tail = context.createBufferSource()
   tail.buffer = decoded.audio
-  tail.playbackRate.value = voice.baseRate
+  tail.playbackRate.value = rate
   tail.connect(voice.tail)
   tail.start(at, from)
-  tail.stop(at + remaining / voice.baseRate + 0.02)
+  tail.stop(at + remaining / rate + 0.02)
+  // Body-only. Putting the tail on `bodySources` would let `stopBody` kill it after ~80 ms.
   voice.sources.push(tail)
 
   voice.tail.gain.cancelScheduledValues(at)
   voice.tail.gain.setValueAtTime(0, at)
   crossfade(voice.tail.gain, FADE_IN, at, fade)
   stopBody(voice, at, fade)
-  return remaining / voice.baseRate
+  return remaining / rate
+}
+
+function fadeOutEnvelope (voice, at, seconds) {
+  const fade = Math.max(0.08, seconds)
+  const peak = Number(voice.out.gain.value)
+  const from = Number.isFinite(peak) ? peak : 1
+  voice.out.gain.cancelScheduledValues(at)
+  voice.out.gain.setValueAtTime(from, at)
+  crossfade(voice.out.gain, scaleCurve(FADE_OUT, from), at, fade)
+  stopSources(voice.sources, at, fade)
+  return fade
+}
+
+function damperSeconds (voice) {
+  // Rapid, but long enough that a stopped buffer is not heard as a click. Felt on a
+  // string is closer to this than to a studio fade, and much closer than a hard cut.
+  return Math.max(0.12, Math.min(0.28, (voice.release || 0.45) * 0.45))
 }
 
 function releaseVoice (key, options = {}) {
@@ -489,14 +551,9 @@ function releaseVoice (key, options = {}) {
     return
   }
 
-  const release = voice.release
-  voice.out.gain.cancelScheduledValues(now)
-  voice.out.gain.setTargetAtTime(0, now, Math.max(0.03, release / 3))
-  voice.sources.forEach((src) => {
-    try { src.loop = false } catch (err) { /* ignore */ }
-    try { src.stop(now + release + 0.05) } catch (err) { /* ended */ }
-  })
-  setTimeout(() => disposeVoice(voice), Math.round(release * 1000 + 120))
+  const fade = voice.decays ? damperSeconds(voice) : Math.max(0.08, voice.release || 0.45)
+  fadeOutEnvelope(voice, now, fade)
+  setTimeout(() => disposeVoice(voice), Math.round(fade * 1000 + 120))
 }
 
 export function noteOff (pitchOrKey, trackId) {
@@ -558,6 +615,8 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
   gain.connect(voice.body)
   source.start()
   voice.sources.push(source)
+  if (!voice.bodySources) voice.bodySources = []
+  voice.bodySources.push(source)
 
   if (voice.vibratoGain) voice.vibratoGain.connect(source.playbackRate)
   if (!voice.baseRate) voice.baseRate = rate
@@ -634,6 +693,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
 
   const voice = {
     sources: [],
+    bodySources: [],
     lfos: [],
     mix,
     body,
@@ -648,7 +708,8 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     decoded: decodedPrimary,
     release: releaseSeconds(primary.zone, ctrl),
     releaseMode: primary.zone.releaseMode || 'tail',
-    releaseCrossfadeSec: primary.zone.releaseCrossfadeSec || 0.04,
+    releaseCrossfadeSec: primary.zone.releaseCrossfadeSec || 0.08,
+    decays: !!primary.zone.decays || !!def.pedal,
     pedal: !!def.pedal,
     pedalHeld: false,
     releasing: false,
@@ -842,13 +903,14 @@ export async function renderNoteAt (context, dest, track, pitch, velocity, when,
 
     const hasSegment = decoded.releaseStart > 0 && decoded.releaseStart < decoded.audio.duration - 0.04
     const reachedTail = !decoded.loop && hold * rate >= decoded.releaseStart
-    if (hasSegment && !reachedTail) {
-      const fade = Math.max(0.01, Math.min(0.12, item.zone.releaseCrossfadeSec || 0.04))
+    const decaying = item.zone.decays || item.zone.releaseMode === 'envelope'
+    if (hasSegment && !reachedTail && !decaying) {
+      const fade = Math.max(0.08, Math.min(0.14, item.zone.releaseCrossfadeSec || 0.08))
       const remaining = (decoded.audio.duration - decoded.releaseStart) / rate
       gain.gain.setValueAtTime(peak, start)
       crossfade(gain.gain, scaleCurve(FADE_OUT, peak), start + hold, fade)
       source.start(start)
-      source.stop(start + hold + fade + 0.01)
+      source.stop(start + hold + fade + 0.02)
 
       const tail = context.createBufferSource()
       tail.buffer = decoded.audio
@@ -863,11 +925,13 @@ export async function renderNoteAt (context, dest, track, pitch, velocity, when,
       continue
     }
 
-    const release = releaseSeconds(item.zone, ctrl)
+    const release = decaying
+      ? Math.max(0.12, Math.min(0.28, releaseSeconds(item.zone, ctrl) * 0.45))
+      : Math.max(0.08, releaseSeconds(item.zone, ctrl))
     gain.gain.setValueAtTime(peak, start)
-    gain.gain.setTargetAtTime(0, start + hold, Math.max(0.03, release / 3))
+    crossfade(gain.gain, scaleCurve(FADE_OUT, peak), start + hold, release)
     source.start(start)
-    source.stop(start + hold + release + 0.1)
+    source.stop(start + hold + release + 0.05)
   }
   return true
 }

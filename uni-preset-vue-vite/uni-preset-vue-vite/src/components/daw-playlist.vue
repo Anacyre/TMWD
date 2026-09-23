@@ -62,7 +62,7 @@
         </view>
       </view>
 
-      <view class="ruler" @pointerdown="onRulerDown">
+      <view class="ruler" ref="rulerEl">
         <view class="ruler-shift" :style="{ transform: 'translateX(' + (-scrollX) + 'px)' }">
           <view class="loop-lane">
             <view
@@ -255,7 +255,7 @@
             class="drop-ghost"
             :style="dropGhost"
           />
-          <view class="playhead" ref="playheadEl" @pointerdown.stop="onPlayheadDown">
+          <view class="playhead" ref="playheadEl">
             <view class="cap" />
           </view>
           <view v-if="empty" class="empty">
@@ -289,6 +289,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { bindFileDropZone, isFileDrag, filesFromDrop, resolveDom } from '../lib/file-drop.js'
+import { pointerCoord } from '../lib/pointer-drag.js'
 import DawIcon from './daw-icon.vue'
 import DawClipPreview from './daw-clip-preview.vue'
 import {
@@ -361,6 +362,7 @@ const canvasEl = ref(null)
 const plEl = ref(null)
 const vScrollEl = ref(null)
 const playheadEl = ref(null)
+const rulerEl = ref(null)
 const renaming = ref(-1)
 const tool = ref('edit')
 const marquee = ref(null)
@@ -686,13 +688,27 @@ function beatAt (clientX, el) {
   return snapBeat((clientX - rect.left + scrollX.value) / session.pixelsPerBeat)
 }
 
+function rulerPoint (ev, el) {
+  const point = pointerCoord(ev)
+  if (!point || !el || typeof el.getBoundingClientRect !== 'function') return null
+  const rect = el.getBoundingClientRect()
+  return {
+    x: point.x,
+    y: point.y - rect.top,
+    beat: snapBeat((point.x - rect.left + scrollX.value) / session.pixelsPerBeat)
+  }
+}
+
 function onPlayheadDown (e) {
-  const canvas = e.currentTarget.parentElement
-  if (!canvas) return
+  const canvas = canvasDom()
+  const point = pointerCoord(e)
+  if (!canvas || !point) return
   follow.value = true
   const seek = (ev) => {
+    const p = pointerCoord(ev)
+    if (!p) return
     const rect = canvas.getBoundingClientRect()
-    setPositionBeats(snapBeat((ev.clientX - rect.left + scrollX.value) / session.pixelsPerBeat))
+    setPositionBeats(snapBeat((p.x - rect.left + scrollX.value) / session.pixelsPerBeat))
   }
   seek(e)
   const up = () => {
@@ -703,11 +719,15 @@ function onPlayheadDown (e) {
   window.addEventListener('pointerup', up)
 }
 
+const RULER_HOLD_MS = 450
+
 function onRulerDown (e) {
-  const el = e.currentTarget
-  const y = e.clientY - el.getBoundingClientRect().top
-  const beat = beatAt(e.clientX, el)
-  const x = e.clientX - el.getBoundingClientRect().left + scrollX.value
+  const el = resolveDom(rulerEl.value) || (e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget : null)
+  const hit = rulerPoint(e, el)
+  if (!el || !hit) return
+  const y = hit.y
+  const beat = hit.beat
+  const x = hit.x - el.getBoundingClientRect().left + scrollX.value
   const inLoopLane = y < 14 || e.altKey
 
   if (inLoopLane) {
@@ -723,7 +743,9 @@ function onRulerDown (e) {
     }
     const anchor = beat
     const move = (ev) => {
-      const next = beatAt(ev.clientX, el)
+      const nextHit = rulerPoint(ev, el)
+      if (!nextHit) return
+      const next = nextHit.beat
       if (mode === 'left') setLoopRange(next, origE)
       else if (mode === 'right') setLoopRange(origS, next)
       else if (mode === 'move') {
@@ -739,15 +761,32 @@ function onRulerDown (e) {
     window.addEventListener('pointerup', up)
     return
   }
-  follow.value = true
-  setPositionBeats(beat)
-  const move = (ev) => setPositionBeats(beatAt(ev.clientX, el))
+  const origin = pointerCoord(e)
+  let hold = setTimeout(() => {
+    hold = 0
+    follow.value = true
+    setPositionBeats(beat)
+  }, RULER_HOLD_MS)
+  const move = (ev) => {
+    const next = rulerPoint(ev, el)
+    const point = pointerCoord(ev)
+    if (!next || !point || !origin) return
+    if (hold && Math.hypot(point.x - origin.x, point.y - origin.y) > 8) {
+      clearTimeout(hold)
+      hold = 0
+      return
+    }
+    if (!hold) setPositionBeats(next.beat)
+  }
   const up = () => {
+    if (hold) clearTimeout(hold)
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
+    window.removeEventListener('pointercancel', up)
   }
   window.addEventListener('pointermove', move)
   window.addEventListener('pointerup', up)
+  window.addEventListener('pointercancel', up)
 }
 
 function onMarkerDown (marker, e) {
@@ -1278,6 +1317,25 @@ onMounted(async () => {
     if (!node || bindTargets.has(node)) return
     bindTargets.add(node)
     unbindFileDrop.push(bindFileDropZone(node, dropHandlers, { capture: true }))
+  }
+
+  const head = resolveDom(playheadEl.value)
+    || (typeof document !== 'undefined' ? document.querySelector('.pl .playhead') : null)
+  if (head && head.addEventListener) {
+    const onHead = (ev) => {
+      ev.stopPropagation()
+      onPlayheadDown(ev)
+    }
+    head.addEventListener('pointerdown', onHead)
+    unbindFileDrop.push(() => head.removeEventListener('pointerdown', onHead))
+  }
+
+  const ruler = resolveDom(rulerEl.value)
+    || (typeof document !== 'undefined' ? document.querySelector('.pl .ruler') : null)
+  if (ruler && ruler.addEventListener) {
+    const onRuler = (ev) => onRulerDown(ev)
+    ruler.addEventListener('pointerdown', onRuler)
+    unbindFileDrop.push(() => ruler.removeEventListener('pointerdown', onRuler))
   }
 
   ;[plEl.value, boardEl.value, canvasEl.value, lanesEl.value, vScrollEl.value].forEach(addBind)

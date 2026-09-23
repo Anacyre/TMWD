@@ -68,6 +68,9 @@ function tierOf (sample, artic) {
 function releaseModeFor (sample, artic) {
   const oneShot = artic === 'short' || artic === 'pluck' || artic === 'hit'
   const hasSegment = sample.mainSec > 0 && sample.releaseSec > 0.05
+  // Struck decaying bodies (piano) fade from the current playback position. The recorded
+  // tail is the rest of the same decay, not a damper sample worth jumping to.
+  if (sample.decays && !oneShot) return 'envelope'
   if (hasSegment) return oneShot ? 'free' : 'segment'
   if (oneShot) return 'envelope'
   return 'tail'
