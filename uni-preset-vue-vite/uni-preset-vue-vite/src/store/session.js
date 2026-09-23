@@ -868,6 +868,7 @@ function loop (now) {
   }
   tickLocalNotes(clockBeats)
   tickExpressionPlayback(now)
+  maybeOrchestraLookahead()
   rafId = requestAnimationFrame(loop)
 }
 
@@ -895,8 +896,15 @@ function preloadSelectedOrchestra (graph) {
   if (cloud) cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
 }
 
-async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8) {
+async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8, priority = true) {
   if (!graph) return
+  const jobs = orchestraPitchJobs(fromBeat, fromBeat + windowBeats)
+  await Promise.all([...jobs].map(([track, pitches]) => (
+    cloudSamplerFor(track).preloadNotes(graph, track, pitches, 0.8, priority).catch(() => {})
+  )))
+}
+
+function orchestraPitchJobs (fromBeat, untilBeat) {
   const jobs = new Map()
   session.clips.forEach((clip) => {
     if (!clip || clip.midi === false) return
@@ -907,14 +915,76 @@ async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8) {
       if (!note || note.muted) return
       expandRepeats(note).forEach((slice) => {
         const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
-        if (start >= fromBeat - 0.05 && start < fromBeat + windowBeats) pitches.push(slice.pitch)
+        if (start >= fromBeat - 0.05 && start < untilBeat) pitches.push(slice.pitch)
       })
     })
     if (pitches.length) jobs.set(track, pitches)
   })
-  await Promise.all([...jobs].map(([track, pitches]) => (
-    cloudSamplerFor(track).preloadNotes(graph, track, pitches).catch(() => {})
-  )))
+  return jobs
+}
+
+let lastLookaheadBeat = -100
+let warmToken = 0
+
+function maybeOrchestraLookahead () {
+  if (!audioGraph) return
+  if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat) lastLookaheadBeat = -100
+  if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat + 2) return
+  lastLookaheadBeat = clockBeats
+  prefetchOrchestraWindow(audioGraph, clockBeats, 8, true).catch(() => {})
+}
+
+function startEncodedWarm (fromBeat) {
+  const token = ++warmToken
+  const soon = new Set()
+  orchestraPitchJobs(fromBeat, fromBeat + 8).forEach((pitches, track) => {
+    pitches.forEach((pitch) => soon.add(track.id + ':' + Math.round(pitch)))
+  })
+  const later = []
+  const earlier = []
+  session.clips.forEach((clip) => {
+    if (!clip || clip.midi === false) return
+    const track = session.tracks[clip.trackIndex]
+    if (!track || !isOrchestraVTrack(track)) return
+    ;(clip.notes || []).forEach((note) => {
+      if (!note || note.muted) return
+      expandRepeats(note).forEach((slice) => {
+        const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
+        const pitch = Math.round(slice.pitch)
+        if (soon.has(track.id + ':' + pitch)) return
+        const bucket = start < fromBeat ? earlier : later
+        bucket.push({ track, pitch, start })
+      })
+    })
+  })
+  later.sort((a, b) => a.start - b.start)
+  earlier.sort((a, b) => b.start - a.start)
+  const ordered = later.concat(earlier)
+  ;(async () => {
+    const seen = new Set()
+    for (const slot of ordered) {
+      if (token !== warmToken) return
+      while (token === warmToken && orchestraVCloud.decodeBacklog() > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 40))
+      }
+      if (token !== warmToken) return
+      const key = slot.track.id + ':' + slot.pitch
+      if (seen.has(key)) continue
+      seen.add(key)
+      try {
+        const zones = await orchestraVCloud.zonesForPitches(slot.track, [slot.pitch])
+        for (const zone of zones) {
+          if (token !== warmToken) return
+          while (token === warmToken && orchestraVCloud.decodeBacklog() > 0) {
+            await new Promise((resolve) => setTimeout(resolve, 40))
+          }
+          if (seen.has(zone.library + '/' + zone.sample)) continue
+          seen.add(zone.library + '/' + zone.sample)
+          await orchestraVCloud.warmEncoded(zone.library, zone.sample)
+        }
+      } catch (err) { /* the note retries on playback */ }
+    }
+  })()
 }
 
 export async function play () {
@@ -923,12 +993,11 @@ export async function play () {
   const graph = await unlockAudioForUser()
   if (graph) {
     await Promise.race([
-      prefetchOrchestraWindow(graph, session.positionBeats, 8),
+      prefetchOrchestraWindow(graph, session.positionBeats, 8, true),
       new Promise((resolve) => setTimeout(resolve, 400))
     ])
-    // The phrase above is enough to start. The rest of the project decodes behind it,
-    // so the next play reads buffers that are already in memory.
-    prefetchOrchestraWindow(graph, 0, 1e9).catch(() => {})
+    lastLookaheadBeat = session.positionBeats
+    startEncodedWarm(session.positionBeats)
   }
   startBrowserMeterLoop()
   startExpressionPlayback()

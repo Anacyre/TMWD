@@ -4,7 +4,7 @@
  * The Supabase bucket for this library answers 400. Object paths spell sharps as `As4`;
  * the cache still has `A#4`, so the copy renames those to match the manifest.
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -66,3 +66,8 @@ if (!existsSync(probe)) {
   process.exit(1)
 }
 console.log('[stage-symphonic] copied ' + copied.count + ' files (' + (copied.bytes / 1048576).toFixed(1) + ' MB)')
+writeFileSync(join(appRoot, 'dist', 'build', 'h5', '_headers'), [
+  '/vms-symphonic/*.ogg',
+  '  Cache-Control: public, max-age=604800',
+  ''
+].join('\n'))

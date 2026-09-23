@@ -259,8 +259,22 @@ async function decodeSampleBytes (context, bytes) {
   return decodeVorbis(context, bytes)
 }
 
+const fetchPromises = new Map()
+
 async function fetchSampleBytes (library, objectPath) {
   const stored = cachePath(library, objectPath)
+  const inflight = fetchPromises.get(stored)
+  if (inflight) return inflight
+  const promise = fetchSampleBytesNow(library, objectPath, stored)
+  fetchPromises.set(stored, promise)
+  try {
+    return await promise
+  } finally {
+    if (fetchPromises.get(stored) === promise) fetchPromises.delete(stored)
+  }
+}
+
+async function fetchSampleBytesNow (library, objectPath, stored) {
   const cached = await readEncodedSample(stored)
   if (cached) {
     profile.idbHits += 1
@@ -852,8 +866,39 @@ export async function preloadInstrument (graph, definitionId) {
   }
 }
 
+export function decodeBacklog () {
+  return decodeQueue.active + decodeQueue.pending
+}
+
+/** Download a sample into IndexedDB without decoding it into the memory cache. */
+export async function warmEncoded (library, objectPath) {
+  if (!library || !objectPath) return
+  await fetchSampleBytes(library, objectPath)
+}
+
+/** Zones a pitch will play, so the transport can warm files without decoding them. */
+export async function zonesForPitches (track, pitches, velocity = 0.8) {
+  const def = track ? findDefinition(track.definitionId) : null
+  const map = def ? await loadInstrument(def.id) : null
+  if (!map) return []
+  const library = map.library
+  const rules = playbackRules(library)
+  const ctrl = controllers(track)
+  const artic = articForTrack(track, def)
+  const velocityMidi = Math.round(Math.max(0.05, Math.min(1, velocity)) * 127)
+  const layerVelocity = targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
+  const unique = [...new Set(pitches.map((pitch) => Math.round(Number(pitch))).filter(Number.isFinite))]
+  const wanted = new Map()
+  for (const pitch of unique) {
+    for (const item of selectZone(map, pitch, layerVelocity, articulationChain(artic))) {
+      wanted.set(item.zone.sample, { library, sample: item.zone.sample })
+    }
+  }
+  return Array.from(wanted.values())
+}
+
 /** Decode exactly the zones the next transport window will ask for. */
-export async function preloadNotes (graph, track, pitches, velocity = 0.8) {
+export async function preloadNotes (graph, track, pitches, velocity = 0.8, priority = false) {
   if (!graph || !track || !Array.isArray(pitches) || !pitches.length) return
   const def = findDefinition(track.definitionId)
   const map = def ? await loadInstrument(def.id) : null
@@ -873,11 +918,10 @@ export async function preloadNotes (graph, track, pitches, velocity = 0.8) {
     }
   }
   await Promise.all(Array.from(wanted.values()).map(async (zone) => {
-    try { await decodeZone(graph.context, library, zone, rules, false) } catch (err) { /* retry on note-on */ }
+    try { await decodeZone(graph.context, library, zone, rules, priority) } catch (err) { /* retry on note-on */ }
   }))
 }
 
-/** Schedule one note on a live or offline context, for bounce rendering. */
 export async function renderNoteAt (context, dest, track, pitch, velocity, when, durationSec) {
   if (!context || !dest || !track) return false
   const def = findDefinition(track.definitionId)

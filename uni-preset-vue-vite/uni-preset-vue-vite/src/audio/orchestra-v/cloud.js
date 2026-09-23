@@ -36,6 +36,20 @@ export async function preloadNotes (...args) {
   return mod.preloadNotes(...args)
 }
 
+export function decodeBacklog () {
+  return engine ? engine.decodeBacklog() : 0
+}
+
+export async function zonesForPitches (...args) {
+  const mod = await loadOrchestraVEngine()
+  return mod.zonesForPitches(...args)
+}
+
+export async function warmEncoded (...args) {
+  const mod = await loadOrchestraVEngine()
+  return mod.warmEncoded(...args)
+}
+
 export async function availableArticulations (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.availableArticulations(...args)
