@@ -204,20 +204,37 @@ function cachePath (library, objectPath) {
   return library === 'vms-solo' ? objectPath : library + '/' + objectPath
 }
 
-let vorbisDecoder = null
-let vorbisChain = Promise.resolve()
+const VORBIS_POOL = 2
+const vorbisIdle = []
+const vorbisWaiters = []
+let vorbisCreated = 0
+
+async function takeVorbisDecoder () {
+  if (vorbisIdle.length) return vorbisIdle.pop()
+  if (vorbisCreated < VORBIS_POOL) {
+    vorbisCreated += 1
+    const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
+    const decoder = new OggVorbisDecoder()
+    await decoder.ready
+    decoder._used = false
+    return decoder
+  }
+  return new Promise((resolve) => { vorbisWaiters.push(resolve) })
+}
+
+function releaseVorbisDecoder (decoder) {
+  const waiter = vorbisWaiters.shift()
+  if (waiter) waiter(decoder)
+  else vorbisIdle.push(decoder)
+}
 
 /** Safari cannot decode Ogg Vorbis with decodeAudioData. Decode to PCM instead. */
-function decodeVorbis (context, bytes) {
-  const run = vorbisChain.then(async () => {
-    if (!vorbisDecoder) {
-      const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
-      vorbisDecoder = new OggVorbisDecoder()
-      await vorbisDecoder.ready
-    } else {
-      await vorbisDecoder.reset()
-    }
-    const decoded = await vorbisDecoder.decode(new Uint8Array(bytes))
+async function decodeVorbis (context, bytes) {
+  const decoder = await takeVorbisDecoder()
+  try {
+    if (decoder._used) await decoder.reset()
+    decoder._used = true
+    const decoded = await decoder.decode(new Uint8Array(bytes))
     const channels = decoded.channelData || []
     const length = decoded.samplesDecoded || (channels[0] && channels[0].length) || 0
     const rate = decoded.sampleRate || context.sampleRate
@@ -227,9 +244,9 @@ function decodeVorbis (context, bytes) {
       audio.copyToChannel(channel.subarray(0, length), index)
     })
     return audio
-  })
-  vorbisChain = run.then(() => {}, () => {})
-  return run
+  } finally {
+    releaseVorbisDecoder(decoder)
+  }
 }
 
 async function decodeSampleBytes (context, bytes) {
@@ -671,7 +688,10 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
 
   const entry = pending.get(key)
   pending.delete(key)
-  if (!entry || entry.cancelled || entry.epoch !== noteEpoch) return null
+  // A new play, stop, or seek bumps noteEpoch. A note-off only sets cancelled, and that
+  // sample should still be heard: start it and release immediately instead of dropping it.
+  if (!entry || entry.epoch !== noteEpoch) return null
+  const releasedEarly = !!entry.cancelled
 
   const context = graph.context
   const dest = orchestraDest(graph, track)
@@ -747,7 +767,12 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
 
   const detune = (def.voiceModel && def.voiceModel.detuneCents) || 0
   attachLayer(voice, context, decodedPrimary, primary, def, pitch, ctrl, rules, 0)
+  if (noteEpoch !== epoch) {
+    disposeVoice(voice)
+    return null
+  }
   voices.set(key, voice)
+  if (releasedEarly) releaseVoice(key)
 
   // A take that rings out on its own is never released, so its only end is the end of the
   // buffer; without this the node graph would leak one chain per note.
@@ -762,7 +787,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   // The quieter half of a velocity crossfade only joins once it is decoded, so the
   // first play of a note is never held up waiting for a second download.
   const secondary = selection[1]
-  if (secondary) {
+  if (secondary && !releasedEarly) {
     const ready = cachedDecode(library, secondary.zone, context)
     if (ready) {
       attachLayer(voice, context, ready, secondary, def, pitch, ctrl, rules, detune)
@@ -842,7 +867,7 @@ export async function preloadNotes (graph, track, pitches, velocity = 0.8) {
   const unique = [...new Set(pitches.map((pitch) => Math.round(Number(pitch))).filter(Number.isFinite))]
 
   const wanted = new Map()
-  for (const pitch of unique.slice(0, 24)) {
+  for (const pitch of unique) {
     for (const item of selectZone(map, pitch, layerVelocity, articulationChain(artic))) {
       wanted.set(item.zone.sample, item.zone)
     }

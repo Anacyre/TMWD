@@ -895,7 +895,7 @@ function preloadSelectedOrchestra (graph) {
   if (cloud) cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
 }
 
-async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 2) {
+async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8) {
   if (!graph) return
   const jobs = new Map()
   session.clips.forEach((clip) => {
@@ -923,9 +923,12 @@ export async function play () {
   const graph = await unlockAudioForUser()
   if (graph) {
     await Promise.race([
-      prefetchOrchestraWindow(graph, session.positionBeats),
-      new Promise((resolve) => setTimeout(resolve, 120))
+      prefetchOrchestraWindow(graph, session.positionBeats, 8),
+      new Promise((resolve) => setTimeout(resolve, 400))
     ])
+    // The phrase above is enough to start. The rest of the project decodes behind it,
+    // so the next play reads buffers that are already in memory.
+    prefetchOrchestraWindow(graph, 0, 1e9).catch(() => {})
   }
   startBrowserMeterLoop()
   startExpressionPlayback()
