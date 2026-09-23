@@ -85,6 +85,7 @@ export class AudioBufferLru {
     this.budgetBytes = budgetBytes
     this.bytes = 0
     this.entries = new Map()
+    this.pinned = new Set()
   }
 
   get (key) {
@@ -93,6 +94,10 @@ export class AudioBufferLru {
     this.entries.delete(key)
     this.entries.set(key, value)
     return value.decoded
+  }
+
+  pin (key) {
+    this.pinned.add(key)
   }
 
   set (key, decoded) {
@@ -104,7 +109,14 @@ export class AudioBufferLru {
     this.entries.set(key, { decoded, bytes })
     this.bytes += bytes
     while (this.bytes > this.budgetBytes && this.entries.size > 1) {
-      const oldestKey = this.entries.keys().next().value
+      let oldestKey = null
+      for (const candidate of this.entries.keys()) {
+        if (!this.pinned.has(candidate)) {
+          oldestKey = candidate
+          break
+        }
+      }
+      if (oldestKey == null) break
       const oldest = this.entries.get(oldestKey)
       this.entries.delete(oldestKey)
       this.bytes -= oldest.bytes

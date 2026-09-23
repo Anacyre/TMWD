@@ -57,6 +57,10 @@
     <view v-if="session.audioBlocked" class="unlock" @click.stop="unlockAudioForUser">
       <text>Tap to enable sound</text>
     </view>
+    <view v-if="session.sampleLoad.active" class="sample-load">
+      <view class="sample-fill" :style="{ width: sampleLoadPct }" />
+      <text class="sample-label">加载采样 {{ session.sampleLoad.done }}/{{ session.sampleLoad.total }}</text>
+    </view>
     <view v-if="session.scaleMenuOpen" class="scale-menu" @click.stop>
       <view
         v-for="key in KEY_NAMES"
@@ -105,6 +109,12 @@ const positionDisplay = computed(() => (
   session.positionFormat === 'time' ? secondsText.value : positionText.value
 ))
 
+const sampleLoadPct = computed(() => {
+  const total = session.sampleLoad.total || 0
+  if (!total) return '0%'
+  return Math.min(100, Math.round(session.sampleLoad.done / total * 100)) + '%'
+})
+
 function toggleFormat () {
   setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
 }
@@ -124,6 +134,7 @@ function onScaleTap () {
   border-bottom: 1px solid #2a2a2a;
   flex-shrink: 0;
   box-sizing: border-box;
+  position: relative;
   position: relative;
 }
 .left, .right {
@@ -197,6 +208,32 @@ function onScaleTap () {
   background: #5a5a5a;
 }
 .led.connected { background: #4da3ff; }
+.sample-load {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: 2px;
+  height: 14px;
+  border-radius: 7px;
+  background: #1c1c1c;
+  overflow: hidden;
+}
+.sample-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: #2f6f46;
+}
+.sample-label {
+  position: relative;
+  z-index: 1;
+  display: block;
+  text-align: center;
+  color: #e6e6e6;
+  font-size: 10px;
+  line-height: 14px;
+}
 .led.loading { background: #c4a026; }
 .led.error { background: #c45c26; }
 .led.offline { background: #5a5a5a; }

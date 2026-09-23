@@ -128,6 +128,10 @@
         </view>
       </view>
     </view>
+    <view v-if="session.sampleLoad.active" class="sample-load">
+      <view class="sample-fill" :style="{ width: sampleLoadPct }" />
+      <text class="sample-label">加载采样 {{ session.sampleLoad.done }}/{{ session.sampleLoad.total }}</text>
+    </view>
   </view>
 </template>
 
@@ -165,6 +169,12 @@ const bpmText = computed(() => {
 })
 
 const paused = computed(() => !session.playing && session.positionBeats > 0)
+
+const sampleLoadPct = computed(() => {
+  const total = session.sampleLoad.total || 0
+  if (!total) return '0%'
+  return Math.min(100, Math.round(session.sampleLoad.done / total * 100)) + '%'
+})
 
 const snapLabel = computed(() => {
   if (!session.snap) return 'Off'
@@ -380,4 +390,31 @@ function commitBpm (e) {
 }
 .drop-item:hover { background: #3a3a3a; }
 .drop-item.checked::after { content: ' ✓'; color: #4da3ff; }
+.sample-load {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 2px;
+  height: 14px;
+  border-radius: 7px;
+  background: #141414;
+  overflow: hidden;
+  z-index: 30;
+}
+.sample-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: #2f6f46;
+}
+.sample-label {
+  position: relative;
+  z-index: 1;
+  display: block;
+  text-align: center;
+  color: #e6e6e6;
+  font-size: 10px;
+  line-height: 14px;
+}
 </style>

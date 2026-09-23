@@ -45,6 +45,11 @@ export async function zonesForPitches (...args) {
   return mod.zonesForPitches(...args)
 }
 
+export async function decodePinned (...args) {
+  const mod = await loadOrchestraVEngine()
+  return mod.decodePinned(...args)
+}
+
 export async function warmEncoded (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.warmEncoded(...args)

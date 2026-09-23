@@ -219,6 +219,7 @@ export const session = reactive({
   instrumentPickerMode: 'plugin',
   diagnosticsVisible: false,
   remoteAudioOn: false,
+  sampleLoad: { active: false, done: 0, total: 0 },
   diagnosticsLog: 'Run Measure after connecting. LAN and mobile results must be captured on those devices.',
   diagnostics: {
     controlRttMs: null,
@@ -925,6 +926,35 @@ function orchestraPitchJobs (fromBeat, untilBeat) {
 
 let lastLookaheadBeat = -100
 let warmToken = 0
+let samplePrepareToken = 0
+
+async function prepareOrchestraSamples (graph, fromBeat) {
+  const token = ++samplePrepareToken
+  const jobs = orchestraPitchJobs(fromBeat, 1e9)
+  const zones = []
+  const seen = new Set()
+  for (const [track, pitches] of jobs) {
+    if (!isOrchestraVTrack(track)) continue
+    const list = await orchestraVCloud.zonesForPitches(track, pitches)
+    if (token !== samplePrepareToken) return false
+    for (const item of list) {
+      const id = item.library + '/' + item.sample
+      if (seen.has(id)) continue
+      seen.add(id)
+      zones.push(item)
+    }
+  }
+  session.sampleLoad.total = zones.length
+  session.sampleLoad.done = 0
+  session.sampleLoad.active = zones.length > 0
+  for (const item of zones) {
+    if (token !== samplePrepareToken) return false
+    try { await orchestraVCloud.decodePinned(graph, item) } catch (err) { /* counted so the bar still finishes */ }
+    session.sampleLoad.done += 1
+  }
+  session.sampleLoad.active = false
+  return token === samplePrepareToken
+}
 
 function maybeOrchestraLookahead () {
   if (!audioGraph) return
@@ -988,17 +1018,18 @@ function startEncodedWarm (fromBeat) {
 }
 
 export async function play () {
-  if (session.playing) return
-  session.playing = true
+  if (session.playing || session.sampleLoad.active) return
   const graph = await unlockAudioForUser()
   if (graph) {
-    await Promise.race([
-      prefetchOrchestraWindow(graph, session.positionBeats, 8, true),
-      new Promise((resolve) => setTimeout(resolve, 400))
-    ])
-    lastLookaheadBeat = session.positionBeats
-    startEncodedWarm(session.positionBeats)
+    session.sampleLoad.active = true
+    session.sampleLoad.done = 0
+    session.sampleLoad.total = 0
+    const ready = await prepareOrchestraSamples(graph, 0)
+    session.sampleLoad.active = false
+    if (!ready) return
   }
+  session.playing = true
+  if (graph) lastLookaheadBeat = session.positionBeats
   startBrowserMeterLoop()
   startExpressionPlayback()
   if (isEngineConnected()) {
@@ -1049,6 +1080,8 @@ export function togglePlay () {
 }
 
 export function stop () {
+  samplePrepareToken += 1
+  session.sampleLoad.active = false
   const wasPlaying = session.playing
   pause()
   session.recording = false

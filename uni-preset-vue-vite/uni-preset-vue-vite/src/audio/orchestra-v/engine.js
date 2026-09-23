@@ -303,14 +303,19 @@ function cachedDecode (library, zone, context) {
 }
 
 /** Decode a zone's sample and bake in whatever loop seam it declares. */
-async function decodeZone (context, library, zone, rules, priority = true) {
+async function decodeZone (context, library, zone, rules, priority = true, pin = false) {
   const key = decodeKey(library, zone, context)
   const hit = bufferCache.get(key)
   if (hit) {
     profile.cacheHits += 1
+    if (pin) bufferCache.pin(key)
     return hit
   }
-  if (decodePromises.has(key)) return decodePromises.get(key)
+  if (decodePromises.has(key)) {
+    const decoded = await decodePromises.get(key)
+    if (pin) bufferCache.pin(key)
+    return decoded
+  }
 
   const promise = decodeQueue.run(async () => {
     const bytes = await fetchSampleBytes(library, zone.sample)
@@ -346,6 +351,7 @@ async function decodeZone (context, library, zone, rules, priority = true) {
 
     const decoded = { audio, loop, loopStart, loopEnd, releaseStart, key }
     bufferCache.set(key, decoded)
+    if (pin) bufferCache.pin(key)
     return decoded
   }, priority)
 
@@ -870,7 +876,11 @@ export function decodeBacklog () {
   return decodeQueue.active + decodeQueue.pending
 }
 
-/** Download a sample into IndexedDB without decoding it into the memory cache. */
+export async function decodePinned (graph, item) {
+  if (!graph || !item || !item.zone) return null
+  const rules = playbackRules(item.library)
+  return decodeZone(graph.context, item.library, item.zone, rules, true, true)
+}
 export async function warmEncoded (library, objectPath) {
   if (!library || !objectPath) return
   await fetchSampleBytes(library, objectPath)
@@ -891,7 +901,7 @@ export async function zonesForPitches (track, pitches, velocity = 0.8) {
   const wanted = new Map()
   for (const pitch of unique) {
     for (const item of selectZone(map, pitch, layerVelocity, articulationChain(artic))) {
-      wanted.set(item.zone.sample, { library, sample: item.zone.sample })
+      wanted.set(item.zone.sample, { library, sample: item.zone.sample, zone: item.zone })
     }
   }
   return Array.from(wanted.values())
