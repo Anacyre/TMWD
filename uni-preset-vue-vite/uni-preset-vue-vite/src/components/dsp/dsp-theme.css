@@ -349,7 +349,7 @@ uni-view.x-knobs {
 .x-plug.is-off .shell .brand,
 .x-plug.is-off .shell .preset-row,
 .x-plug.is-off .shell .drop,
-.x-plug.is-off .shell .tools > :not(.power) {
+.x-plug.is-off .shell .tools > :not(.power):not(.ui-sw) {
   pointer-events: none;
 }
 
@@ -374,9 +374,8 @@ uni-view.x-knobs {
 .x-lab-abbr { display: none; }
 
 /* ── Mobile ──────────────────────────────────────────────────────────────
-   Graded at 720 / 430 / 390 / 360 instead of one breakpoint. The stage keeps a
-   real minimum height (an earlier `max-height: 24vh` squashed every graph until
-   the spectrum was invisible) and the controls below it scroll instead. */
+   Graphs stay about 96px so the knobs below them stay large enough to turn
+   with one finger. The graph can be hidden from the plugin header. */
 @media (max-width: 720px) {
   .dsp-skin { font-size: 12px; }
   .dsp-hit { min-height: 44px; min-width: 44px; }
@@ -419,32 +418,59 @@ uni-view.x-knobs {
   .x-plug .stage,
   .x-viz,
   .x-plug > .stage {
-    /* Enough height for a readable curve; the rest of the panel scrolls. */
-    min-height: 180px !important;
+    min-height: 0 !important;
     max-height: none !important;
+    height: auto !important;
     flex: 0 0 auto !important;
+  }
+  .x-plug .graph {
+    min-height: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+  }
+  .x-plug .dsp-canvas,
+  .x-plug .scope {
+    min-height: 96px !important;
+    max-height: 96px !important;
+    height: 96px !important;
+    flex: 0 0 96px !important;
   }
   .x-lab-full { display: none; }
   .x-lab-abbr { display: inline; }
 }
 
+.viz-off .dsp-canvas,
+.viz-off .scope,
+.viz-off .x-viz {
+  display: none !important;
+}
+
+/* Lite on a wide tablet is still a touch UI, so the same compact graph applies
+   above the 720px breakpoint. */
+.compact-plugin .x-plug .stage,
+.compact-plugin .x-viz,
+.compact-plugin .x-plug > .stage,
+.compact-plugin .x-plug .graph {
+  min-height: 0 !important;
+  max-height: none !important;
+  height: auto !important;
+}
+.compact-plugin .x-plug .dsp-canvas,
+.compact-plugin .x-plug .scope,
+.compact-plugin .meter.fill {
+  min-height: 96px !important;
+  max-height: 96px !important;
+  height: 96px !important;
+  flex: 0 0 96px !important;
+}
+
 @media (max-width: 430px) {
   .x-plug { padding: 0 8px 18px; }
-  .x-plug .stage,
-  .x-viz,
-  .x-plug > .stage {
-    min-height: 168px !important;
-  }
   .x-footer { gap: 6px; font-size: 8px; letter-spacing: 0.1em; }
   .x-chip { min-width: 40px; padding: 0 8px; }
 }
 
 @media (max-width: 390px) {
-  .x-plug .stage,
-  .x-viz,
-  .x-plug > .stage {
-    min-height: 152px !important;
-  }
   .x-knobs,
   uni-view.x-knobs {
     gap: 6px 4px;
@@ -453,19 +479,16 @@ uni-view.x-knobs {
 
 @media (max-width: 360px) {
   .x-plug { padding: 0 6px 16px; }
-  .x-plug .stage,
-  .x-viz,
-  .x-plug > .stage {
-    min-height: 140px !important;
-  }
-  .x-chip { min-width: 36px; padding: 0 6px; font-size: 9px; }
+  .x-chip { min-width: 44px; padding: 0 6px; font-size: 9px; }
 }
 
 /* Short landscape phones: keep the graph but shrink it rather than the trays. */
 @media (max-height: 480px) and (orientation: landscape) {
-  .x-plug .stage,
-  .x-viz,
-  .x-plug > .stage {
-    min-height: 120px !important;
+  .x-plug .dsp-canvas,
+  .x-plug .scope {
+    min-height: 72px !important;
+    max-height: 72px !important;
+    height: 72px !important;
+    flex-basis: 72px !important;
   }
 }

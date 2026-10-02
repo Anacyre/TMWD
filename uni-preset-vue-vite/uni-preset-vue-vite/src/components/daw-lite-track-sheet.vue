@@ -45,7 +45,7 @@
           </view>
         </view>
       </template>
-      <view v-else class="picks">
+      <scroll-view v-else class="picks" scroll-y :show-scrollbar="true">
         <view
           v-for="plugin in catalogue"
           :key="plugin.id"
@@ -55,7 +55,7 @@
         >
           <text class="fx-name">{{ plugin.name }}</text>
         </view>
-      </view>
+      </scroll-view>
     </view>
   </daw-lite-sheet>
 </template>
@@ -192,6 +192,11 @@ function changeInstrument () {
   flex-shrink: 0;
 }
 .icon-hit.dim { opacity: 0.35; }
-.picks { margin-top: 0; }
+.picks {
+  margin-top: 0;
+  height: min(52vh, 420px);
+  -webkit-overflow-scrolling: touch;
+}
+.pick { min-height: 48px; }
 .os { min-height: 320px; }
 </style>

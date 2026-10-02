@@ -1,9 +1,20 @@
 <template>
-  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="onHostClick" @pointerdown="onHostDown">
-      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite }]" @click.stop @pointerdown="onHostDown">
+  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="onHostClick">
+      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite, 'viz-off': !vizOn, 'compact-plugin': lite || narrow }]" @click.stop>
         <view class="grab" :class="{ 'head-lite': lite }">
           <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin" @tap="changePlugin">
             <daw-icon name="swap" :size="18" />
+          </view>
+          <view
+            v-if="lite || narrow"
+            class="grab-btn"
+            :class="{ on: vizOn }"
+            title="Show or hide the graph"
+            aria-label="Show or hide the graph"
+            @click.stop="vizOn = !vizOn"
+            @tap.stop="vizOn = !vizOn"
+          >
+            <daw-icon name="wave" :size="18" />
           </view>
           <view
             v-if="session.openPlugin"
@@ -101,6 +112,12 @@ import './dsp-theme.css'
 import './lite-plugin-surface.css'
 
 const lite = computed(() => isLite())
+const narrow = ref(false)
+const vizOn = ref(true)
+
+function syncNarrow () {
+  narrow.value = typeof window !== 'undefined' && window.matchMedia('(max-width: 720px)').matches
+}
 const liveSpectrum = ref([])
 const livePreSpectrum = ref([])
 const liveMeters = ref({})
@@ -182,10 +199,13 @@ function onVisibility () {
 
 onMounted(() => {
   startTick()
+  syncNarrow()
+  if (typeof window !== 'undefined') window.addEventListener('resize', syncNarrow)
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
 })
 onUnmounted(() => {
   stopTick()
+  if (typeof window !== 'undefined') window.removeEventListener('resize', syncNarrow)
   if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
 })
 
@@ -228,23 +248,6 @@ function changePlugin () {
     })
   }
 }
-let holdTimer = 0
-function onHostDown (e) {
-  if (recentlyOpened()) return
-  // Header buttons own their own gestures; a long press there must not swap the
-  // plugin out from under the tap.
-  const target = e.target
-  if (target && typeof target.closest === 'function' && target.closest('.grab')) return
-  clearTimeout(holdTimer)
-  holdTimer = setTimeout(() => changePlugin(), 480)
-  const up = () => {
-    clearTimeout(holdTimer)
-    window.removeEventListener('pointerup', up)
-    window.removeEventListener('pointermove', up)
-  }
-  window.addEventListener('pointerup', up)
-  window.addEventListener('pointermove', up)
-}
 function onChange () { persistWebMixer() }
 </script>
 
@@ -281,6 +284,14 @@ function onChange () { persistWebMixer() }
   padding: 4px 4px 10px;
   box-shadow: 0 24px 64px rgba(24, 26, 30, 0.34), inset 0 1px 0 rgba(255, 255, 255, 0.8);
 }
+.sheet:has(.vital-on) {
+  background: #121418;
+  border-color: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.45), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+.sheet:has(.vital-on) .grab,
+.sheet:has(.vital-on) .grab-btn { color: #c5ced6; }
+.sheet:has(.vital-on) .grab-btn:hover { background: rgba(255, 255, 255, 0.06); }
 .sheet > :deep(.x-plug) {
   flex: 1;
   min-height: 0;
@@ -289,10 +300,35 @@ function onChange () { persistWebMixer() }
   -webkit-overflow-scrolling: touch;
 }
 .host.lite .sheet {
-  width: 100%;
-  height: 100%;
-  max-width: 100%;
-  max-height: 100%;
+  width: min(560px, 100%);
+  height: auto;
+  max-height: 78vh;
+}
+.host.lite .sheet > :deep(.x-plug),
+.host.lite .sheet > :deep(.plug) {
+  flex: 0 1 auto;
+  height: auto;
+  max-height: calc(78vh - 56px);
+  overflow: auto;
+}
+.grab-btn.on { color: #26282C; background: rgba(38, 40, 44, 0.08); }
+.sheet.compact-plugin :deep(.k),
+.sheet.compact-plugin :deep(.sz-sm) { width: 96px; }
+.sheet.compact-plugin :deep(.sz-lg) { width: 112px; }
+.sheet.compact-plugin :deep(.sz-xl) { width: 128px; }
+@media (max-width: 720px) {
+  .sheet {
+    width: 100%;
+    height: auto;
+    max-height: 78vh;
+  }
+  .sheet > :deep(.x-plug),
+  .sheet > :deep(.plug) {
+    flex: 0 1 auto;
+    height: auto;
+    max-height: calc(78vh - 56px);
+    overflow: auto;
+  }
 }
 .grab {
   height: 36px;

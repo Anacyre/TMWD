@@ -267,7 +267,7 @@ function resetGain () {
   .meter.stereo { width: 42px; }
   .meter.has-gain { width: 64px; }
   .meter.has-gain.stereo { width: 68px; }
-  .meter.fill { min-height: 120px; }
+  .meter.fill { min-height: 96px; max-height: 96px; }
   .col { width: 8px; }
   .thumb {
     width: 18px;

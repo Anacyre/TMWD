@@ -1,5 +1,5 @@
 <template>
-  <view class="plug x-plug dsp-skin skin-lite" :class="{ 'is-off': insert.enabled === false }">
+  <view class="plug x-plug dsp-skin skin-lite" :class="{ 'is-off': insert.enabled === false, 'vital-on': showUi }">
     <plugin-shell
       :name="title"
       :model-value="insert.presetId"
@@ -8,9 +8,26 @@
       @update:model-value="onPreset"
       @update:enabled="onEnabled"
       @reset="onReset"
+    >
+      <template #actions>
+        <view
+          class="ui-sw"
+          :class="{ on: showUi }"
+          title="Graphical layout"
+          aria-label="Graphical layout"
+          @click.stop="toggleUi"
+        >UI</view>
+      </template>
+    </plugin-shell>
+    <text v-if="!showUi" class="sub">{{ subtitle }}</text>
+    <plugin-vital-face
+      v-if="showUi"
+      :plugin-id="pluginId"
+      :state="state"
+      :panel="panel"
+      @set="set"
     />
-    <text class="sub">{{ subtitle }}</text>
-    <view v-if="selects.length" class="sels">
+    <view v-if="!showUi && selects.length" class="sels">
       <view v-for="sel in selects" :key="sel.key" class="sel">
         <text class="dsp-lab">{{ sel.label }}</text>
         <view class="x-seg">
@@ -24,7 +41,7 @@
         </view>
       </view>
     </view>
-    <view class="tray x-tray">
+    <view v-if="!showUi" class="tray x-tray">
       <dsp-knob
         v-for="knob in knobs"
         :key="knob.key"
@@ -42,13 +59,24 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import PluginShell from './plugin-shell.vue'
 import DspKnob from './dsp-knob.vue'
+import PluginVitalFace from './plugin-vital-face.vue'
 import { plugins, applyPreset, resetInsert } from '../../dsp/registry.js'
 import { VITAL_LITE_PANELS, VITAL_LITE_SUBTITLE, VITAL_LITE_PLUGINS } from '../../dsp/vital-lite/index.js'
-import { midiToHz } from '../../dsp/vital-lite/params.js'
+import { formatVitalValue } from '../../dsp/vital-lite/face-draw.js'
 import './dsp-theme.css'
+
+const UI_KEY = 'daw.vitalLite.graphicalUi'
+function readUi () {
+  try {
+    if (typeof localStorage === 'undefined') return true
+    return localStorage.getItem(UI_KEY) !== '0'
+  } catch (e) {
+    return true
+  }
+}
 
 const props = defineProps({
   insert: { type: Object, required: true }
@@ -62,6 +90,12 @@ const panel = computed(() => VITAL_LITE_PANELS[pluginId.value] || { knobs: [] })
 const knobs = computed(() => panel.value.knobs || [])
 const selects = computed(() => panel.value.selects || [])
 const presets = computed(() => (plugins[pluginId.value] && plugins[pluginId.value].presets) || [])
+const showUi = ref(readUi())
+
+function toggleUi () {
+  showUi.value = !showUi.value
+  try { localStorage.setItem(UI_KEY, showUi.value ? '1' : '0') } catch (e) {}
+}
 
 function num (value, fallback = 0) {
   const n = Number(value)
@@ -74,19 +108,7 @@ function onReset () { resetInsert(props.insert); commit() }
 function set (key, value) { props.insert.state[key] = value; commit() }
 
 function formatter (knob) {
-  const kind = knob.format
-  return (v) => {
-    const n = num(v, knob.defaultValue)
-    if (kind === 'pct') return Math.round(n * 100) + '%'
-    if (kind === 'db') return (n >= 0 ? '+' : '') + n.toFixed(1) + ' dB'
-    if (kind === 'sec') return n < 1 ? Math.round(n * 1000) + ' ms' : n.toFixed(2) + ' s'
-    if (kind === 'ms') return (n * 1000).toFixed(1) + ' ms'
-    if (kind === 'hz') return n < 10 ? n.toFixed(2) + ' Hz' : Math.round(n) + ' Hz'
-    if (kind === 'midi') return Math.round(midiToHz(n)) + ' Hz'
-    if (kind === 'int') return String(Math.round(n))
-    if (kind === 'st') return n.toFixed(1) + ' st'
-    return n.toFixed(2)
-  }
+  return (v) => formatVitalValue(knob.format, v, knob.defaultValue)
 }
 </script>
 
@@ -116,4 +138,39 @@ function formatter (knob) {
 }
 .x-chip.on { border-color: var(--x-cool); color: var(--x-cool); background: rgba(78, 127, 168, 0.12); }
 .tray { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.ui-sw {
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 4px;
+  border: 1px solid var(--x-line);
+  background: var(--x-panel);
+  color: var(--x-ink-3);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+}
+.ui-sw.on {
+  color: #121418;
+  background: #d5dee6;
+  border-color: #d5dee6;
+}
+.plug.dsp-skin.vital-on {
+  --x-chassis: #1b1e22;
+  --x-chassis-2: #14171a;
+  --x-panel: #101214;
+  --x-panel-2: #1e2226;
+  --x-ink: #e7eaee;
+  --x-ink-2: #c5ced6;
+  --x-ink-3: #8b939e;
+  --x-line: rgba(255, 255, 255, 0.1);
+  --x-line-2: rgba(255, 255, 255, 0.05);
+  --x-accent: #d5dee6;
+  --x-accent-hi: #ffffff;
+  --x-accent-lo: rgba(213, 222, 230, 0.16);
+  --x-cool: #7fd0c4;
+  background: #1b1e22;
+  min-height: 0;
+}
 </style>

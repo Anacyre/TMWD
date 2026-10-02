@@ -588,23 +588,14 @@ function onDown (e) {
   /* Single-column stage: the meter moves under the curve so the graph keeps the
      full panel width instead of losing a third of it to a vertical meter. */
   .stage { flex-direction: column; min-height: 0; }
-  .graph { min-height: 180px; }
-  .add-node { min-width: 40px; height: 40px; }
-  .card { width: 210px; }
-  .x-chip.slope { min-width: 40px; height: 34px; font-size: 9px; }
+  .graph { min-height: 0; }
+  .add-node { min-width: 44px; height: 44px; }
+  .card { width: min(100%, 360px); }
+  .card-knobs { flex-wrap: wrap; justify-content: center; gap: 8px; }
+  .x-chip.slope { min-width: 44px; height: 34px; font-size: 9px; }
   .strip { padding-bottom: 4px; }
 }
 @media (max-width: 430px) {
-  .graph { min-height: 168px; }
-  .card { width: 190px; }
-}
-@media (max-width: 390px) {
-  .graph { min-height: 152px; }
-  .card { width: 176px; }
-  .x-chip.slope { min-width: 36px; }
-}
-@media (max-width: 360px) {
-  .graph { min-height: 140px; }
-  .card { width: 164px; }
+  .card { width: min(100%, 340px); }
 }
 </style>

@@ -40,6 +40,12 @@ import { bounceSessionToWav } from '../audio/bounce.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
+import {
+  PREPARE_DEADLINE_MS,
+  PREPARE_WINDOW_BEATS,
+  PREPARE_ZONE_CAP,
+  selectPrepareZones
+} from '../audio/orchestra-v/prepare-window.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
@@ -900,9 +906,17 @@ function preloadSelectedOrchestra (graph) {
 async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8, priority = true) {
   if (!graph) return
   const jobs = orchestraPitchJobs(fromBeat, fromBeat + windowBeats)
-  await Promise.all([...jobs].map(([track, pitches]) => (
-    cloudSamplerFor(track).preloadNotes(graph, track, pitches, 0.8, priority).catch(() => {})
-  )))
+  const pinned = []
+  await Promise.all([...jobs].map(async ([track, pitches]) => {
+    if (isOrchestraVTrack(track)) {
+      try {
+        const zones = await orchestraVCloud.zonesForPitches(track, pitches)
+        pinned.push(...zones)
+      } catch (err) { /* the note retries on playback */ }
+    }
+    await cloudSamplerFor(track).preloadNotes(graph, track, pitches, 0.8, priority).catch(() => {})
+  }))
+  orchestraVCloud.replaceWindowPins(graph.context, pinned)
 }
 
 function orchestraPitchJobs (fromBeat, untilBeat) {
@@ -930,30 +944,32 @@ let samplePrepareToken = 0
 
 async function prepareOrchestraSamples (graph, fromBeat) {
   const token = ++samplePrepareToken
-  const jobs = orchestraPitchJobs(fromBeat, 1e9)
+  const jobs = orchestraPitchJobs(fromBeat, fromBeat + PREPARE_WINDOW_BEATS)
   const zones = []
-  const seen = new Set()
   for (const [track, pitches] of jobs) {
     if (!isOrchestraVTrack(track)) continue
     const list = await orchestraVCloud.zonesForPitches(track, pitches)
     if (token !== samplePrepareToken) return false
-    for (const item of list) {
-      const id = item.library + '/' + item.sample
-      if (seen.has(id)) continue
-      seen.add(id)
-      zones.push(item)
-    }
+    zones.push(...list)
   }
-  session.sampleLoad.total = zones.length
+  const split = selectPrepareZones(zones, PREPARE_ZONE_CAP)
+  session.sampleLoad.total = split.immediate.length
   session.sampleLoad.done = 0
-  session.sampleLoad.active = zones.length > 0
-  for (const item of zones) {
-    if (token !== samplePrepareToken) return false
-    try { await orchestraVCloud.decodePinned(graph, item) } catch (err) { /* counted so the bar still finishes */ }
-    session.sampleLoad.done += 1
-  }
+  session.sampleLoad.active = split.immediate.length > 0
+  const work = Promise.all(split.immediate.map(async (item) => {
+    if (token !== samplePrepareToken) return
+    try { await orchestraVCloud.decodePinned(graph, item) } catch (err) { /* note-on retries */ }
+    if (token === samplePrepareToken) session.sampleLoad.done += 1
+  }))
+  await Promise.race([
+    work,
+    new Promise((resolve) => setTimeout(resolve, PREPARE_DEADLINE_MS))
+  ])
   session.sampleLoad.active = false
-  return token === samplePrepareToken
+  if (token !== samplePrepareToken) return false
+  orchestraVCloud.replaceWindowPins(graph.context, split.immediate)
+  startEncodedWarm(fromBeat)
+  return true
 }
 
 function maybeOrchestraLookahead () {
@@ -1021,11 +1037,7 @@ export async function play () {
   if (session.playing || session.sampleLoad.active) return
   const graph = await unlockAudioForUser()
   if (graph) {
-    session.sampleLoad.active = true
-    session.sampleLoad.done = 0
-    session.sampleLoad.total = 0
-    const ready = await prepareOrchestraSamples(graph, 0)
-    session.sampleLoad.active = false
+    const ready = await prepareOrchestraSamples(graph, session.positionBeats || 0)
     if (!ready) return
   }
   session.playing = true

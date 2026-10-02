@@ -27,6 +27,21 @@ function fakeDecoded (samples) {
   }
 }
 
+function testPinRelease () {
+  const lru = new AudioBufferLru(1700)
+  lru.set('a', fakeDecoded(100))
+  lru.pin('a')
+  lru.set('b', fakeDecoded(100))
+  lru.set('c', fakeDecoded(100))
+  assert.equal(lru.get('b'), null)
+  lru.unpin('a')
+  lru.set('d', fakeDecoded(100))
+  assert.equal(lru.get('a'), null)
+  assert.ok(lru.get('c'))
+  assert.ok(lru.get('d'))
+  console.log('ok  unpinned buffers can leave the cache')
+}
+
 function testLru () {
   const lru = new AudioBufferLru(1700)
   lru.set('a', fakeDecoded(100))
@@ -47,5 +62,6 @@ async function testNoIndexedDbFallback () {
 
 await testLimiter()
 testLru()
+testPinRelease()
 await testNoIndexedDbFallback()
-console.log('3 passed')
+console.log('4 passed')

@@ -719,8 +719,6 @@ function onPlayheadDown (e) {
   window.addEventListener('pointerup', up)
 }
 
-const RULER_HOLD_MS = 450
-
 function onRulerDown (e) {
   const el = resolveDom(rulerEl.value) || (e.currentTarget && e.currentTarget.getBoundingClientRect ? e.currentTarget : null)
   const hit = rulerPoint(e, el)
@@ -756,30 +754,22 @@ function onRulerDown (e) {
     const up = () => {
       window.removeEventListener('pointermove', move)
       window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
     }
     window.addEventListener('pointermove', move)
     window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
     return
   }
-  const origin = pointerCoord(e)
-  let hold = setTimeout(() => {
-    hold = 0
-    follow.value = true
-    setPositionBeats(beat)
-  }, RULER_HOLD_MS)
+
+  follow.value = true
+  setPositionBeats(beat)
   const move = (ev) => {
     const next = rulerPoint(ev, el)
-    const point = pointerCoord(ev)
-    if (!next || !point || !origin) return
-    if (hold && Math.hypot(point.x - origin.x, point.y - origin.y) > 8) {
-      clearTimeout(hold)
-      hold = 0
-      return
-    }
-    if (!hold) setPositionBeats(next.beat)
+    if (!next) return
+    setPositionBeats(next.beat)
   }
   const up = () => {
-    if (hold) clearTimeout(hold)
     window.removeEventListener('pointermove', move)
     window.removeEventListener('pointerup', up)
     window.removeEventListener('pointercancel', up)
@@ -1439,6 +1429,7 @@ onUnmounted(() => {
   flex-shrink: 0;
   min-width: 0;
 }
+.lite .top { height: 48px; }
 .top .corner { width: 128px; flex-shrink: 0; }
 .top .ruler { flex: 1; min-width: 0; }
 .phone .top .corner { width: 112px; }
@@ -1533,7 +1524,9 @@ onUnmounted(() => {
   position: relative;
   cursor: ew-resize;
   user-select: none;
+  touch-action: none;
 }
+.lite .bar { top: 22px; height: 24px; font-size: 13px; }
 .ruler-shift { position: absolute; inset: 0; }
 .loop-lane { height: 8px; position: relative; }
 .loop-band {
@@ -1756,6 +1749,13 @@ onUnmounted(() => {
   height: 8px;
   border-radius: 50%;
   background: #fff;
+}
+@media (pointer: coarse) {
+  .top { height: 48px; }
+  .bar { top: 22px; height: 24px; font-size: 13px; }
+  .playhead { width: 32px; margin-left: -16px; }
+  .playhead::after { left: 15px; }
+  .playhead .cap { left: 12px; }
 }
 .marquee {
   position: absolute;

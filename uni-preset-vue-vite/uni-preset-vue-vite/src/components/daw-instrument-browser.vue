@@ -6,7 +6,14 @@
         <view class="icon-btn" @click="closeInstrumentPicker">×</view>
       </view>
       <input class="search" placeholder="Search..." :value="query" @input="query = $event.target.value">
-      <view v-if="isPlugin" class="plugin-list">
+      <scroll-view
+        v-if="isPlugin"
+        class="plugin-list"
+        scroll-y
+        :show-scrollbar="true"
+        @touchstart="onListTouchStart"
+        @touchmove="onListTouchMove"
+      >
         <view
           v-for="item in pluginItems"
           :key="item.id"
@@ -21,7 +28,7 @@
           </view>
           <text class="pdetail">{{ item.detail }}</text>
         </view>
-      </view>
+      </scroll-view>
       <view v-else class="body">
         <scroll-view class="cats" scroll-y>
           <view
@@ -75,6 +82,18 @@ import {
 const query = ref('')
 const category = ref(0)
 const selected = ref(null)
+let listGesture = null
+
+function onListTouchStart (e) {
+  const touch = e.touches && e.touches[0]
+  listGesture = { y: touch ? touch.clientY : 0, moved: false }
+}
+
+function onListTouchMove (e) {
+  const touch = e.touches && e.touches[0]
+  if (!listGesture || !touch) return
+  if (Math.abs(touch.clientY - listGesture.y) > 8) listGesture.moved = true
+}
 
 const isNewTrack = computed(() => session.instrumentPickerMode === 'new-track')
 const isPlugin = computed(() => session.instrumentPickerMode !== 'orchestra-patch')
@@ -140,6 +159,9 @@ function choosePlugin (item) {
 }
 
 function onPluginTap (item) {
+  const scrolled = listGesture && listGesture.moved
+  listGesture = null
+  if (scrolled) return
   selected.value = item
   if (isLite()) choosePlugin(item)
 }
@@ -190,7 +212,7 @@ function confirm () {
   flex-direction: column;
   overflow: hidden;
 }
-.dialog.plugins { height: 380px; }
+.dialog.plugins { height: min(520px, 78vh); }
 .head {
   height: 36px;
   display: flex;
@@ -211,14 +233,23 @@ function confirm () {
   padding: 0 8px;
 }
 .body { flex: 1; display: flex; min-height: 0; }
-.plugin-list { flex: 1; overflow: auto; background: #0e0e0e; }
+.plugin-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: 0;
+  background: #0e0e0e;
+  -webkit-overflow-scrolling: touch;
+}
 .plugin {
+  min-height: 48px;
   padding: 12px 14px;
   display: flex;
   flex-direction: column;
+  justify-content: center;
   gap: 3px;
   cursor: pointer;
   color: #e6e6e6;
+  box-sizing: border-box;
 }
 .plugin:hover { background: #1c1c1c; }
 .plugin.on { background: #232323; box-shadow: inset 2px 0 #4da3ff; }

@@ -50,6 +50,10 @@ export async function decodePinned (...args) {
   return mod.decodePinned(...args)
 }
 
+export function replaceWindowPins (...args) {
+  return sync('replaceWindowPins', ...args)
+}
+
 export async function warmEncoded (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.warmEncoded(...args)

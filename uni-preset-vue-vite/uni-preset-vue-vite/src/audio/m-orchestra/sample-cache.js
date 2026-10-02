@@ -100,6 +100,10 @@ export class AudioBufferLru {
     this.pinned.add(key)
   }
 
+  unpin (key) {
+    this.pinned.delete(key)
+  }
+
   set (key, decoded) {
     const previous = this.entries.get(key)
     if (previous) this.bytes -= previous.bytes

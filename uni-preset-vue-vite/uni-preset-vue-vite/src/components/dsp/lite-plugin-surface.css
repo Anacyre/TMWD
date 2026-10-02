@@ -1,6 +1,6 @@
 /* Lite plugin surfaces — min interactive size matches pan knob (32px). */
 .lite-plugin-surface {
-  --lite-ctrl-min: 32px;
+  --lite-ctrl-min: 44px;
 }
 
 .lite-plugin-surface .ico {

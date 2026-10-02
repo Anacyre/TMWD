@@ -142,7 +142,13 @@
         </view>
       </view>
 
-      <view v-if="!dense || libOpen" class="library">
+      <scroll-view
+        v-if="!dense || libOpen"
+        class="library"
+        :class="{ sheet: dense }"
+        scroll-y
+        :show-scrollbar="true"
+      >
         <view class="lib-pick">
           <view
             v-for="option in LIBRARY_OPTIONS"
@@ -173,7 +179,7 @@
             </view>
           </view>
         </view>
-      </view>
+      </scroll-view>
     </view>
   </view>
 </template>
@@ -477,6 +483,7 @@ function changePlugin () {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
 }
 .top {
   height: 44px;
@@ -694,11 +701,13 @@ function changePlugin () {
 
 .library {
   width: 268px;
+  height: 100%;
   border-left: 1px solid #1e2637;
   padding: 10px;
-  overflow: auto;
+  box-sizing: border-box;
   flex-shrink: 0;
   background: #0b1020;
+  -webkit-overflow-scrolling: touch;
 }
 .lib-pick { display: flex; gap: 6px; margin-bottom: 12px; }
 .lib-tab {
@@ -773,6 +782,8 @@ function changePlugin () {
   padding: 6px 8px;
   overflow-x: auto;
   overflow-y: hidden;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
 }
 .ov.dense .fam {
   flex-direction: row;
@@ -794,18 +805,37 @@ function changePlugin () {
 .ov.dense .wheels { display: none; }
 .ov.dense .keys { height: 56px; }
 .ov.dense .key.black { height: 54%; }
-.ov.dense .library {
+.ov.dense .library.sheet {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 48px;
+  bottom: 0;
   width: auto;
-  max-height: 46%;
+  height: auto;
+  max-height: none;
+  z-index: 6;
   border-left: 0;
   border-top: 1px solid #1e2637;
 }
+.ov.dense .card { min-height: 72px; }
+.ov.dense .card-ico { font-size: 20px; }
+.ov.dense .card-name { font-size: 12px; }
 .ov.dense .grid { grid-template-columns: 1fr 1fr; }
 
 @media (max-width: 700px) {
   .body { flex-direction: column; }
-  .families { width: auto; height: 64px; flex-direction: row; border-right: 0; border-bottom: 1px solid #1e2637; }
-  .library { width: auto; border-left: 0; border-top: 1px solid #1e2637; max-height: 40%; }
+  .families {
+    width: auto;
+    height: 64px;
+    flex-direction: row;
+    border-right: 0;
+    border-bottom: 1px solid #1e2637;
+    overflow-x: auto;
+    touch-action: pan-x;
+    -webkit-overflow-scrolling: touch;
+  }
+  .library { width: auto; height: 240px; border-left: 0; border-top: 1px solid #1e2637; max-height: 40%; }
   .ring { width: 160px; }
   .inst-name { font-size: 15px; }
 }

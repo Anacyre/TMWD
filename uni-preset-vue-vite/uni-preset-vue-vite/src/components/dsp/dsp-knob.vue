@@ -1,7 +1,7 @@
 <template>
   <view
     class="k"
-    :class="['sz-' + size, { dim: disabled, drag: dragging }]"
+    :class="['sz-' + size, tone ? 'tone-' + tone : '', { dim: disabled, drag: dragging }]"
     :style="accentStyle"
     :aria-label="label"
     :aria-valuemin="min"
@@ -20,8 +20,8 @@
     <svg class="svg" viewBox="0 0 80 80">
       <defs>
         <linearGradient :id="bodyId" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stop-color="#FFFFFF"/>
-          <stop offset="100%" stop-color="#EFEDE9"/>
+          <stop offset="0%" :stop-color="bodyTop"/>
+          <stop offset="100%" :stop-color="bodyBot"/>
         </linearGradient>
         <linearGradient :id="dualId" x1="0%" y1="0%" x2="100%" y2="0%">
           <stop offset="0%" stop-color="var(--x-accent, #E08B2F)"/>
@@ -69,7 +69,8 @@ const props = defineProps({
   size: { type: String, default: 'md' },
   scale: { type: String, default: 'lin' },
   accent: { type: String, default: '' },
-  dual: { type: Boolean, default: false }
+  dual: { type: Boolean, default: false },
+  tone: { type: String, default: '' }
 })
 const emit = defineEmits(['update:modelValue'])
 const dragging = ref(false)
@@ -80,6 +81,8 @@ const dualId = 'kd' + uid
 const accentStyle = computed(() => props.accent
   ? { '--x-accent': props.accent, '--dsp-accent': props.accent }
   : null)
+const bodyTop = computed(() => props.tone === 'vital' ? '#3c434c' : '#FFFFFF')
+const bodyBot = computed(() => props.tone === 'vital' ? '#22262b' : '#EFEDE9')
 
 function toT (value) {
   if (props.scale === 'log') {
@@ -185,6 +188,12 @@ function reset () { set(props.defaultValue) }
 .k.sz-sm { width: 58px; }
 .k.sz-lg { width: 96px; }
 .k.sz-xl { width: 190px; }
+@media (max-width: 720px) {
+  .k,
+  .k.sz-sm { width: 96px; min-height: 44px; }
+  .k.sz-lg { width: 112px; }
+  .k.sz-xl { width: 128px; }
+}
 .k.dim { opacity: 0.4; pointer-events: none; }
 .svg { width: 100%; height: auto; }
 .body {
@@ -226,11 +235,23 @@ function reset () { set(props.defaultValue) }
 }
 .k.sz-xl .lab { font-size: 10px; margin-bottom: 6px; }
 
+.k.tone-vital .tick { stroke: rgba(255, 255, 255, 0.28); }
+.k.tone-vital .track { stroke: rgba(255, 255, 255, 0.14); }
+.k.tone-vital .body { stroke: rgba(255, 255, 255, 0.22); }
+.k.tone-vital .needle { stroke: #e8eef2; }
+.k.tone-vital .lab,
+.k.tone-vital .val { color: #c5ced6; }
+
 @media (max-width: 720px) {
   .k,
   .k.sz-sm,
   .k.sz-lg {
     width: min(140px, 100%);
+  }
+  .k.tone-vital,
+  .k.tone-vital.sz-sm,
+  .k.tone-vital.sz-lg {
+    width: 68px;
   }
   .k.sz-xl { width: min(220px, 100%); }
   .lab { font-size: 10px; }

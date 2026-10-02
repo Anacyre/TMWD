@@ -130,7 +130,7 @@
     </view>
     <view v-if="session.sampleLoad.active" class="sample-load">
       <view class="sample-fill" :style="{ width: sampleLoadPct }" />
-      <text class="sample-label">加载采样 {{ session.sampleLoad.done }}/{{ session.sampleLoad.total }}</text>
+      <text class="sample-label">准备接下来的采样</text>
     </view>
   </view>
 </template>

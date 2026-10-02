@@ -11,6 +11,10 @@ import { createCompressorLiteProcessor } from './compressor.js'
 import { createEqualizerLiteProcessor } from './equalizer.js'
 import { createFilterLiteProcessor } from './filter.js'
 import { midiToHz, exp2 } from './params.js'
+import {
+  formatVitalValue, eqResponse, distortionShape, distortSample, driveAmount,
+  delayBars, filterResponse, compressorCols
+} from './face-draw.js'
 import { createInsert } from '../plugin.js'
 
 function assert (ok, message) {
@@ -148,6 +152,26 @@ const makers = {
   assert(/class\s+VitalLiteReverbProcessor/.test(FX_WORKLET_SOURCE), 'worklet keeps VitalLiteReverbProcessor')
   assert(/class\s+VitalLiteFilterProcessor/.test(FX_WORKLET_SOURCE), 'worklet keeps VitalLiteFilterProcessor')
   assert(/VITAL_LITE_CTORS/.test(FX_WORKLET_SOURCE), 'worklet maps plugin ids to constructors')
+}
+
+{
+  assert(formatVitalValue('midi', 69) === '440 Hz', 'midi format')
+  assert(formatVitalValue('pct', 0.5) === '50%', 'pct format')
+  const eq = eqResponse({
+    lowMode: 'lowshelf', lowMidi: 40, lowGainDb: 6, lowRes: 0.4,
+    bandMode: 'bell', bandMidi: 80, bandGainDb: -3, bandRes: 0.5,
+    highMode: 'highshelf', highMidi: 100, highGainDb: 2, highRes: 0.3
+  })
+  assert(eq.line.startsWith('M') && !eq.line.includes('NaN'), 'eq curve')
+  const shape = distortionShape({ type: 'soft', drive: 12 })
+  assert(shape.line.includes('L') && !shape.line.includes('NaN'), 'distortion curve')
+  almost(distortSample('hard', 0.5, driveAmount('hard', 0)), 0.5, 0.02, 'unity hard clip')
+  const filt = filterResponse({ cutoffMidi: 80, resonance: 0.5, blend: 0, style: '24dB' })
+  assert(!filt.line.includes('NaN'), 'filter curve')
+  const taps = delayBars({ style: 'pingpong', frequency: 4, feedback: 0.5, mix: 0.5 })
+  assert(taps.length > 1, 'delay taps')
+  const cols = compressorCols({ bands: 'low-band', lowGainDb: 6, bandGainDb: 0, highGainDb: 0, lowUpperDb: -20, bandUpperDb: -20, highUpperDb: -20 })
+  assert(cols[0].cls === 'b1' && cols[2].cls === 'off', 'compressor band enable')
 }
 
 console.log('vital-lite ok')

@@ -10,6 +10,7 @@
  */
 
 import { trackInputNode } from '../mixer-graph.js'
+import { PREPARE_DEADLINE_MS } from './prepare-window.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
@@ -62,6 +63,7 @@ function crossfade (param, curve, at, seconds) {
 
 const regionMaps = new Map()
 const bufferCache = new AudioBufferLru(96 * 1024 * 1024)
+const windowPins = new Set()
 const decodeQueue = new AsyncLimiter(2)
 const decodePromises = new Map()
 const voices = new Map()
@@ -261,11 +263,23 @@ async function decodeSampleBytes (context, bytes) {
 
 const fetchPromises = new Map()
 
-async function fetchSampleBytes (library, objectPath) {
+function withDeadline (promise, ms, message) {
+  let timer = 0
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms)
+  })
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer))
+}
+
+async function fetchSampleBytes (library, objectPath, signal) {
   const stored = cachePath(library, objectPath)
   const inflight = fetchPromises.get(stored)
-  if (inflight) return inflight
-  const promise = fetchSampleBytesNow(library, objectPath, stored)
+  if (inflight) {
+    return signal
+      ? withDeadline(inflight, PREPARE_DEADLINE_MS, 'orchestra-v sample timeout')
+      : inflight
+  }
+  const promise = fetchSampleBytesNow(library, objectPath, stored, signal)
   fetchPromises.set(stored, promise)
   try {
     return await promise
@@ -274,24 +288,35 @@ async function fetchSampleBytes (library, objectPath) {
   }
 }
 
-async function fetchSampleBytesNow (library, objectPath, stored) {
-  const cached = await readEncodedSample(stored)
+async function fetchSampleBytesNow (library, objectPath, stored, signal) {
+  let cached = null
+  try {
+    cached = await withDeadline(readEncodedSample(stored), 2000, 'orchestra-v cache timeout')
+  } catch (err) {
+    cached = null
+  }
   if (cached) {
     profile.idbHits += 1
     return cached
   }
+  const controller = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), PREPARE_DEADLINE_MS) : 0
   const started = nowMs()
-  const response = await fetch(sampleUrl(library, objectPath))
-  if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
-  const type = String(response.headers.get('content-type') || '')
-  // The Cloudflare site answers missing assets with index.html and status 200.
-  // Decoding that page is what made every Orchestra V note silent.
-  if (type.includes('text/html')) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
-  const bytes = await response.arrayBuffer()
-  profile.fetchMs += nowMs() - started
-  profile.networkFetches += 1
-  writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
-  return bytes
+  try {
+    const response = await fetch(sampleUrl(library, objectPath), (signal || controller) ? { signal: signal || controller.signal } : undefined)
+    if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
+    const type = String(response.headers.get('content-type') || '')
+    // The Cloudflare site answers missing assets with index.html and status 200.
+    // Decoding that page is what made every Orchestra V note silent.
+    if (type.includes('text/html')) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
+    const bytes = await response.arrayBuffer()
+    profile.fetchMs += nowMs() - started
+    profile.networkFetches += 1
+    writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
+    return bytes
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 function decodeKey (library, zone, context) {
@@ -317,10 +342,19 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
     return decoded
   }
 
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const promise = decodeQueue.run(async () => {
-    const bytes = await fetchSampleBytes(library, zone.sample)
+    const timer = setTimeout(() => {
+      if (controller) controller.abort()
+    }, PREPARE_DEADLINE_MS)
+    try {
+    const bytes = await fetchSampleBytes(library, zone.sample, controller && controller.signal)
     const started = nowMs()
-    const audio = await decodeSampleBytes(context, bytes)
+    const audio = await withDeadline(
+      decodeSampleBytes(context, bytes),
+      PREPARE_DEADLINE_MS,
+      'orchestra-v decode timeout'
+    )
     profile.decodeMs += nowMs() - started
 
     let loop = false
@@ -353,6 +387,9 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
     bufferCache.set(key, decoded)
     if (pin) bufferCache.pin(key)
     return decoded
+    } finally {
+      clearTimeout(timer)
+    }
   }, priority)
 
   decodePromises.set(key, promise)
@@ -880,6 +917,22 @@ export async function decodePinned (graph, item) {
   if (!graph || !item || !item.zone) return null
   const rules = playbackRules(item.library)
   return decodeZone(graph.context, item.library, item.zone, rules, true, true)
+}
+
+/** Keep PCM only for the zones the playhead is about to use. */
+export function replaceWindowPins (context, items) {
+  const next = new Set()
+  for (const item of items || []) {
+    if (!context || !item || !item.zone) continue
+    const key = decodeKey(item.library, item.zone, context)
+    bufferCache.pin(key)
+    next.add(key)
+  }
+  for (const key of windowPins) {
+    if (!next.has(key)) bufferCache.unpin(key)
+  }
+  windowPins.clear()
+  next.forEach((key) => windowPins.add(key))
 }
 export async function warmEncoded (library, objectPath) {
   if (!library || !objectPath) return
