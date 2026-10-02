@@ -18,7 +18,16 @@ export const PLUGIN_SHORT = {
   'dynamic-x': 'DYN',
   'reverb-x': 'REV',
   'boost-x': 'BOOST',
-  'limiter-x': 'LIM'
+  'limiter-x': 'LIM',
+  'reverb-lite': 'RVL',
+  'chorus-lite': 'CHS',
+  'compressor-lite': 'CMP',
+  'delay-lite': 'DLY',
+  'distortion-lite': 'DST',
+  'equalizer-lite': 'EQL',
+  'filter-lite': 'FLT',
+  'flanger-lite': 'FLG',
+  'phaser-lite': 'PHS'
 }
 
 export const BUS_REVERB = 'bus_reverb'

@@ -1,0 +1,18 @@
+VitalLite
+=========
+
+This directory is a JavaScript AudioWorklet port of the nine effect-rack
+modules from Vital by Matt Tytel:
+
+  https://github.com/mtytel/vital
+
+Original C++ © 2013-2019 Matt Tytel, licensed under GNU GPL v3.
+The port (this directory) is a derivative work and is therefore also
+GPL-3.0-or-later. See ./LICENSE.
+
+The C++ tree used as a reference lives at third_party/vital/ (gitignored,
+not shipped in the web bundle). Vital factory presets are under a separate
+licence and are not included here.
+
+The name "VitalLite" is a description of the port, not a claim on the
+Vital / Vital Audio trademarks.

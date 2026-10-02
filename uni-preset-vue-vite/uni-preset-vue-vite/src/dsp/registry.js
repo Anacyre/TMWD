@@ -3,13 +3,23 @@ import { defaultDynamicState, normalizeDynamicState } from './dynamic-x.js'
 import { defaultLimiterState, normalizeLimiterState, LIMITER_X_FACTORY_PRESETS } from './limiter-x.js'
 import { normalizeEqState } from './equalizer-x.js'
 import { REVERB_X_FACTORY_PRESETS } from './reverb-x.js'
+import { VITAL_LITE_PLUGINS } from './vital-lite/index.js'
 
 export const PLUGIN_IDS = {
   reverb: 'reverb-x',
   eq: 'equalizer-x',
   boost: 'boost-x',
   dynamic: 'dynamic-x',
-  limiter: 'limiter-x'
+  limiter: 'limiter-x',
+  reverbLite: 'reverb-lite',
+  chorusLite: 'chorus-lite',
+  compressorLite: 'compressor-lite',
+  delayLite: 'delay-lite',
+  distortionLite: 'distortion-lite',
+  equalizerLite: 'equalizer-lite',
+  filterLite: 'filter-lite',
+  flangerLite: 'flanger-lite',
+  phaserLite: 'phaser-lite'
 }
 
 export const EQ_SHAPES = ['lowcut', 'lowshelf', 'bell', 'notch', 'highshelf', 'highcut', 'bandpass']
@@ -302,7 +312,8 @@ export const plugins = {
     createState: () => defaultLimiterState(),
     normalize: (state) => normalizeLimiterState(state),
     presets: LIMITER_X_FACTORY_PRESETS
-  }
+  },
+  ...VITAL_LITE_PLUGINS
 }
 
 export function getPlugin (id) {

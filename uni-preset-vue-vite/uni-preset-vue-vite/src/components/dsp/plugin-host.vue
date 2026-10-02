@@ -67,6 +67,11 @@
           @change="onChange"
           @change-plugin="changePlugin"
         />
+        <plugin-vital-lite
+          v-else-if="insert && isVitalLite"
+          :insert="insert"
+          @change="onChange"
+        />
         <view v-else-if="insert" class="missing">
           <text class="missing-title">Unsupported plugin</text>
           <text class="missing-id">{{ insert.pluginId }}</text>
@@ -90,6 +95,8 @@ import PluginEqualizerX from './plugin-equalizer-x.vue'
 import PluginBoostX from './plugin-boost-x.vue'
 import PluginDynamicX from './plugin-dynamic-x.vue'
 import PluginLimiterX from './plugin-limiter-x.vue'
+import PluginVitalLite from './plugin-vital-lite.vue'
+import { isVitalLiteId } from '../../dsp/vital-lite/index.js'
 import './dsp-theme.css'
 import './lite-plugin-surface.css'
 
@@ -99,6 +106,7 @@ const livePreSpectrum = ref([])
 const liveMeters = ref({})
 const liveState = ref('')
 const insert = computed(() => resolveOpenInsert(session.webMixer, session.openPlugin, session.tracks))
+const isVitalLite = computed(() => isVitalLiteId(insert.value && insert.value.pluginId))
 const skinClass = computed(() => {
   const id = insert.value && insert.value.pluginId
   if (id === 'equalizer-x') return 'dsp-skin skin-eq'
@@ -106,6 +114,7 @@ const skinClass = computed(() => {
   if (id === 'dynamic-x') return 'dsp-skin skin-dyn'
   if (id === 'boost-x') return 'dsp-skin skin-boost'
   if (id === 'limiter-x') return 'dsp-skin skin-lim'
+  if (isVitalLiteId(id)) return 'dsp-skin skin-lite'
   return 'dsp-skin'
 })
 const meterKey = computed(() => fxMeterLaneKey(session.openPlugin, session.tracks, {

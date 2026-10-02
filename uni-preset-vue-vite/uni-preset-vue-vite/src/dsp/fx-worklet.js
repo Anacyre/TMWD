@@ -3,6 +3,7 @@ import { BOOST_X_PROCESSOR_SOURCE } from './boost-x-processor.js'
 import { DYNAMIC_X_PROCESSOR_SOURCE } from './dynamic-x-processor.js'
 import { LIMITER_X_PROCESSOR_SOURCE } from './limiter-x.js'
 import { REVERB_X_CORE_SOURCE } from './reverb-x.js'
+import { VITAL_LITE_PROCESSOR_SOURCE } from './vital-lite/index.js'
 
 export const FX_WORKLET_SOURCE = REVERB_X_CORE_SOURCE + EQUALIZER_X_PROCESSOR_SOURCE + `
 class DelayLine {
@@ -78,7 +79,7 @@ function tanhApprox (x) {
   return y * (27 + y * y) / (27 + 9 * y * y)
 }
 
-` + BOOST_X_PROCESSOR_SOURCE + DYNAMIC_X_PROCESSOR_SOURCE + LIMITER_X_PROCESSOR_SOURCE + `
+` + BOOST_X_PROCESSOR_SOURCE + DYNAMIC_X_PROCESSOR_SOURCE + LIMITER_X_PROCESSOR_SOURCE + VITAL_LITE_PROCESSOR_SOURCE + `
 
 class DawFxChain extends AudioWorkletProcessor {
   constructor () {
@@ -91,6 +92,7 @@ class DawFxChain extends AudioWorkletProcessor {
     this.boosts = new Map()
     this.dyns = new Map()
     this.lims = new Map()
+    this.vital = new Map()
     this.pluginMeters = {}
     this.meters = { inPeak: 0, outPeak: 0, inPeakL: 0, inPeakR: 0, outPeakL: 0, outPeakR: 0, wetPeak: 0, gr: 0, grBands: [0,0,0], boostWidth: 0, boostCorr: 1, boostGr: 0, boostActivity: 0 }
     this.chainFft = new EQX_API.SpectrumAnalyzer(this.sr)
@@ -123,6 +125,16 @@ class DawFxChain extends AudioWorkletProcessor {
   memLim (id) {
     if (!this.lims.has(id)) this.lims.set(id, new LimiterXProcessor(this.sr))
     return this.lims.get(id)
+  }
+  memVital (id, pluginId) {
+    var mem = this.vital.get(id)
+    if (!mem || mem.pluginId !== pluginId) {
+      var Ctor = VITAL_LITE_CTORS[pluginId]
+      mem = Ctor ? new Ctor(this.sr) : null
+      if (mem) mem.pluginId = pluginId
+      this.vital.set(id, mem)
+    }
+    return mem
   }
 
   processEq (proc, l, r, n, state) {
@@ -167,6 +179,10 @@ class DawFxChain extends AudioWorkletProcessor {
     else if (insert.pluginId === 'boost-x') this.processBoost(this.memBoost(id), l, r, n, st)
     else if (insert.pluginId === 'dynamic-x') this.processDyn(this.memDyn(id), l, r, n, st)
     else if (insert.pluginId === 'limiter-x') this.processLim(this.memLim(id), l, r, n, st)
+    else if (typeof VITAL_LITE_CTORS !== 'undefined' && VITAL_LITE_CTORS[insert.pluginId]) {
+      var vital = this.memVital(id, insert.pluginId)
+      if (vital) vital.process(l, r, n, st)
+    }
   }
 
   process (inputs, outputs) {

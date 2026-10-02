@@ -29,6 +29,15 @@ export {
 export function nameToPluginId (name) {
   if (!name) return ''
   const lower = String(name).toLowerCase()
+  if (lower.includes('lite') && lower.includes('reverb')) return 'reverb-lite'
+  if (lower.includes('lite') && lower.includes('chorus')) return 'chorus-lite'
+  if (lower.includes('lite') && lower.includes('compress')) return 'compressor-lite'
+  if (lower.includes('lite') && lower.includes('delay')) return 'delay-lite'
+  if (lower.includes('lite') && lower.includes('distort')) return 'distortion-lite'
+  if (lower.includes('lite') && (lower.includes('equalizer') || lower.includes('eq'))) return 'equalizer-lite'
+  if (lower.includes('lite') && lower.includes('filter')) return 'filter-lite'
+  if (lower.includes('lite') && lower.includes('flanger')) return 'flanger-lite'
+  if (lower.includes('lite') && lower.includes('phaser')) return 'phaser-lite'
   if (lower.includes('equalizer') || lower === 'eq') return 'equalizer-x'
   if (lower.includes('reverb') || lower === 'rev') return 'reverb-x'
   if (lower.includes('boost')) return 'boost-x'

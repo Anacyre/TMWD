@@ -32,6 +32,11 @@
         :meters="meters"
         @change="onChange"
       />
+      <plugin-vital-lite
+        v-else-if="isVitalLiteId(insert.pluginId)"
+        :insert="insert"
+        @change="onChange"
+      />
       <view v-else class="missing">
         <text class="missing-title">Unsupported plugin</text>
         <text class="missing-id">{{ insert.pluginId }}</text>
@@ -48,6 +53,8 @@ import PluginEqualizerX from '../../components/dsp/plugin-equalizer-x.vue'
 import PluginBoostX from '../../components/dsp/plugin-boost-x.vue'
 import PluginDynamicX from '../../components/dsp/plugin-dynamic-x.vue'
 import PluginLimiterX from '../../components/dsp/plugin-limiter-x.vue'
+import PluginVitalLite from '../../components/dsp/plugin-vital-lite.vue'
+import { isVitalLiteId } from '../../dsp/vital-lite/index.js'
 import { createInsert } from '../../dsp/plugin.js'
 import { plugins } from '../../dsp/registry.js'
 import { session, getFxAnalyser, getFxMeterPayload, persistWebMixer } from '../../store/session.js'
@@ -69,6 +76,7 @@ const skinClass = computed(() => {
   if (id === 'dynamic-x') return 'skin-dyn'
   if (id === 'boost-x') return 'skin-boost'
   if (id === 'limiter-x') return 'skin-lim'
+  if (isVitalLiteId(id)) return 'skin-lite'
   return ''
 })
 

@@ -48,6 +48,11 @@
   --x-accent-hi: #F2A64A;
   --x-accent-lo: rgba(224, 139, 47, 0.16);
 }
+.dsp-skin.skin-lite {
+  --x-accent: #4E7FA8;
+  --x-accent-hi: #6A9BC0;
+  --x-accent-lo: rgba(78, 127, 168, 0.16);
+}
 
 /* ── Skeleton ─────────────────────────────────────────────────────────── */
 

@@ -36,3 +36,6 @@ Thumbs.db
 node_modules/
 dist/
 *.local
+
+# Vital C++ clone used only as a DSP reference. Never bundled.
+third_party/vital/

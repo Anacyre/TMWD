@@ -6,6 +6,8 @@ function assert (ok, message) {
 }
 
 assert(/class\s+ReverbXProcessor/.test(FX_WORKLET_SOURCE), 'worklet source keeps a named ReverbXProcessor class')
+assert(/class\s+VitalLiteReverbProcessor/.test(FX_WORKLET_SOURCE), 'worklet source keeps VitalLiteReverbProcessor')
+assert(/VITAL_LITE_CTORS/.test(FX_WORKLET_SOURCE), 'VitalLite constructors are indexed in the worklet')
 assert(/function\s+dampCoeff/.test(FX_WORKLET_SOURCE) || /const\s+dampCoeff/.test(FX_WORKLET_SOURCE),
   'dampCoeff is injected so compileReverbNetwork can run in the worklet')
 assert(/function\s+reverbSoftSat/.test(FX_WORKLET_SOURCE) || /const\s+reverbSoftSat/.test(FX_WORKLET_SOURCE),
