@@ -435,13 +435,20 @@ uni-view.x-knobs {
     height: 96px !important;
     flex: 0 0 96px !important;
   }
+  .x-plug .vital-plot,
+  .x-plug .vital-plot.short {
+    height: 96px !important;
+    max-height: 96px !important;
+    flex: 0 0 96px !important;
+  }
   .x-lab-full { display: none; }
   .x-lab-abbr { display: inline; }
 }
 
 .viz-off .dsp-canvas,
 .viz-off .scope,
-.viz-off .x-viz {
+.viz-off .x-viz,
+.viz-off .vital-plot {
   display: none !important;
 }
 
@@ -461,6 +468,12 @@ uni-view.x-knobs {
   min-height: 96px !important;
   max-height: 96px !important;
   height: 96px !important;
+  flex: 0 0 96px !important;
+}
+.compact-plugin .x-plug .vital-plot,
+.compact-plugin .x-plug .vital-plot.short {
+  height: 96px !important;
+  max-height: 96px !important;
   flex: 0 0 96px !important;
 }
 
@@ -485,7 +498,9 @@ uni-view.x-knobs {
 /* Short landscape phones: keep the graph but shrink it rather than the trays. */
 @media (max-height: 480px) and (orientation: landscape) {
   .x-plug .dsp-canvas,
-  .x-plug .scope {
+  .x-plug .scope,
+  .x-plug .vital-plot,
+  .x-plug .vital-plot.short {
     min-height: 72px !important;
     max-height: 72px !important;
     height: 72px !important;

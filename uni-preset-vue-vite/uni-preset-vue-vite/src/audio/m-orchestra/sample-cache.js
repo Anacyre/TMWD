@@ -49,25 +49,31 @@ export class AsyncLimiter {
   constructor (limit = 2) {
     this.limit = Math.max(1, limit | 0)
     this.active = 0
+    // 'now' is a note that has to sound. Urgent is the playhead window.
+    // Background warm stays last. Each tier is FIFO, so a chord's notes
+    // are not pushed behind whichever note was requested last.
+    this.now = []
+    this.urgent = []
     this.waiting = []
   }
 
   get pending () {
-    return this.waiting.length
+    return this.now.length + this.urgent.length + this.waiting.length
   }
 
   run (task, priority = false) {
     return new Promise((resolve, reject) => {
       const job = { task, resolve, reject }
-      if (priority) this.waiting.unshift(job)
+      if (priority === 'now') this.now.push(job)
+      else if (priority) this.urgent.push(job)
       else this.waiting.push(job)
       this.drain()
     })
   }
 
   drain () {
-    while (this.active < this.limit && this.waiting.length) {
-      const job = this.waiting.shift()
+    while (this.active < this.limit && (this.now.length || this.urgent.length || this.waiting.length)) {
+      const job = this.now.shift() || this.urgent.shift() || this.waiting.shift()
       this.active += 1
       Promise.resolve()
         .then(job.task)

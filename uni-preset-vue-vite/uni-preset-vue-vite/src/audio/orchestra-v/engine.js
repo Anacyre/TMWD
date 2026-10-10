@@ -15,7 +15,7 @@ import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } f
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
 import { findDefinition, libraryOf } from './catalog.js'
-import { articulationChain, compileRegions, selectZone } from './sfz.js'
+import { articulationChain, compileRegions, selectZone, zonesForVelocity } from './sfz.js'
 import { ensureManifest, librarySamples, playbackRules, sampleCount, sampleUrl } from './library.js'
 import { releasePlan } from './release.js'
 
@@ -67,6 +67,7 @@ const windowPins = new Set()
 const livePins = new Set()
 const decodeQueue = new AsyncLimiter(4)
 const decodePromises = new Map()
+const failedDecodes = new Set()
 const voices = new Map()
 const pending = new Map()
 const seqStates = new Map()
@@ -386,8 +387,12 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
 
     const decoded = { audio, loop, loopStart, loopEnd, releaseStart, key }
     bufferCache.set(key, decoded)
+    failedDecodes.delete(key)
     if (pin) bufferCache.pin(key)
     return decoded
+    } catch (err) {
+      failedDecodes.add(key)
+      throw err
     } finally {
       clearTimeout(timer)
     }
@@ -793,7 +798,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
   const primary = selection[0]
   let decodedPrimary = null
   try {
-    decodedPrimary = await decodeZone(graph.context, library, primary.zone, rules)
+    decodedPrimary = await decodeZone(graph.context, library, primary.zone, rules, 'now')
   } catch (err) {
     console.warn('[orchestra-v] decode', err)
     pending.delete(key)
@@ -1057,6 +1062,36 @@ export async function warmEncoded (library, objectPath) {
   await fetchSampleBytes(library, objectPath)
 }
 
+function layerVelocityFor (track, def, velocity) {
+  const rules = playbackRules(libraryOf(def))
+  const ctrl = controllers(track)
+  const velocityMidi = Math.round(Math.max(0.05, Math.min(1, Number(velocity) || 0)) * 127)
+  return targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
+}
+
+/** True when the zones this note will actually play are already PCM, or have failed. */
+export function noteReady (graph, track, pitch, velocity = 0.8) {
+  if (!graph || !track) return true
+  const def = findDefinition(track.definitionId)
+  if (!def || !def.available) return true
+  const map = regionMapFor(def.id)
+  if (!map) return false
+  const layerVelocity = layerVelocityFor(track, def, velocity)
+  const selection = selectZone(
+    map,
+    pitch,
+    layerVelocity,
+    articulationChain(articForTrack(track, def)),
+    seqStateFor(track.id),
+    false
+  )
+  if (!selection.length) return true
+  return selection.every((item) => {
+    const key = decodeKey(map.library, item.zone, graph.context)
+    return failedDecodes.has(key) || !!bufferCache.get(key)
+  })
+}
+
 /** Zones a pitch will play, so the transport can warm files without decoding them. */
 export async function zonesForPitches (track, pitches, velocity = 0.8) {
   const def = track ? findDefinition(track.definitionId) : null
@@ -1078,28 +1113,63 @@ export async function zonesForPitches (track, pitches, velocity = 0.8) {
   return Array.from(wanted.values())
 }
 
+/** Every alternate a set of notes can sound, in start order, at each note's own velocity. */
+export async function zonesForEvents (track, events, velocity = 0.8) {
+  const def = track ? findDefinition(track.definitionId) : null
+  const map = def ? await loadInstrument(def.id) : null
+  if (!map) return []
+  const library = map.library
+  const artic = articForTrack(track, def)
+  const chain = articulationChain(artic)
+  const wanted = new Map()
+  const list = (Array.isArray(events) ? events : []).slice().sort((a, b) => (a.start || 0) - (b.start || 0))
+  for (const event of list) {
+    const pitch = Math.round(Number(event && event.pitch))
+    if (!Number.isFinite(pitch)) continue
+    const vel = event && event.velocity != null ? event.velocity : velocity
+    const layerVelocity = layerVelocityFor(track, def, vel)
+    for (const item of zonesForVelocity(map, pitch, layerVelocity, chain)) {
+      if (!wanted.has(item.zone.sample)) {
+        wanted.set(item.zone.sample, {
+          library,
+          sample: item.zone.sample,
+          zone: item.zone,
+          start: event.start || 0
+        })
+      }
+    }
+  }
+  return Array.from(wanted.values())
+}
+
 /** Decode exactly the zones the next transport window will ask for. */
-export async function preloadNotes (graph, track, pitches, velocity = 0.8, priority = false) {
-  if (!graph || !track || !Array.isArray(pitches) || !pitches.length) return
+export async function preloadNotes (graph, track, pitches, velocity = 0.8, priority = false, events = null) {
+  if (!graph || !track) return
+  const list = Array.isArray(events) && events.length
+    ? events
+    : (Array.isArray(pitches) ? pitches.map((pitch) => ({ pitch, velocity })) : [])
+  if (!list.length) return
   const def = findDefinition(track.definitionId)
   const map = def ? await loadInstrument(def.id) : null
   if (!map) return
   const library = map.library
   const rules = playbackRules(library)
-  const ctrl = controllers(track)
   const artic = articForTrack(track, def)
-  const velocityMidi = Math.round(Math.max(0.05, Math.min(1, velocity)) * 127)
-  const layerVelocity = targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
-  const unique = [...new Set(pitches.map((pitch) => Math.round(Number(pitch))).filter(Number.isFinite))]
-
+  const chain = articulationChain(artic)
   const wanted = new Map()
-  for (const pitch of unique) {
-    for (const item of selectZone(map, pitch, layerVelocity, articulationChain(artic))) {
+  const ordered = list.slice().sort((a, b) => (a.start || 0) - (b.start || 0))
+  for (const event of ordered) {
+    const pitch = Math.round(Number(event && event.pitch != null ? event.pitch : event))
+    if (!Number.isFinite(pitch)) continue
+    const vel = event && event.velocity != null ? event.velocity : velocity
+    const layerVelocity = layerVelocityFor(track, def, vel)
+    for (const item of zonesForVelocity(map, pitch, layerVelocity, chain)) {
       wanted.set(item.zone.sample, item.zone)
     }
   }
+  const pin = priority === true || priority === 'now'
   await Promise.all(Array.from(wanted.values()).map(async (zone) => {
-    try { await decodeZone(graph.context, library, zone, rules, priority) } catch (err) { /* retry on note-on */ }
+    try { await decodeZone(graph.context, library, zone, rules, priority, pin) } catch (err) { /* retry on note-on */ }
   }))
 }
 

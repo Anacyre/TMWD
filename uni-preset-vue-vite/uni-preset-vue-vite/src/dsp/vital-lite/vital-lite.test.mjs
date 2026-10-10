@@ -13,7 +13,8 @@ import { createFilterLiteProcessor } from './filter.js'
 import { midiToHz, exp2 } from './params.js'
 import {
   formatVitalValue, eqResponse, distortionShape, distortSample, driveAmount,
-  delayBars, filterResponse, compressorCols
+  delayBars, filterResponse, compressorCols, shelfResponse, flangerResponse,
+  phaserNotches, chorusBars
 } from './face-draw.js'
 import { createInsert } from '../plugin.js'
 
@@ -172,6 +173,23 @@ const makers = {
   assert(taps.length > 1, 'delay taps')
   const cols = compressorCols({ bands: 'low-band', lowGainDb: 6, bandGainDb: 0, highGainDb: 0, lowUpperDb: -20, bandUpperDb: -20, highUpperDb: -20 })
   assert(cols[0].cls === 'b1' && cols[2].cls === 'off', 'compressor band enable')
+  const shelfFlat = {
+    lowShelfMidi: 40, lowShelfDb: 0, highShelfMidi: 100, highShelfDb: 0,
+    preLowMidi: 0, preHighMidi: 128
+  }
+  const shelfCut = shelfResponse({ ...shelfFlat, preHighMidi: 80 })
+  const shelfOpen = shelfResponse(shelfFlat)
+  assert(shelfOpen.line.startsWith('M') && shelfOpen.line !== shelfCut.line, 'reverb pre-filter moves the curve')
+  const flanger = { centerMidi: 64, modDepth: 0.8, feedback: 0.6, phaseOffset: 0.33 }
+  const combA = flangerResponse(flanger, 0)
+  const combB = flangerResponse(flanger, 0.2)
+  assert(combA.line.startsWith('M') && !combA.line.includes('NaN') && combA.line !== combB.line, 'flanger comb follows the LFO')
+  const phaser = { centerMidi: 80, modDepth: 24, feedback: 0.5, blend: 1, mix: 1, phaseOffset: 0.33 }
+  const notchA = phaserNotches(phaser, 0)
+  const notchB = phaserNotches(phaser, 0.25)
+  assert(notchA.line.startsWith('M') && !notchA.line.includes('NaN') && notchA.line !== notchB.line, 'phaser notches sweep')
+  const chorus = { voices: 2, delay1: 0.002, delay2: 0.01, modDepth: 1 }
+  assert(chorusBars(chorus, 0)[0].x !== chorusBars(chorus, 0.25)[0].x, 'chorus voices move with the LFO')
 }
 
 console.log('vital-lite ok')

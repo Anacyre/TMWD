@@ -35,6 +35,7 @@
       <plugin-vital-lite
         v-else-if="isVitalLiteId(insert.pluginId)"
         :insert="insert"
+        :spectrum="spectrum"
         @change="onChange"
       />
       <view v-else class="missing">

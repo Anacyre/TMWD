@@ -1,11 +1,10 @@
 import assert from 'node:assert/strict'
 import {
   PREPARE_WINDOW_BEATS,
-  PREPARE_ZONE_CAP,
-  PREPARE_DEADLINE_MS,
   SAMPLE_DEADLINE_MS,
   noteInPrepareWindow,
-  selectPrepareZones
+  selectPrepareZones,
+  gatePlayhead
 } from './prepare-window.js'
 
 const notes = [
@@ -25,18 +24,15 @@ for (const note of notes) {
   else later.push(item)
 }
 
-const split = selectPrepareZones(windowZones, PREPARE_ZONE_CAP)
-assert.deepEqual(split.immediate.map((zone) => zone.sample), ['a', 'b', 'c'])
+const split = selectPrepareZones(windowZones)
+assert.deepEqual(split.immediate.map((zone) => zone.sample), ['a', 'b', 'c', 'd', 'e'])
 assert.deepEqual(split.warm, [])
-assert.deepEqual(later.map((zone) => zone.sample), ['d', 'e'])
+assert.deepEqual(later, [])
 
 const many = Array.from({ length: 8 }, (_, index) => ({ library: 'sym', sample: 'z' + index }))
 const capped = selectPrepareZones(many)
-assert.equal(capped.immediate.length, 6)
-assert.equal(capped.warm.length, 2)
-assert.equal(capped.immediate[0].sample, 'z0')
-assert.equal(capped.warm[0].sample, 'z6')
-assert.equal(capped.warm[1].sample, 'z7')
+assert.equal(capped.immediate.length, 8, 'a chord is not trimmed to a handful of zones')
+assert.equal(capped.warm.length, 0)
 
 const duped = selectPrepareZones([
   { library: 'sym', sample: 'a' },
@@ -45,7 +41,12 @@ const duped = selectPrepareZones([
 ])
 assert.equal(duped.immediate.length, 2)
 
-assert.equal(PREPARE_DEADLINE_MS, 400, 'Play starts after a short body window, not an 8s gate')
 assert.equal(SAMPLE_DEADLINE_MS, 8000, 'a single fetch still has time to finish')
+assert.ok(PREPARE_WINDOW_BEATS >= 16, 'the lead window has to cover a whole chord, not four beats')
+
+assert.equal(gatePlayhead(0, 0.2, []), 0.2)
+assert.equal(gatePlayhead(3.9, 4.1, [4]), 4, 'stop on the chord instead of playing through it')
+assert.equal(gatePlayhead(4, 4.2, [4, 4, 4]), 4, 'hold until every note of the chord is decoded')
+assert.equal(gatePlayhead(4, 4.2, []), 4.2)
 
 console.log('prepare-window ok')

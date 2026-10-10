@@ -1,5 +1,5 @@
 <template>
-  <view class="plug x-plug dsp-skin skin-lite" :class="{ 'is-off': insert.enabled === false, 'vital-on': showUi }">
+  <view class="plug x-plug dsp-skin skin-lite vital-lite" :class="{ 'is-off': insert.enabled === false, 'vital-on': showUi }">
     <plugin-shell
       :name="title"
       :model-value="insert.presetId"
@@ -25,6 +25,7 @@
       :plugin-id="pluginId"
       :state="state"
       :panel="panel"
+      :spectrum="spectrum"
       @set="set"
     />
     <view v-if="!showUi && selects.length" class="sels">
@@ -79,7 +80,8 @@ function readUi () {
 }
 
 const props = defineProps({
-  insert: { type: Object, required: true }
+  insert: { type: Object, required: true },
+  spectrum: { type: Array, default: () => [] }
 })
 const emit = defineEmits(['change'])
 const state = computed(() => props.insert.state || {})
@@ -113,7 +115,7 @@ function formatter (knob) {
 </script>
 
 <style scoped>
-.plug { display: flex; flex-direction: column; min-height: 280px; padding: 8px 14px 16px; }
+.plug { display: flex; flex-direction: column; min-height: 0; padding: 8px 14px 16px; }
 .sub {
   font-size: 10px;
   letter-spacing: 0.18em;
@@ -137,7 +139,12 @@ function formatter (knob) {
   cursor: pointer;
 }
 .x-chip.on { border-color: var(--x-cool); color: var(--x-cool); background: rgba(78, 127, 168, 0.12); }
-.tray { display: flex; flex-wrap: wrap; gap: 10px 14px; }
+.tray {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  justify-items: center;
+  gap: 10px 8px;
+}
 .ui-sw {
   height: 24px;
   padding: 0 8px;

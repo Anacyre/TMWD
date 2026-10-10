@@ -28,12 +28,12 @@ function clamp (n, a, b) {
   return Math.min(b, Math.max(a, n))
 }
 
-function freqX (f) {
+export function freqX (f) {
   const t = Math.log(Math.max(20, f) / 20) / Math.log(1000)
   return 6 + clamp(t, 0, 1) * 188
 }
 
-function dbY (db, lo, hi) {
+export function dbY (db, lo, hi) {
   const t = (db - lo) / (hi - lo)
   return 94 - clamp(t, 0, 1) * 84
 }
@@ -47,6 +47,33 @@ function closeFill (line, bottom) {
   const a = line[0]
   const b = line[line.length - 1]
   return pathOf(line) + ` L${b.x.toFixed(1)} ${bottom} L${a.x.toFixed(1)} ${bottom} Z`
+}
+
+function curve (pts, bottom) {
+  return { line: pathOf(pts), fill: closeFill(pts, bottom), points: pts }
+}
+
+function triFold (p) {
+  const x = p - Math.floor(p)
+  return x < 0.5 ? x * 4 - 1 : 3 - x * 4
+}
+
+const SYNC_RATIOS = [0, 0.0078125, 0.015625, 0.03125, 0.0625, 0.125, 0.25, 0.5, 1, 2, 4, 8, 16]
+
+export function rateHz (state, aux) {
+  const sync = Number(aux ? state && state.auxSync : state && state.sync) || 0
+  const tempo = aux ? state && state.auxTempo : state && state.tempo
+  const frequency = aux ? state && state.auxFrequency : state && state.frequency
+  if (sync) {
+    let i = tempo | 0
+    if (i < 0) i = 0
+    if (i > 12) i = 12
+    let hz = (SYNC_RATIOS[i] || 1) * (Math.max(20, Number(state && state.bpm) || 120) / 60)
+    if (sync === 2) hz *= 2 / 3
+    if (sync === 3) hz *= 1.5
+    return Math.max(0.05, hz)
+  }
+  return Math.max(0.05, Number(frequency) || (aux ? 4 : 0.25))
 }
 
 function biquadDb (f, fc, q, type, gainDb) {
@@ -141,16 +168,34 @@ export function eqResponse (state) {
       + biquadDb(f, midiToHz(state.bandMidi), qOf(state.bandRes), bandType, state.bandGainDb)
       + biquadDb(f, midiToHz(state.highMidi), qOf(state.highRes), highType, state.highGainDb)
   })
-  return { line: pathOf(pts), fill: closeFill(pts, 96) }
+  return curve(pts, 96)
+}
+
+export function eqHandles (state) {
+  const bands = [
+    { id: 'low', type: state.lowMode, midi: state.lowMidi, gain: state.lowGainDb },
+    { id: 'band', type: state.bandMode, midi: state.bandMidi, gain: state.bandGainDb },
+    { id: 'high', type: state.highMode, midi: state.highMidi, gain: state.highGainDb }
+  ]
+  return bands.map((b) => {
+    const gainless = b.type === 'highpass' || b.type === 'notch' || b.type === 'lowpass'
+    const db = gainless ? 0 : Number(b.gain) || 0
+    return { id: b.id, x: freqX(midiToHz(b.midi)), y: dbY(db, -24, 18) }
+  })
 }
 
 export function shelfResponse (state) {
+  const preLow = Number(state.preLowMidi) || 0
+  const preHigh = Number(state.preHighMidi)
+  const highCut = Number.isFinite(preHigh) ? preHigh : 128
   const pts = sweep((f) => {
-    const low = biquadDb(f, midiToHz(state.lowShelfMidi), 0.7, 'lowshelf', state.lowShelfDb)
-    const high = biquadDb(f, midiToHz(state.highShelfMidi), 0.7, 'highshelf', state.highShelfDb)
-    return low + high
+    let db = biquadDb(f, midiToHz(state.lowShelfMidi), 0.7, 'lowshelf', state.lowShelfDb)
+      + biquadDb(f, midiToHz(state.highShelfMidi), 0.7, 'highshelf', state.highShelfDb)
+    if (preLow > 8) db += biquadDb(f, midiToHz(preLow), 0.707, 'hp', 0)
+    if (highCut < 120) db += biquadDb(f, midiToHz(highCut), 0.707, 'lp', 0)
+    return db
   })
-  return { line: pathOf(pts), fill: closeFill(pts, dbY(0, -24, 18)) }
+  return curve(pts, dbY(0, -24, 18))
 }
 
 function filterDb (f, state) {
@@ -167,7 +212,26 @@ function filterDb (f, state) {
 
 export function filterResponse (state) {
   const pts = sweep((f) => filterDb(f, state))
-  return { line: pathOf(pts), fill: closeFill(pts, 96) }
+  const fc = midiToHz(state.cutoffMidi)
+  return {
+    ...curve(pts, 96),
+    handle: { x: freqX(fc), y: dbY(filterDb(fc, state), -24, 18) }
+  }
+}
+
+/** Delay / chorus feedback filter: lowpass above the cutoff, highpass below, split by spread. */
+export function splitFilterResponse (state) {
+  const spread = clamp(Number(state.spread) || 0, 0, 1) * 96
+  const mid = Number(state.cutoffMidi) || 60
+  const lp = clamp(mid + spread, 8, 136)
+  const hp = clamp(mid - spread, 8, 136)
+  const pts = sweep((f) => {
+    return biquadDb(f, midiToHz(lp), 0.707, 'lp', 0) + biquadDb(f, midiToHz(hp), 0.707, 'hp', 0)
+  })
+  return {
+    ...curve(pts, 96),
+    handle: { x: freqX(midiToHz(clamp(mid, 8, 136))), y: dbY(0, -24, 18) }
+  }
 }
 
 export function driveAmount (type, db) {
@@ -221,13 +285,13 @@ export function distortionShape (state) {
     y = clamp(y, -1.2, 1.2) * 0.9
     pts.push({ x: 100 + x * 86, y: 50 - y * 40 })
   }
-  return { line: pathOf(pts), fill: closeFill(pts, 50) }
+  return curve(pts, 50)
 }
 
 export function delayBars (state) {
   const style = state.style || 'stereo'
-  const hzL = Math.max(0.05, Number(state.frequency) || 4)
-  const hzR = style === 'mono' ? hzL : Math.max(0.05, Number(state.auxFrequency) || 4)
+  const hzL = rateHz(state)
+  const hzR = style === 'mono' ? hzL : rateHz(state, true)
   const fb = Math.min(0.92, Math.abs(Number(state.feedback) || 0))
   const wet = Math.sin(clamp(Number(state.mix) || 0, 0, 1) * Math.PI * 0.5)
   const span = 2
@@ -268,20 +332,23 @@ export function delayBars (state) {
   return bars
 }
 
-export function chorusBars (state) {
+export function chorusBars (state, phase) {
   const voices = clamp(Math.round(Number(state.voices) || 1), 1, 4)
-  const d1 = Number(state.delay1) || 0.002
-  const d2 = Number(state.delay2) || 0.008
-  const depth = clamp(Number(state.modDepth) || 0, 0, 1)
+  const d1 = Math.max(0.0005, Number(state.delay1) || 0.002)
+  const d2 = Math.max(0.0005, Number(state.delay2) || 0.008)
+  const depth = clamp(Number(state.modDepth) || 0, 0, 1) * 0.03
+  const ph = phase == null ? 0 : phase
   const bars = []
   for (let i = 0; i < voices; i++) {
-    const u = voices === 1 ? 0.5 : i / (voices - 1)
-    const base = d1 + (d2 - d1) * u
-    const spread = (0.0004 + base * 0.35) * depth
-    ;[base - spread, base + spread].forEach((delay, k) => {
-      if (k === 1 && depth < 0.04) return
-      const x = 8 + clamp(delay / 0.02, 0, 1) * 184
-      bars.push({ x, y: 18, w: 4, h: k ? 28 : 46, cls: k ? 'b2' : 'b1' })
+    const t = voices === 1 ? 0 : i / (voices - 1)
+    const base = d1 + (d2 - d1) * t
+    const phL = ph + i * 0.25 / voices
+    const phR = phL + 0.25
+    const delL = (Math.sin(phL * Math.PI * 2) * 0.5 + 1) * depth + base
+    const delR = (Math.sin(phR * Math.PI * 2) * 0.5 + 1) * depth + base
+    ;[[delL, 'b1', 52], [delR, 'b2', 34]].forEach(([delay, cls, h]) => {
+      const x = 8 + clamp(delay / 0.05, 0, 1) * 180
+      bars.push({ x, y: 78 - h, w: 3.4, h, cls })
     })
   }
   return bars
@@ -298,21 +365,95 @@ export function lfoPath (depth, phase) {
   return pathOf(pts)
 }
 
-export function phaserNotches (state) {
-  const center = midiToHz(state.centerMidi || 80)
+function onePoleG (hz) {
+  const dp = Math.max(0, hz) * Math.PI / SR
+  return Math.tan(dp / (dp + 1))
+}
+
+function allpassAt (w, a) {
+  const c = Math.cos(w)
+  const s = Math.sin(w)
+  const nr = c - a
+  const ni = -s
+  const dr = 1 - a * c
+  const di = a * s
+  const den = Math.max(1e-12, dr * dr + di * di)
+  return { re: (nr * dr + ni * di) / den, im: (ni * dr - nr * di) / den }
+}
+
+function cmul (a, b) {
+  return { re: a.re * b.re - a.im * b.im, im: a.re * b.im + a.im * b.re }
+}
+
+function phaserCurve (state, phase, channelOffset) {
   const depth = clamp(Number(state.modDepth) || 0, 0, 48)
-  const pts = sweep((f) => {
-    let db = 0
-    const notches = 5
-    for (let i = 0; i < notches; i++) {
-      const semi = (i - (notches - 1) / 2) * (depth / Math.max(1, notches - 1))
-      const nf = center * Math.pow(2, semi / 12)
-      const ratio = Math.log(Math.max(1e-6, f / nf))
-      db += -18 * Math.exp(-Math.pow(ratio / 0.08, 2))
-    }
-    return db * (0.35 + clamp(Number(state.feedback) || 0, 0, 1) * 0.65)
+  const wobble = phase == null ? 0 : triFold(phase + channelOffset) * depth
+  const midi = clamp((Number(state.centerMidi) || 80) + wobble, 8, 136)
+  const g = onePoleG(midiToHz(midi))
+  const a = (1 - g) / (1 + g)
+  const blend = clamp(Number(state.blend) || 0, 0, 2)
+  const stages = Math.min(12, 4 + Math.round(blend * 4))
+  const fb = clamp(Number(state.feedback) || 0, 0, 0.97)
+  const mix = clamp(state.mix == null ? 1 : Number(state.mix), 0, 1)
+  const bp = 1 - Math.abs(blend - 1)
+  const lpAmt = blend < 1 ? 1 - blend : 0
+  const hpAmt = blend > 1 ? blend - 1 : 0
+  return sweep((f) => {
+    const w = 2 * Math.PI * clamp(f, 1, SR * 0.49) / SR
+    let h = { re: 1, im: 0 }
+    const ap = allpassAt(w, a)
+    for (let i = 0; i < stages; i++) h = cmul(h, ap)
+    const denRe = 1 - fb * h.re
+    const denIm = -fb * h.im
+    const den = Math.max(1e-8, denRe * denRe + denIm * denIm)
+    const yRe = (h.re * denRe + h.im * denIm) / den
+    const yIm = (h.im * denRe - h.re * denIm) / den
+    const xRe = denRe / den
+    const xIm = -denIm / den
+    const oRe = yRe * bp + xRe * lpAmt * 0.3 + (xRe - yRe) * hpAmt
+    const oIm = yIm * bp + xIm * lpAmt * 0.3 + (xIm - yIm) * hpAmt
+    const tRe = (1 - mix) + mix * oRe
+    const tIm = mix * oIm
+    return 20 * Math.log10(Math.max(1e-6, Math.sqrt(tRe * tRe + tIm * tIm)))
   })
-  return { line: pathOf(pts), fill: closeFill(pts, 96) }
+}
+
+export function phaserNotches (state, phase) {
+  const off = clamp(Number(state.phaseOffset) || 0, 0, 1)
+  const pts = phaserCurve(state, phase, 0)
+  const pts2 = phase == null ? null : phaserCurve(state, phase, off)
+  return {
+    line: pathOf(pts),
+    line2: pts2 ? pathOf(pts2) : '',
+    fill: closeFill(pts, 96),
+    points: pts,
+    points2: pts2 || []
+  }
+}
+
+export function flangerResponse (state, phase) {
+  const center = 1 / Math.max(20, midiToHz(state.centerMidi || 64))
+  const buf = 0.0005
+  const depth = clamp(Number(state.modDepth) || 0, 0, 1)
+  const off = clamp(Number(state.phaseOffset) || 0, 0, 1)
+  const fb = clamp(Number(state.feedback) || 0, -0.97, 0.97)
+  const ph = Number(phase) || 0
+  function delayOf (modPhase) {
+    const mod = depth * triFold(modPhase) + 1
+    return Math.max(buf, (center - buf) * mod + buf)
+  }
+  function comb (delay) {
+    return sweep((f) => {
+      const w = 2 * Math.PI * f * delay
+      const re = 1 - fb * Math.cos(w)
+      const im = fb * Math.sin(w)
+      const mag = 1 / Math.max(1e-4, Math.sqrt(re * re + im * im))
+      return 20 * Math.log10(Math.max(1e-6, mag))
+    })
+  }
+  const left = comb(delayOf(ph - off / 2))
+  const right = comb(delayOf(ph - off / 2 + off))
+  return { line: pathOf(left), line2: pathOf(right), points: left, points2: right }
 }
 
 export function compressorCols (state) {
@@ -326,15 +467,31 @@ export function compressorCols (state) {
     const g = clamp(Number(col.gain) || 0, -30, 30)
     const h = Math.abs(g) / 30 * 36
     const up = g >= 0
+    const upper = Number(col.id === 'low' ? state.lowUpperDb : col.id === 'band' ? state.bandUpperDb : state.highUpperDb)
+    const thresh = clamp((0 - (Number.isFinite(upper) ? upper : -24)) / 80, 0, 1)
     return {
-      x: 28 + i * 56,
+      x: 14 + i * 62,
       y: up ? 50 - h : 50,
-      w: 28,
+      w: 46,
       h: Math.max(1.5, h),
       cls: col.on ? 'b1' : 'off',
-      thresh: clamp((0 - Number(col.id === 'low' ? state.lowUpperDb : col.id === 'band' ? state.bandUpperDb : state.highUpperDb)) / 80, 0, 1)
+      thresh,
+      ty: 8 + thresh * 84
     }
   })
+}
+
+export function guideSegments () {
+  const segs = []
+  ;[-12, 0, 12].forEach((db) => {
+    const y = dbY(db, -24, 18)
+    segs.push({ x1: 6, y1: y, x2: 194, y2: y })
+  })
+  ;[100, 1000, 10000].forEach((f) => {
+    const x = freqX(f)
+    segs.push({ x1: x, y1: 6, x2: x, y2: 94 })
+  })
+  return segs
 }
 
 export function guides () {

@@ -325,8 +325,8 @@ function nextSeq (seqState, group, length) {
  * @param {Map} [seqState] round-robin counters, one Map per track
  * @returns {Array<{zone: object, gain: number}>} one entry per active velocity layer
  */
-export function selectZone (map, pitch, velocity, articulation, seqState) {
-  if (!map) return []
+function activePools (map, pitch, velocity, articulation) {
+  if (!map) return null
   const chain = Array.isArray(articulation) ? articulation : articulationChain(articulation)
   const key = clampKey(pitch)
   for (const artic of chain) {
@@ -346,17 +346,36 @@ export function selectZone (map, pitch, velocity, articulation, seqState) {
       }
       pool.zones.push(zone)
     }
-    if (!pools.size) continue
-
-    const picked = []
-    pools.forEach((pool, group) => {
-      const list = pool.zones.sort((a, b) => a.seqPosition - b.seqPosition)
-      const index = nextSeq(seqState, group, list.length)
-      picked.push({ zone: list[Math.min(index, list.length - 1)], gain: pool.gain })
-    })
-    return picked
+    if (pools.size) return pools
   }
-  return []
+  return null
+}
+
+/** Every round-robin alternate a velocity can sound, so a chord is not limited
+ * to whichever variation the counter happens to be on. */
+export function zonesForVelocity (map, pitch, velocity, articulation) {
+  const pools = activePools(map, pitch, velocity, articulation)
+  if (!pools) return []
+  const picked = []
+  pools.forEach((pool) => {
+    const list = pool.zones.slice().sort((a, b) => a.seqPosition - b.seqPosition)
+    for (const zone of list) picked.push({ zone, gain: pool.gain })
+  })
+  return picked
+}
+
+export function selectZone (map, pitch, velocity, articulation, seqState, advance = true) {
+  const pools = activePools(map, pitch, velocity, articulation)
+  if (!pools) return []
+  const picked = []
+  pools.forEach((pool, group) => {
+    const list = pool.zones.slice().sort((a, b) => a.seqPosition - b.seqPosition)
+    const index = advance === false
+      ? ((!seqState || list.length <= 1) ? 0 : (seqState.get(group) || 0))
+      : nextSeq(seqState, group, list.length)
+    picked.push({ zone: list[Math.min(index, list.length - 1)], gain: pool.gain })
+  })
+  return picked
 }
 
 function opcode (name, value) {

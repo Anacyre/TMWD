@@ -50,6 +50,16 @@ export async function zonesForPitches (...args) {
   return mod.zonesForPitches(...args)
 }
 
+export async function zonesForEvents (...args) {
+  const mod = await loadOrchestraVEngine()
+  return mod.zonesForEvents(...args)
+}
+
+export function noteReady (...args) {
+  if (!engine) return false
+  return engine.noteReady(...args)
+}
+
 export async function decodePinned (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.decodePinned(...args)

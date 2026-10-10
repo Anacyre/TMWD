@@ -41,9 +41,9 @@ import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
 import {
-  PREPARE_DEADLINE_MS,
   PREPARE_WINDOW_BEATS,
-  PREPARE_ZONE_CAP,
+  STALL_GIVE_UP_MS,
+  gatePlayhead,
   selectPrepareZones
 } from '../audio/orchestra-v/prepare-window.js'
 import { createInsert } from '../dsp/plugin.js'
@@ -859,7 +859,8 @@ function loop (now) {
   lastTime = now
   const remoteClock = isEngineConnected() && session.remoteAudioOn
   if (!remoteClock) {
-    clockBeats += dt * session.bpm / 60
+    const step = dt * session.bpm / 60
+    clockBeats = gateOrchestraClock(clockBeats, clockBeats + step)
     if (session.looping && clockBeats >= session.loopEnd) {
       const length = Math.max(0.25, session.loopEnd - session.loopStart)
       clockBeats = session.loopStart + ((clockBeats - session.loopStart) % length)
@@ -903,37 +904,42 @@ function preloadSelectedOrchestra (graph) {
   if (cloud) cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
 }
 
-async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = 8, priority = true) {
+async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = PREPARE_WINDOW_BEATS, priority = false) {
   if (!graph) return
-  const jobs = orchestraPitchJobs(fromBeat, fromBeat + windowBeats)
+  const jobs = orchestraNoteEvents(fromBeat, fromBeat + windowBeats)
   const pinned = []
-  await Promise.all([...jobs].map(async ([track, pitches]) => {
+  await Promise.all([...jobs].map(async ([track, events]) => {
+    const pitches = events.map((event) => event.pitch)
     if (isOrchestraVTrack(track)) {
       try {
-        const zones = await orchestraVCloud.zonesForPitches(track, pitches)
+        const zones = await orchestraVCloud.zonesForEvents(track, events)
         pinned.push(...zones)
       } catch (err) { /* the note retries on playback */ }
+      await orchestraVCloud.preloadNotes(graph, track, pitches, 0.8, priority, events).catch(() => {})
+      return
     }
     await cloudSamplerFor(track).preloadNotes(graph, track, pitches, 0.8, priority).catch(() => {})
   }))
   orchestraVCloud.replaceWindowPins(graph.context, pinned)
 }
 
-function orchestraPitchJobs (fromBeat, untilBeat) {
+function orchestraNoteEvents (fromBeat, untilBeat) {
   const jobs = new Map()
   session.clips.forEach((clip) => {
     if (!clip || clip.midi === false) return
     const track = session.tracks[clip.trackIndex]
     if (!track || !isCloudSamplerTrack(track)) return
-    const pitches = jobs.get(track) || []
+    const events = jobs.get(track) || []
     ;(clip.notes || []).forEach((note) => {
       if (!note || note.muted) return
       expandRepeats(note).forEach((slice) => {
         const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
-        if (start >= fromBeat - 0.05 && start < untilBeat) pitches.push(slice.pitch)
+        const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
+        if (start + duration <= fromBeat || start >= untilBeat) return
+        events.push({ pitch: slice.pitch, velocity: noteVelocity(slice), start, duration })
       })
     })
-    if (pitches.length) jobs.set(track, pitches)
+    if (events.length) jobs.set(track, events)
   })
   return jobs
 }
@@ -941,30 +947,83 @@ function orchestraPitchJobs (fromBeat, untilBeat) {
 let lastLookaheadBeat = -100
 let warmToken = 0
 let samplePrepareToken = 0
+let preparingSamples = false
+let stallSince = 0
+const sampleWaits = new Set()
+
+function upcomingUnready (fromBeat, toBeat) {
+  const starts = []
+  let ready = 0
+  if (!audioGraph) return { starts, ready }
+  for (const [track, events] of orchestraNoteEvents(fromBeat - 0.05, toBeat + 0.05)) {
+    if (!isOrchestraVTrack(track)) continue
+    for (const event of events) {
+      if (event.start < fromBeat - 0.001 || event.start > toBeat + 0.02) continue
+      const id = track.id + ':' + event.start + ':' + event.pitch
+      if (orchestraVCloud.noteReady(audioGraph, track, event.pitch, event.velocity)) {
+        sampleWaits.delete(id)
+        ready += 1
+        continue
+      }
+      starts.push(event.start)
+      if (!sampleWaits.has(id)) {
+        sampleWaits.add(id)
+        orchestraVCloud.preloadNotes(
+          audioGraph, track, [event.pitch], event.velocity, 'now', [event]
+        ).catch(() => {})
+      }
+    }
+  }
+  return { starts, ready }
+}
+
+function gateOrchestraClock (fromBeat, toBeat) {
+  const waiting = upcomingUnready(fromBeat, toBeat)
+  const gated = gatePlayhead(fromBeat, toBeat, waiting.starts)
+  const held = waiting.starts.length > 0 && gated <= fromBeat + 1e-4
+  if (held) {
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+    if (!stallSince) {
+      stallSince = now
+      console.info('[orchestra-v] holding playhead for samples', {
+        beat: Number(fromBeat.toFixed(2)),
+        waiting: waiting.starts.length,
+        ready: waiting.ready
+      })
+    }
+    session.sampleLoad.active = true
+    session.sampleLoad.total = waiting.ready + waiting.starts.length
+    session.sampleLoad.done = waiting.ready
+    if (now - stallSince <= STALL_GIVE_UP_MS) return fromBeat
+    stallSince = 0
+    session.sampleLoad.active = false
+    console.info('[orchestra-v] gave up waiting for samples', { beat: Number(fromBeat.toFixed(2)), waiting: waiting.starts.length })
+    return toBeat
+  }
+  stallSince = 0
+  if (session.playing && session.sampleLoad.active && !preparingSamples) session.sampleLoad.active = false
+  return gated
+}
 
 async function prepareOrchestraSamples (graph, fromBeat) {
   const token = ++samplePrepareToken
-  const jobs = orchestraPitchJobs(fromBeat, fromBeat + PREPARE_WINDOW_BEATS)
+  const jobs = orchestraNoteEvents(fromBeat, fromBeat + PREPARE_WINDOW_BEATS)
   const zones = []
-  for (const [track, pitches] of jobs) {
+  for (const [track, events] of jobs) {
     if (!isOrchestraVTrack(track)) continue
-    const list = await orchestraVCloud.zonesForPitches(track, pitches)
+    const list = await orchestraVCloud.zonesForEvents(track, events)
     if (token !== samplePrepareToken) return false
     zones.push(...list)
   }
-  const split = selectPrepareZones(zones, PREPARE_ZONE_CAP)
+  const split = selectPrepareZones(zones)
   session.sampleLoad.total = split.immediate.length
   session.sampleLoad.done = 0
   session.sampleLoad.active = split.immediate.length > 0
-  const work = Promise.all(split.immediate.map(async (item) => {
+  await Promise.all(split.immediate.map(async (item) => {
     if (token !== samplePrepareToken) return
     try { await orchestraVCloud.decodePinned(graph, item) } catch (err) { /* note-on retries */ }
     if (token === samplePrepareToken) session.sampleLoad.done += 1
   }))
-  await Promise.race([
-    work,
-    new Promise((resolve) => setTimeout(resolve, PREPARE_DEADLINE_MS))
-  ])
   session.sampleLoad.active = false
   if (token !== samplePrepareToken) return false
   orchestraVCloud.replaceWindowPins(graph.context, split.immediate)
@@ -977,14 +1036,14 @@ function maybeOrchestraLookahead () {
   if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat) lastLookaheadBeat = -100
   if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat + 2) return
   lastLookaheadBeat = clockBeats
-  prefetchOrchestraWindow(audioGraph, clockBeats, 8, true).catch(() => {})
+  prefetchOrchestraWindow(audioGraph, clockBeats, PREPARE_WINDOW_BEATS, false).catch(() => {})
 }
 
 function startEncodedWarm (fromBeat) {
   const token = ++warmToken
   const soon = new Set()
-  orchestraPitchJobs(fromBeat, fromBeat + 8).forEach((pitches, track) => {
-    pitches.forEach((pitch) => soon.add(track.id + ':' + Math.round(pitch)))
+  orchestraNoteEvents(fromBeat, fromBeat + PREPARE_WINDOW_BEATS).forEach((events, track) => {
+    events.forEach((event) => soon.add(track.id + ':' + Math.round(event.pitch)))
   })
   const later = []
   const earlier = []
@@ -1034,11 +1093,16 @@ function startEncodedWarm (fromBeat) {
 }
 
 export async function play () {
-  if (session.playing || session.sampleLoad.active) return
+  if (session.playing || preparingSamples) return
   const graph = await unlockAudioForUser()
   if (graph) {
-    const ready = await prepareOrchestraSamples(graph, session.positionBeats || 0)
-    if (!ready) return
+    preparingSamples = true
+    try {
+      const ready = await prepareOrchestraSamples(graph, session.positionBeats || 0)
+      if (!ready) return
+    } finally {
+      preparingSamples = false
+    }
   }
   session.playing = true
   if (graph) lastLookaheadBeat = session.positionBeats
@@ -1073,6 +1137,9 @@ function startLocalClock () {
 
 export function pause () {
   flushLocalClock()
+  stallSince = 0
+  sampleWaits.clear()
+  if (!preparingSamples) session.sampleLoad.active = false
   session.playing = false
   session.clockStamp = {
     positionBeats: session.positionBeats,
@@ -3509,6 +3576,9 @@ function tickLocalNotes (nowBeats) {
         const key = (clip.id || 0) + ':' + (note.id || 0) + ':' + (slice.startTick || start) + ':' + slice.pitch
         next.add(key)
         if (!soundingNotes.has(key)) {
+          if (isOrchestraVTrack(track) && audioGraph && !orchestraVCloud.noteReady(audioGraph, track, slice.pitch, noteVelocity(slice))) {
+            return
+          }
           const when = ctx && isOrchestraVTrack(track)
             ? ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / Math.max(20, Number(session.bpm) || 120))
             : undefined
@@ -3539,6 +3609,7 @@ function tickLocalNotes (nowBeats) {
 }
 
 function allLocalNotesOff () {
+  sampleWaits.clear()
   soundingNotes.forEach((voiceKey) => {
     releaseWebSampler(voiceKey)
     mOrchestraCloud.noteOff(voiceKey)

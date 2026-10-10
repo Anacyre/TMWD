@@ -81,6 +81,7 @@
         <plugin-vital-lite
           v-else-if="insert && isVitalLite"
           :insert="insert"
+          :spectrum="spectrum"
           @change="onChange"
         />
         <view v-else-if="insert" class="missing">
@@ -316,6 +317,14 @@ function onChange () { persistWebMixer() }
 .sheet.compact-plugin :deep(.sz-sm) { width: 96px; }
 .sheet.compact-plugin :deep(.sz-lg) { width: 112px; }
 .sheet.compact-plugin :deep(.sz-xl) { width: 128px; }
+.sheet.compact-plugin :deep(.vital-lite .k) {
+  width: 100% !important;
+  max-width: 96px !important;
+}
+.sheet.compact-plugin :deep(.vital-on .k.tone-vital) {
+  width: 100% !important;
+  max-width: 84px !important;
+}
 @media (max-width: 720px) {
   .sheet {
     width: 100%;
