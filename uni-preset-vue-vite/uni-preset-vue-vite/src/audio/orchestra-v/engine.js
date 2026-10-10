@@ -10,7 +10,7 @@
  */
 
 import { trackInputNode } from '../mixer-graph.js'
-import { PREPARE_DEADLINE_MS } from './prepare-window.js'
+import { SAMPLE_DEADLINE_MS } from './prepare-window.js'
 import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
@@ -31,7 +31,7 @@ const TECHNIQUE_ARTIC = {
   ov_hit: 'hit'
 }
 
-const DECODE_TAG = '|ov-v1'
+const DECODE_TAG = '|ov-v2'
 const PITCH_BEND_SEMITONES = 2
 
 /** Equal-power pair for the body/release crossfade, so the two halves of one recording sum
@@ -64,7 +64,8 @@ function crossfade (param, curve, at, seconds) {
 const regionMaps = new Map()
 const bufferCache = new AudioBufferLru(96 * 1024 * 1024)
 const windowPins = new Set()
-const decodeQueue = new AsyncLimiter(2)
+const livePins = new Set()
+const decodeQueue = new AsyncLimiter(4)
 const decodePromises = new Map()
 const voices = new Map()
 const pending = new Map()
@@ -276,7 +277,7 @@ async function fetchSampleBytes (library, objectPath, signal) {
   const inflight = fetchPromises.get(stored)
   if (inflight) {
     return signal
-      ? withDeadline(inflight, PREPARE_DEADLINE_MS, 'orchestra-v sample timeout')
+      ? withDeadline(inflight, SAMPLE_DEADLINE_MS, 'orchestra-v sample timeout')
       : inflight
   }
   const promise = fetchSampleBytesNow(library, objectPath, stored, signal)
@@ -300,7 +301,7 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     return cached
   }
   const controller = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timer = controller ? setTimeout(() => controller.abort(), PREPARE_DEADLINE_MS) : 0
+  const timer = controller ? setTimeout(() => controller.abort(), SAMPLE_DEADLINE_MS) : 0
   const started = nowMs()
   try {
     const response = await fetch(sampleUrl(library, objectPath), (signal || controller) ? { signal: signal || controller.signal } : undefined)
@@ -346,13 +347,13 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
   const promise = decodeQueue.run(async () => {
     const timer = setTimeout(() => {
       if (controller) controller.abort()
-    }, PREPARE_DEADLINE_MS)
+    }, SAMPLE_DEADLINE_MS)
     try {
     const bytes = await fetchSampleBytes(library, zone.sample, controller && controller.signal)
     const started = nowMs()
     const audio = await withDeadline(
       decodeSampleBytes(context, bytes),
-      PREPARE_DEADLINE_MS,
+      SAMPLE_DEADLINE_MS,
       'orchestra-v decode timeout'
     )
     profile.decodeMs += nowMs() - started
@@ -398,6 +399,59 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
   } finally {
     decodePromises.delete(key)
   }
+}
+
+function releaseDecodeKey (library, zone, context) {
+  return library + '|' + zone.releaseSample + DECODE_TAG + '|rel|' + (context.sampleRate || 0)
+}
+
+/** Decode the separate release object. Never on the note-on critical path. */
+async function decodeRelease (context, library, zone, priority = false) {
+  if (!zone || !zone.releaseSample) return null
+  const key = releaseDecodeKey(library, zone, context)
+  const hit = bufferCache.get(key)
+  if (hit) {
+    profile.cacheHits += 1
+    return hit
+  }
+  if (decodePromises.has(key)) return decodePromises.get(key)
+
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const promise = decodeQueue.run(async () => {
+    const timer = setTimeout(() => {
+      if (controller) controller.abort()
+    }, SAMPLE_DEADLINE_MS)
+    try {
+      const bytes = await fetchSampleBytes(library, zone.releaseSample, controller && controller.signal)
+      const started = nowMs()
+      const audio = await withDeadline(
+        decodeSampleBytes(context, bytes),
+        SAMPLE_DEADLINE_MS,
+        'orchestra-v release decode timeout'
+      )
+      profile.decodeMs += nowMs() - started
+      const decoded = { audio, loop: false, loopStart: 0, loopEnd: 0, releaseStart: 0, separate: true, key }
+      bufferCache.set(key, decoded)
+      return decoded
+    } finally {
+      clearTimeout(timer)
+    }
+  }, priority)
+
+  decodePromises.set(key, promise)
+  try {
+    return await promise
+  } finally {
+    decodePromises.delete(key)
+  }
+}
+
+function warmRelease (context, library, zone, voice, key) {
+  if (!zone || !zone.releaseSample) return
+  decodeRelease(context, library, zone, false).then((decoded) => {
+    if (!decoded || voices.get(key) !== voice) return
+    voice.releaseDecoded = decoded
+  }).catch(() => {})
 }
 
 // --- per-track ambience -------------------------------------------------------
@@ -560,14 +614,16 @@ function stopBody (voice, at, fadeSec) {
  * halt every BufferSource on the voice and made the release last only the fade (a cut).
  */
 function playReleaseSegment (voice, context, at) {
+  const split = voice.releaseDecoded
   const decoded = voice.decoded
-  const from = decoded.releaseStart
   const rate = Math.max(0.05, voice.baseRate || 1)
-  const remaining = Math.max(0.05, decoded.audio.duration - from)
   const fade = Math.max(0.08, Math.min(0.14, voice.releaseCrossfadeSec || 0.08))
+  const buffer = split && split.audio ? split.audio : decoded.audio
+  const from = split && split.audio ? 0 : (decoded.releaseStart || 0)
+  const remaining = Math.max(0.05, buffer.duration - from)
 
   const tail = context.createBufferSource()
-  tail.buffer = decoded.audio
+  tail.buffer = buffer
   tail.playbackRate.value = rate
   tail.connect(voice.tail)
   tail.start(at, from)
@@ -667,7 +723,7 @@ function seqStateFor (trackId) {
 
 // --- playback ------------------------------------------------------------------
 
-function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, detuneCents) {
+function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, detuneCents, when) {
   const source = context.createBufferSource()
   source.buffer = decoded.audio
   const semitones = item.zone.unpitched
@@ -691,7 +747,8 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
   source.connect(panner)
   panner.connect(gain)
   gain.connect(voice.body)
-  source.start()
+  const startAt = when == null ? context.currentTime : Math.max(context.currentTime, when)
+  source.start(startAt)
   voice.sources.push(source)
   if (!voice.bodySources) voice.bodySources = []
   voice.bodySources.push(source)
@@ -701,7 +758,7 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
   return source
 }
 
-export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
+export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
   if (!graph || !track) return null
   profile.noteCount += 1
   if (graph.context.state === 'suspended') {
@@ -794,7 +851,8 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     pedal: !!def.pedal,
     pedalHeld: false,
     releasing: false,
-    startedAt: context.currentTime,
+    startedAt: when == null ? context.currentTime : Math.max(context.currentTime, when),
+    releaseDecoded: null,
     vibratoGain: null
   }
 
@@ -823,12 +881,13 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
     .forEach((existing) => releaseVoice(existing, { force: true }))
 
   const detune = (def.voiceModel && def.voiceModel.detuneCents) || 0
-  attachLayer(voice, context, decodedPrimary, primary, def, pitch, ctrl, rules, 0)
+  attachLayer(voice, context, decodedPrimary, primary, def, pitch, ctrl, rules, 0, when)
   if (noteEpoch !== epoch) {
     disposeVoice(voice)
     return null
   }
   voices.set(key, voice)
+  warmRelease(context, library, primary.zone, voice, key)
   if (releasedEarly) releaseVoice(key)
 
   // A take that rings out on its own is never released, so its only end is the end of the
@@ -847,7 +906,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   if (secondary && !releasedEarly) {
     const ready = cachedDecode(library, secondary.zone, context)
     if (ready) {
-      attachLayer(voice, context, ready, secondary, def, pitch, ctrl, rules, detune)
+      attachLayer(voice, context, ready, secondary, def, pitch, ctrl, rules, detune, when)
     } else {
       decodeZone(context, library, secondary.zone, rules, false).then((decoded) => {
         if (voices.get(key) !== voice) return
@@ -894,17 +953,76 @@ export function applyControllers (track) {
 
 // --- preloading -----------------------------------------------------------------
 
-export async function preloadInstrument (graph, definitionId) {
+function pinLive (key) {
+  bufferCache.pin(key)
+  livePins.add(key)
+}
+
+function uniqueBankZones (bank) {
+  const seen = new Set()
+  const list = []
+  if (!bank) return list
+  for (let key = bank.keyLo; key <= bank.keyHi; key++) {
+    const zones = bank.byKey[key] || []
+    for (const zone of zones) {
+      if (seen.has(zone.sample)) continue
+      seen.add(zone.sample)
+      list.push({ key, zone })
+    }
+  }
+  return list
+}
+
+/** Decode one articulation's bodies from the middle of the range outward and pin them. */
+export async function armArticulation (graph, definitionId, techniqueId) {
   const map = await loadInstrument(definitionId)
   if (!map || !graph) return
+  const def = findDefinition(definitionId)
+  const artic = TECHNIQUE_ARTIC[techniqueId] || articForTrack({ techniqueId }, def)
+  const bank = map.byArticulation[artic] || map.byArticulation[map.articulations[0]]
+  if (!bank) return
   const library = map.library
   const rules = playbackRules(library)
-  for (const artic of map.articulations) {
+  const middle = Math.round((bank.keyLo + bank.keyHi) / 2)
+  const ordered = uniqueBankZones(bank).sort((a, b) => Math.abs(a.key - middle) - Math.abs(b.key - middle))
+  const near = ordered.filter((item) => Math.abs(item.key - middle) <= 6)
+  const rest = ordered.filter((item) => Math.abs(item.key - middle) > 6)
+  for (const item of near) {
+    try {
+      const decoded = await decodeZone(graph.context, library, item.zone, rules, true, false)
+      if (decoded && decoded.key) pinLive(decoded.key)
+    } catch (err) { /* note-on retries */ }
+  }
+  rest.forEach((item) => {
+    decodeZone(graph.context, library, item.zone, rules, false, false).then((decoded) => {
+      if (decoded && decoded.key) pinLive(decoded.key)
+    }).catch(() => {})
+  })
+}
+
+export async function preloadInstrument (graph, definitionId, techniqueId) {
+  const map = await loadInstrument(definitionId)
+  if (!map || !graph) return
+  const preferred = TECHNIQUE_ARTIC[techniqueId] || null
+  const order = map.articulations.slice()
+  if (preferred) {
+    const at = order.indexOf(preferred)
+    if (at > 0) {
+      order.splice(at, 1)
+      order.unshift(preferred)
+    }
+  }
+  if (order[0]) await armArticulation(graph, definitionId, order[0])
+  for (const artic of order.slice(1)) {
     const bank = map.byArticulation[artic]
+    if (!bank) continue
     const middle = Math.round((bank.keyLo + bank.keyHi) / 2)
     const zones = bank.byKey[middle] || bank.byKey[bank.keyLo] || []
     for (const zone of zones.slice(0, 2)) {
-      try { await decodeZone(graph.context, library, zone, rules, false) } catch (err) { /* retry on note-on */ }
+      try {
+        const decoded = await decodeZone(graph.context, map.library, zone, playbackRules(map.library), false)
+        if (decoded && decoded.key) pinLive(decoded.key)
+      } catch (err) { /* retry on note-on */ }
     }
   }
 }
@@ -929,7 +1047,7 @@ export function replaceWindowPins (context, items) {
     next.add(key)
   }
   for (const key of windowPins) {
-    if (!next.has(key)) bufferCache.unpin(key)
+    if (!next.has(key) && !livePins.has(key)) bufferCache.unpin(key)
   }
   windowPins.clear()
   next.forEach((key) => windowPins.add(key))
@@ -1037,26 +1155,34 @@ export async function renderNoteAt (context, dest, track, pitch, velocity, when,
       continue
     }
 
-    const hasSegment = decoded.releaseStart > 0 && decoded.releaseStart < decoded.audio.duration - 0.04
-    const reachedTail = !decoded.loop && hold * rate >= decoded.releaseStart
+    let releaseAudio = null
+    if (item.zone.releaseSample) {
+      try { releaseAudio = await decodeRelease(context, library, item.zone, false) } catch (err) { releaseAudio = null }
+    }
+    const hasSplit = !!(releaseAudio && releaseAudio.audio)
+    const hasSegment = hasSplit
+      || (decoded.releaseStart > 0 && decoded.releaseStart < decoded.audio.duration - 0.04)
+    const reachedTail = !decoded.loop && !hasSplit && hold * rate >= decoded.releaseStart
     const decaying = item.zone.decays || item.zone.releaseMode === 'envelope'
-    if (hasSegment && !reachedTail && !decaying) {
+    if (hasSegment && !reachedTail && (!decaying || hasSplit)) {
       const fade = Math.max(0.08, Math.min(0.14, item.zone.releaseCrossfadeSec || 0.08))
-      const remaining = (decoded.audio.duration - decoded.releaseStart) / rate
+      const tailBuffer = hasSplit ? releaseAudio.audio : decoded.audio
+      const tailFrom = hasSplit ? 0 : decoded.releaseStart
+      const remaining = (tailBuffer.duration - tailFrom) / rate
       gain.gain.setValueAtTime(peak, start)
       crossfade(gain.gain, scaleCurve(FADE_OUT, peak), start + hold, fade)
       source.start(start)
       source.stop(start + hold + fade + 0.02)
 
       const tail = context.createBufferSource()
-      tail.buffer = decoded.audio
+      tail.buffer = tailBuffer
       tail.playbackRate.value = rate
       const tailGain = context.createGain()
       tailGain.gain.setValueAtTime(0, start + hold)
       crossfade(tailGain.gain, scaleCurve(FADE_IN, peak), start + hold, fade)
       tail.connect(tailGain)
       tailGain.connect(space.input)
-      tail.start(start + hold, decoded.releaseStart)
+      tail.start(start + hold, tailFrom)
       tail.stop(start + hold + remaining + 0.02)
       continue
     }

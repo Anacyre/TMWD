@@ -31,6 +31,11 @@ export async function preloadInstrument (...args) {
   return mod.preloadInstrument(...args)
 }
 
+export async function armArticulation (...args) {
+  const mod = await loadOrchestraVEngine()
+  return mod.armArticulation(...args)
+}
+
 export async function preloadNotes (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.preloadNotes(...args)

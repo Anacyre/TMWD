@@ -156,11 +156,11 @@ function tweak (px, py) {
 }
 .svg { width: 100%; height: 100%; display: block; }
 .guide { fill: none; stroke: rgba(255, 255, 255, 0.06); stroke-width: 0.4; }
-.line { fill: none; stroke: #e8eef2; stroke-width: 1.4; }
-.line2 { fill: none; stroke: #7fd0c4; stroke-width: 1.2; opacity: 0.85; }
-.fill { fill: rgba(127, 208, 196, 0.16); stroke: none; }
+.line { fill: none; stroke: currentColor; stroke-width: 1.6; filter: drop-shadow(0 0 3px currentColor); }
+.line2 { fill: none; stroke: currentColor; stroke-width: 1.2; opacity: 0.55; }
+.fill { fill: currentColor; opacity: 0.18; stroke: none; }
 .zero { stroke: rgba(255, 255, 255, 0.16); stroke-width: 0.4; }
-.b1 { fill: rgba(232, 238, 242, 0.88); }
-.b2 { fill: rgba(127, 208, 196, 0.9); }
+.b1 { fill: currentColor; }
+.b2 { fill: currentColor; opacity: 0.72; }
 .off { fill: rgba(255, 255, 255, 0.16); }
 </style>

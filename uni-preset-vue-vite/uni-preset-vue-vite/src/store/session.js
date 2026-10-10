@@ -1948,7 +1948,7 @@ export function loadOrchestraV (track, definitionId) {
   })
   unlockAudio().then((graph) => {
     if (!graph) return
-    return orchestraVCloud.preloadInstrument(graph, id)
+    return orchestraVCloud.preloadInstrument(graph, id, track.techniqueId)
   }).catch((err) => {
     console.warn('[orchestra-v] preload failed', err)
   })
@@ -1980,6 +1980,15 @@ export function unloadInstrument (track) {
 export function setTechnique (track, techniqueId) {
   if (!track) return
   track.techniqueId = techniqueId
+  if (isOrchestraVTrack(track)) {
+    unlockAudio().then((graph) => {
+      if (!graph) return
+      return orchestraVCloud.armArticulation(graph, track.definitionId, techniqueId)
+    }).catch((err) => {
+      console.warn('[orchestra-v] arm failed', err)
+    })
+    return
+  }
   if (isCloudSamplerTrack(track)) return
   fire('instrument.setTechnique', { trackId: track.id, techniqueId })
 }
@@ -3185,7 +3194,12 @@ function ensureGraph () {
   if (audioGraph) return audioGraph
   const Ctor = audioContextCtor()
   if (!Ctor) return audioGraph
-  const context = new Ctor()
+  let context
+  try {
+    context = new Ctor({ latencyHint: 'interactive' })
+  } catch (err) {
+    context = new Ctor()
+  }
   audioGraph = createAudioGraph(context)
   return audioGraph
 }
@@ -3470,8 +3484,16 @@ function noteVelocity (note) {
   return value > 1 ? Math.min(1, value / 127) : value
 }
 
+function scheduleAheadSec () {
+  const bpm = Math.max(20, Number(session.bpm) || 120)
+  return Math.max(0.08, (60 / bpm) * 0.5)
+}
+
 function tickLocalNotes (nowBeats) {
   const next = new Set()
+  const ctx = audioGraph && audioGraph.context
+  const lookSec = scheduleAheadSec()
+  const lookBeats = lookSec * (Math.max(20, Number(session.bpm) || 120) / 60)
   session.clips.forEach((clip) => {
     if (!clip || clip.midi === false) return
     const track = session.tracks[clip.trackIndex]
@@ -3483,12 +3505,15 @@ function tickLocalNotes (nowBeats) {
       expandRepeats(note).forEach((slice) => {
         const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
         const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
-        if (nowBeats < start || nowBeats >= start + duration) return
+        if (nowBeats + lookBeats < start || nowBeats >= start + duration) return
         const key = (clip.id || 0) + ':' + (note.id || 0) + ':' + (slice.startTick || start) + ':' + slice.pitch
         next.add(key)
         if (!soundingNotes.has(key)) {
+          const when = ctx && isOrchestraVTrack(track)
+            ? ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / Math.max(20, Number(session.bpm) || 120))
+            : undefined
           const voiceKey = isCloudSamplerTrack(track)
-            ? previewCloudSampler(track, slice.pitch, noteVelocity(slice), key)
+            ? previewCloudSampler(track, slice.pitch, noteVelocity(slice), key, when)
             : previewWebSampler(track, slice.pitch, noteVelocity(slice), key)
           soundingNotes.set(key, voiceKey)
         }
@@ -3524,14 +3549,14 @@ function allLocalNotesOff () {
   soundingNotes.clear()
 }
 
-function previewCloudSampler (track, pitch, velocity, id) {
+function previewCloudSampler (track, pitch, velocity, id, when) {
   const logicalId = id || ('preview-' + track.id + '-' + pitch)
   const cloud = cloudSamplerFor(track)
   if (!cloud) return logicalId
   ensureMixerAttached().then(async (graph) => {
     if (!graph) return
     await graph.context.resume()
-    const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId)
+    const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when)
     if (engineKey && !graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
     console.warn('[cloud-sampler] preview failed:', err)

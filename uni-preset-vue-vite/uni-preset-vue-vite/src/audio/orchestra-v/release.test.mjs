@@ -85,6 +85,27 @@ const plan = (v, o) => releasePlan(v, o).action
   assert.equal(plan(slow, { elapsedSec: 7 }), 'segment', 'at half rate the body lasts 8s')
 }
 
+// --- a split release file continues the decay once it is decoded --------------
+{
+  const piano = voice({
+    decays: true,
+    releaseMode: 'envelope',
+    decoded: { loop: false, releaseStart: 0, audio: { duration: 2 } }
+  })
+  assert.equal(plan(piano, { elapsedSec: 0.4 }), 'envelope',
+    'until the tail file arrives a piano still fades from here')
+  piano.releaseDecoded = { audio: { duration: 4 } }
+  assert.equal(plan(piano, { elapsedSec: 0.4 }), 'segment',
+    'a decoded split tail continues the decay instead of a jump inside the body')
+
+  const strings = voice({ decoded: { loop: true, releaseStart: 0, audio: { duration: 2 } } })
+  assert.equal(plan(strings, { elapsedSec: 8 }), 'envelope',
+    'a looping body with no in-file splice and no tail file falls back to a ramp')
+  strings.releaseDecoded = { audio: { duration: 2 } }
+  assert.equal(plan(strings, { elapsedSec: 8 }), 'segment',
+    'the same looping body uses the split tail once it is ready')
+}
+
 // --- degenerate manifests fall back instead of throwing -----------------------
 {
   assert.equal(plan(voice({ decoded: { releaseStart: 0 } }), { elapsedSec: 1 }), 'envelope',

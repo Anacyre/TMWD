@@ -21,6 +21,16 @@
     </view>
     <text class="txt-val">{{ display }}</text>
   </view>
+  <view
+    v-else-if="spec && spec.format === 'int'"
+    class="txt"
+    :class="{ dim: disabled }"
+    @click.stop="stepInt(1)"
+    @contextmenu.prevent.stop="stepInt(-1)"
+  >
+    <text class="txt-lab">{{ spec.label }}</text>
+    <text class="txt-val">{{ display }}</text>
+  </view>
   <dsp-knob
     v-else-if="spec"
     tone="vital"
@@ -86,6 +96,11 @@ const fillStyle = computed(() => {
   return { width: (t * 100) + '%' }
 })
 
+function stepInt (dir) {
+  if (props.disabled || !props.spec) return
+  const next = Math.round(num.value) + dir
+  emit('update:modelValue', Math.min(props.spec.max, Math.max(props.spec.min, next)))
+}
 function cycle (dir) {
   if (props.disabled || !props.spec || !props.spec.options) return
   const options = props.spec.options

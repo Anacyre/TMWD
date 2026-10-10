@@ -193,6 +193,77 @@ function zonesFor (map, artic = 'long') {
   assert(bank.byKey[36][0].ampegRelease === PLAYBACK.releaseHitSec, 'hit zones take the short hit release')
 }
 
+// --- format 5 split release path survives compilation ------------------------
+{
+  const samples = [sample('testpack', 't_60_15_forte.body.ogg', 60, 96, {
+    loop: true,
+    loopStart: 0.4,
+    loopEnd: 1.9,
+    crossfadeSec: 0.12,
+    mainSec: 2,
+    releaseSec: 2,
+    releasePath: 'samples/testpack/t_60_15_forte.release.ogg',
+    articulation: 'long',
+    tier: 1
+  })]
+  const zones = zonesFor(compileRegions(samples, def(), MANIFEST))
+  assert(zones.length === 1, 'a split take still compiles to one zone')
+  assert(zones[0].sample.endsWith('.body.ogg'), 'note-on points at the short body')
+  assert(zones[0].releaseSample === 'samples/testpack/t_60_15_forte.release.ogg',
+    'the tail path is stored on the zone')
+  assert(zones[0].releaseMode === 'segment', 'a held split take still crossfades into its tail')
+  assert(zones[0].loopMode === 'loop_continuous', 'published loop points on the body are kept')
+}
+
+// --- a format 4 single file with mainSec still compiles ----------------------
+{
+  const samples = [sample('testpack', 't_60_15_forte.ogg', 60, 96, {
+    loop: true,
+    loopStart: 0.5,
+    loopEnd: 2.2,
+    crossfadeSec: 0.12,
+    mainSec: 4,
+    releaseSec: 2,
+    articulation: 'long',
+    tier: 1
+  })]
+  const zones = zonesFor(compileRegions(samples, def(), MANIFEST))
+  assert(zones[0].releaseSample === '', 'an old take has no separate tail object')
+  assert(zones[0].mainSec === 4 && zones[0].releaseMode === 'segment',
+    'format 4 still splices the tail inside the same file')
+}
+
+// --- decaying piano: old file stays envelope; split file exposes a tail ------
+{
+  const oldPiano = sample('testpack', 'p_60_15_forte.ogg', 60, 96, {
+    loop: false,
+    mainSec: 4,
+    releaseSec: 2,
+    articulation: 'long',
+    tier: 1,
+    decays: true
+  })
+  const oldZones = zonesFor(compileRegions([oldPiano], def(), MANIFEST))
+  assert(oldZones[0].releaseSample === '', 'an old piano take has no separate tail object')
+  assert(oldZones[0].releaseMode === 'envelope',
+    'without a split file a piano still fades from the current playback')
+
+  const splitPiano = sample('testpack', 'p_60_15_forte.body.ogg', 60, 96, {
+    loop: false,
+    mainSec: 2,
+    releaseSec: 4,
+    releasePath: 'samples/testpack/p_60_15_forte.release.ogg',
+    articulation: 'long',
+    tier: 1,
+    decays: true
+  })
+  const splitZones = zonesFor(compileRegions([splitPiano], def(), MANIFEST))
+  assert(splitZones[0].releaseSample.endsWith('.release.ogg'), 'a split piano exposes its tail path')
+  assert(splitZones[0].decays === true, 'the decaying flag survives compilation')
+  assert(splitZones[0].releaseMode === 'segment',
+    'a split piano can continue into its tail once that file is ready')
+}
+
 // --- toSfzText emits parsable SFZ --------------------------------------------
 {
   const samples = [

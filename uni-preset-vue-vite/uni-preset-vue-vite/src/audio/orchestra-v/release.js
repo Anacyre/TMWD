@@ -26,7 +26,14 @@ export function releasePlan (voice, opts = {}) {
   if (voice.releaseMode === 'free') return { action: 'free' }
   // A piano (and anything else that decays while held) is already the note we want to hear.
   // Jumping to the last 1–2 s of the file would skip most of the decay and sound like a cut.
-  if (voice.decays || voice.releaseMode === 'envelope') return { action: 'envelope' }
+  if (voice.decays || voice.releaseMode === 'envelope') {
+    // A separate release object continues the decay from where the short body ended.
+    // Until it is decoded, fall back to a damper envelope so the note never waits.
+    if (voice.releaseDecoded && voice.releaseDecoded.audio) return { action: 'segment' }
+    return { action: 'envelope' }
+  }
+
+  if (voice.releaseDecoded && voice.releaseDecoded.audio) return { action: 'segment' }
 
   const decoded = voice.decoded
   const duration = decoded && decoded.audio ? decoded.audio.duration : 0

@@ -237,8 +237,14 @@ function reset () { set(props.defaultValue) }
 
 .k.tone-vital .tick { stroke: rgba(255, 255, 255, 0.28); }
 .k.tone-vital .track { stroke: rgba(255, 255, 255, 0.14); }
-.k.tone-vital .body { stroke: rgba(255, 255, 255, 0.22); }
-.k.tone-vital .needle { stroke: #e8eef2; }
+.k.tone-vital .body { stroke: var(--vital-accent, #d5dee6); fill: transparent; }
+.k.tone-vital .arc,
+.k.tone-vital .needle { stroke: var(--vital-accent, #e8eef2); }
+.k.tone-vital:hover .arc,
+.k.tone-vital.drag .arc,
+.k.tone-vital:hover .needle,
+.k.tone-vital.drag .needle { stroke: var(--vital-accent, #e8eef2); }
+.k.tone-vital .lab { order: 3; margin-top: 2px; margin-bottom: 0; }
 .k.tone-vital .lab,
 .k.tone-vital .val { color: #c5ced6; }
 

@@ -224,8 +224,15 @@ function validate (value, spec, path) {
     for (const zone of map.zones) {
       assert(zone.mainSec > 0, `${def.id} zone ${zone.entry} has no body length`)
       assert(zone.releaseSec > 0.05, `${def.id} zone ${zone.entry} has no release tail`)
-      assert(zone.mainSec + zone.releaseSec <= zone.durationSec + 0.01,
-        `${def.id} zone ${zone.entry} claims a body plus tail longer than the file`)
+      if (zone.releaseSample) {
+        assert(zone.mainSec <= zone.durationSec + 0.01,
+          `${def.id} zone ${zone.entry} body is longer than the published body file`)
+        assert(zone.releaseSample.endsWith('.release.ogg'),
+          `${def.id} zone ${zone.entry} split tail is not a release object`)
+      } else {
+        assert(zone.mainSec + zone.releaseSec <= zone.durationSec + 0.01,
+          `${def.id} zone ${zone.entry} claims a body plus tail longer than the file`)
+      }
       // Looping across the splice point would drop the decay into a held note.
       if (zone.loopMode === 'loop_continuous') {
         assert(zone.loopEnd <= zone.mainSec,
@@ -258,9 +265,15 @@ function validate (value, spec, path) {
   assert(piano.zones.length, 'the piano compiles zones')
   assert(piano.zones.every((zone) => zone.loopMode === 'no_loop'),
     'a piano must never loop, or a held key would sustain forever')
-  assert(piano.zones.every((zone) => zone.releaseMode === 'envelope'),
-    'releasing a piano key damps with an envelope from the current playback')
   assert(piano.zones.every((zone) => zone.decays), 'the piano body is measured as decaying')
+  const splitPiano = piano.zones.every((zone) => zone.releaseSample)
+  if (splitPiano) {
+    assert(piano.zones.every((zone) => zone.releaseMode === 'segment'),
+      'a split piano continues into its tail file once that object is ready')
+  } else {
+    assert(piano.zones.every((zone) => zone.releaseMode === 'envelope'),
+      'releasing a piano key damps with an envelope from the current playback')
+  }
 
   const violins = compileRegions(own.samples, findDefinition('ov_sym_violins_1'), own)
   const longZones = violins.zones.filter((zone) => zone.articulation === 'long')

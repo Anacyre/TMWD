@@ -3,7 +3,10 @@
 
 export const PREPARE_WINDOW_BEATS = 4
 export const PREPARE_ZONE_CAP = 6
-export const PREPARE_DEADLINE_MS = 8000
+/** Play waits this long for the first window of bodies, then starts anyway. */
+export const PREPARE_DEADLINE_MS = 400
+/** Network / decode abort for a single object. Not the Play gate. */
+export const SAMPLE_DEADLINE_MS = 8000
 
 export function noteInPrepareWindow (startBeat, fromBeat, windowBeats = PREPARE_WINDOW_BEATS) {
   const start = Number(startBeat)

@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import {
   PREPARE_WINDOW_BEATS,
   PREPARE_ZONE_CAP,
+  PREPARE_DEADLINE_MS,
+  SAMPLE_DEADLINE_MS,
   noteInPrepareWindow,
   selectPrepareZones
 } from './prepare-window.js'
@@ -42,5 +44,8 @@ const duped = selectPrepareZones([
   { library: 'other', sample: 'a' }
 ])
 assert.equal(duped.immediate.length, 2)
+
+assert.equal(PREPARE_DEADLINE_MS, 400, 'Play starts after a short body window, not an 8s gate')
+assert.equal(SAMPLE_DEADLINE_MS, 8000, 'a single fetch still has time to finish')
 
 console.log('prepare-window ok')

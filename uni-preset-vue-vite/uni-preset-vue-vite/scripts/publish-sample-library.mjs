@@ -6,9 +6,10 @@
  * the browser engine reads, and uploads everything to the library's Supabase bucket.
  *
  * The libraries this targets record one chromatic file per note where the file holds a
- * fixed-length body followed by its own release tail (see SAMPLE_SPEC). That is why the
- * manifest carries `mainSec`: the engine plays the body, loops inside it while a key is
- * held, and crossfades into the tail on release.
+ * fixed-length body followed by its own release tail (see SAMPLE_SPEC). Format 5 splits
+ * those into a short loopable body OGG (about 2 s) and a separate release OGG so note-on
+ * only fetches the attack. Loop points are measured on the source WAV and stored in
+ * seconds. The engine still plays format 4 single-file objects (`mainSec` splice).
  *
  * Usage
  *   node scripts/publish-sample-library.mjs --library=vms-symphonic
@@ -45,6 +46,13 @@ const SAMPLE_SPEC = [
   { totalSec: 6, mainSec: 4 },
   { totalSec: 2, mainSec: 1 }
 ]
+
+/** Published body length. Long enough for the loop search window, short enough to fetch
+ * on a key press. Takes already this short stay a single object. */
+const BODY_MIN_SEC = 1.6
+const BODY_TARGET_SEC = 2.0
+const BODY_MAX_SEC = 2.2
+const FORMAT_VERSION = 5
 
 const LIBRARY_TARGETS = {
   'vms-symphonic': {
@@ -253,20 +261,23 @@ function run (bin, args) {
   })
 }
 
-async function encodeOgg (source, destination) {
+async function encodeOggSegment (source, destination, startSec, durationSec) {
   mkdirSync(dirname(destination), { recursive: true })
   if (!force && existsSync(destination) && statSync(destination).mtimeMs >= statSync(source).mtimeMs) {
     return false
   }
-  await run(FFMPEG, [
-    '-hide_banner', '-loglevel', 'error', '-y',
-    '-i', source,
+  const args = ['-hide_banner', '-loglevel', 'error', '-y']
+  if (startSec > 0.0005) args.push('-ss', startSec.toFixed(4))
+  args.push('-i', source)
+  if (durationSec > 0) args.push('-t', durationSec.toFixed(4))
+  args.push(
     '-map_metadata', '-1',
     '-vn',
     '-c:a', 'libvorbis',
     '-qscale:a', String(quality),
     destination
-  ])
+  )
+  await run(FFMPEG, args)
   return true
 }
 
@@ -420,6 +431,71 @@ function resolveLoops (samples, rules) {
   report.sort().forEach((line) => console.log(line))
 }
 
+/** Fit a published loop into the short body, then decide what ffmpeg should cut. */
+function planSplit (samples, rules) {
+  const minLoop = rules.minLoopSec || 1
+  for (const sample of samples) {
+    const ref = sample.ref
+    const total = ref.durationSec
+    const origMain = ref.mainSec
+    const origRelease = ref.releaseSec
+    if (total <= BODY_MAX_SEC + 0.05) {
+      sample.bodyStart = 0
+      sample.bodyDuration = total
+      sample.tailStart = 0
+      sample.tailDuration = 0
+      continue
+    }
+
+    let bodyEnd = BODY_TARGET_SEC
+    if (ref.loop && ref.loopEnd > ref.loopStart) {
+      bodyEnd = Math.min(BODY_MAX_SEC, Math.max(BODY_MIN_SEC, ref.loopEnd + 0.04))
+      if (ref.loopEnd > BODY_MAX_SEC - 0.02) {
+        const start = Math.max(0.15, Math.min(ref.loopStart, BODY_MAX_SEC - minLoop - 0.08))
+        const end = Math.min(BODY_MAX_SEC - 0.04, start + Math.min(ref.loopEnd - ref.loopStart, 1.8))
+        if (end - start >= minLoop) {
+          ref.loopStart = Math.round(start * 1000) / 1000
+          ref.loopEnd = Math.round(end * 1000) / 1000
+          ref.loopSource = (ref.loopSource || 'analysed') + '+fit'
+          bodyEnd = Math.min(BODY_MAX_SEC, ref.loopEnd + 0.04)
+        } else {
+          ref.loopStart = 0.35
+          ref.loopEnd = 2.05
+          ref.crossfadeSec = 0.2
+          ref.loopSource = 'body-fit'
+          bodyEnd = BODY_MAX_SEC
+        }
+      }
+    } else if (!ref.decays) {
+      bodyEnd = Math.min(BODY_TARGET_SEC, origMain)
+    }
+
+    sample.bodyStart = 0
+    sample.bodyDuration = bodyEnd
+    if (ref.decays) {
+      sample.tailStart = bodyEnd
+      sample.tailDuration = Math.max(0, total - bodyEnd)
+    } else if (origRelease > 0.05) {
+      sample.tailStart = origMain
+      sample.tailDuration = origRelease
+    } else {
+      sample.tailStart = 0
+      sample.tailDuration = 0
+    }
+
+    ref.durationSec = Math.round(bodyEnd * 1000) / 1000
+    ref.mainSec = ref.durationSec
+    ref.releaseSec = Math.round(sample.tailDuration * 1000) / 1000
+    if (sample.tailDuration > 0.05) {
+      const stem = ref.entry.replace(/\.ogg$/i, '')
+      ref.entry = stem + '.body.ogg'
+      ref.objectPath = objectSafe('samples/' + ref.pack + '/' + ref.entry)
+      ref.releaseEntry = stem + '.release.ogg'
+      ref.releasePath = objectSafe('samples/' + ref.pack + '/' + ref.releaseEntry)
+    }
+  }
+}
+
 /** Neighbouring root notes meet at the midpoint, so a missing note is covered by its
  * neighbour instead of leaving a silent key. */
 function tightenPitchRanges (samples, rules) {
@@ -517,29 +593,49 @@ async function main () {
 
   if (!samples.length) throw new Error('no samples matched')
   resolveLoops(samples, rules)
+  planSplit(samples, rules)
   tightenPitchRanges(samples, rules)
 
-  console.log('encoding ' + samples.length + ' files to OGG q' + quality + ' with ' + encodeConcurrency + ' workers')
+  const objects = []
+  for (const sample of samples) {
+    objects.push({ sample, kind: 'body', dest: join(cacheDir, sample.ref.pack, sample.ref.entry), start: sample.bodyStart, duration: sample.bodyDuration })
+    if (sample.tailDuration > 0.05 && sample.ref.releaseEntry) {
+      objects.push({
+        sample,
+        kind: 'release',
+        dest: join(cacheDir, sample.ref.pack, sample.ref.releaseEntry),
+        start: sample.tailStart,
+        duration: sample.tailDuration
+      })
+    }
+  }
+
+  console.log('encoding ' + objects.length + ' objects (' + samples.length + ' takes) to OGG q' + quality
+    + ' with ' + encodeConcurrency + ' workers')
   let encoded = 0
   let reused = 0
-  await pool(samples, encodeConcurrency, async (sample) => {
-    const cached = join(cacheDir, sample.ref.pack, sample.ref.entry)
-    const fresh = await encodeOgg(sample.absolute, cached)
+  await pool(objects, encodeConcurrency, async (item) => {
+    const fresh = await encodeOggSegment(item.sample.absolute, item.dest, item.start, item.duration)
     if (fresh) encoded++
     else reused++
-    sample.encoded = cached
-    sample.ref.bytes = statSync(cached).size
+    if (item.kind === 'body') {
+      item.sample.encoded = item.dest
+      item.sample.ref.bytes = statSync(item.dest).size
+    } else {
+      item.sample.releaseEncoded = item.dest
+      item.sample.ref.releaseBytes = statSync(item.dest).size
+    }
   })
-  const totalBytes = samples.reduce((sum, s) => sum + s.ref.bytes, 0)
+  const totalBytes = samples.reduce((sum, s) => sum + s.ref.bytes + (s.ref.releaseBytes || 0), 0)
   console.log('  encoded ' + encoded + ', reused ' + reused + ', total '
     + (totalBytes / 1048576).toFixed(1) + ' MB')
 
   const manifest = {
     id: libraryId,
     displayName: target.displayName,
-    formatVersion: 4,
+    formatVersion: FORMAT_VERSION,
     sampleLayout: 'objects',
-    layout: 'body-plus-release',
+    layout: 'split-body-release',
     cacheBudgetMb: 128,
     globalMaxVoices: 96,
     playback: target.playback,
@@ -548,13 +644,16 @@ async function main () {
     samples: samples.map((s) => s.ref)
   }
   // Enforce what objectSafe promises: a name that survives a URL, and one object per sample.
-  const unsafe = samples.filter((s) => /[#?%&+]/.test(s.ref.objectPath))
-  if (unsafe.length) throw new Error('unsafe object path: ' + unsafe[0].ref.objectPath)
+  const unsafe = samples.filter((s) => /[#?%&+]/.test(s.ref.objectPath)
+    || (s.ref.releasePath && /[#?%&+]/.test(s.ref.releasePath)))
+  if (unsafe.length) throw new Error('unsafe object path: ' + (unsafe[0].ref.releasePath || unsafe[0].ref.objectPath))
   const byPath = new Map()
   for (const s of samples) {
-    const clash = byPath.get(s.ref.objectPath)
-    if (clash) throw new Error('two samples map to ' + s.ref.objectPath + ': ' + clash + ' and ' + s.ref.entry)
-    byPath.set(s.ref.objectPath, s.ref.entry)
+    for (const path of [s.ref.objectPath, s.ref.releasePath].filter(Boolean)) {
+      const clash = byPath.get(path)
+      if (clash) throw new Error('two samples map to ' + path + ': ' + clash + ' and ' + s.ref.entry)
+      byPath.set(path, s.ref.entry)
+    }
   }
 
   writeFileSync(target.manifestOut, JSON.stringify(manifest))
@@ -572,11 +671,18 @@ async function main () {
   }
 
   console.log('uploading to bucket ' + target.bucket)
+  const uploads = []
+  for (const sample of samples) {
+    uploads.push({ path: sample.ref.objectPath, file: sample.encoded })
+    if (sample.ref.releasePath && sample.releaseEncoded) {
+      uploads.push({ path: sample.ref.releasePath, file: sample.releaseEncoded })
+    }
+  }
   let done = 0
-  await pool(samples, uploadConcurrency, async (sample) => {
-    await putObject(sample.ref.objectPath, readFileSync(sample.encoded), 'audio/ogg')
+  await pool(uploads, uploadConcurrency, async (item) => {
+    await putObject(item.path, readFileSync(item.file), 'audio/ogg')
     done++
-    if (done % 25 === 0 || done === samples.length) console.log('  ' + done + ' / ' + samples.length)
+    if (done % 25 === 0 || done === uploads.length) console.log('  ' + done + ' / ' + uploads.length)
   })
   await putObject('manifest.json', JSON.stringify(manifest), 'application/json')
   console.log('upload complete')

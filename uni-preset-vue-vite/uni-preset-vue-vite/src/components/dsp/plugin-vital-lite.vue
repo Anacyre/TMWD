@@ -157,10 +157,10 @@ function formatter (knob) {
   border-color: #d5dee6;
 }
 .plug.dsp-skin.vital-on {
-  --x-chassis: #1b1e22;
-  --x-chassis-2: #14171a;
-  --x-panel: #101214;
-  --x-panel-2: #1e2226;
+  --x-chassis: #1a2330;
+  --x-chassis-2: #141c28;
+  --x-panel: #243044;
+  --x-panel-2: #2a384c;
   --x-ink: #e7eaee;
   --x-ink-2: #c5ced6;
   --x-ink-3: #8b939e;
@@ -170,7 +170,7 @@ function formatter (knob) {
   --x-accent-hi: #ffffff;
   --x-accent-lo: rgba(213, 222, 230, 0.16);
   --x-cool: #7fd0c4;
-  background: #1b1e22;
+  background: #1a2330;
   min-height: 0;
 }
 </style>

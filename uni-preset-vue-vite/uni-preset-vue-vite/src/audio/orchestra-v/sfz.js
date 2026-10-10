@@ -67,10 +67,12 @@ function tierOf (sample, artic) {
  */
 function releaseModeFor (sample, artic) {
   const oneShot = artic === 'short' || artic === 'pluck' || artic === 'hit'
-  const hasSegment = sample.mainSec > 0 && sample.releaseSec > 0.05
-  // Struck decaying bodies (piano) fade from the current playback position. The recorded
-  // tail is the rest of the same decay, not a damper sample worth jumping to.
-  if (sample.decays && !oneShot) return 'envelope'
+  const hasSplit = !!sample.releasePath
+  const hasSegment = hasSplit || (sample.mainSec > 0 && sample.releaseSec > 0.05)
+  // Struck decaying bodies (piano) fade from the current playback position unless a
+  // separate release object is ready to continue the decay. The compile-time mode stays
+  // envelope; the runtime upgrades to segment when that file has decoded.
+  if (sample.decays && !oneShot && !hasSplit) return 'envelope'
   if (hasSegment) return oneShot ? 'free' : 'segment'
   if (oneShot) return 'envelope'
   return 'tail'
@@ -142,9 +144,10 @@ function makeZone (sample, artic, span, band, seqPosition, seqLength, rules) {
     ampegRelease: releaseFor(artic, rules),
     durationSec: sample.durationSec || 0,
     // Where the recording stops being the held body and becomes its release tail. Zero for
-    // libraries that do not record the two together.
+    // libraries that do not record the two together. Format 5 puts the tail in `releasePath`.
     mainSec: sample.mainSec > 0 ? sample.mainSec : 0,
     releaseSec: sample.releaseSec > 0 ? sample.releaseSec : 0,
+    releaseSample: sample.releasePath || '',
     releaseCrossfadeSec: sample.releaseCrossfadeSec > 0 ? sample.releaseCrossfadeSec : 0.04,
     releaseMode: releaseModeFor(sample, artic),
     decays: !!sample.decays
@@ -410,8 +413,11 @@ export function toSfzText (map, options = {}) {
         if (zone.loopMode === 'loop_continuous') {
           lines.push(`  // loop_sec=${zone.loopStart.toFixed(4)},${zone.loopEnd.toFixed(4)} crossfade_sec=${zone.crossfadeSec.toFixed(4)}`)
         }
-        if (zone.mainSec > 0) {
-          lines.push(`  // release_mode=${zone.releaseMode} body_sec=${zone.mainSec.toFixed(4)} tail_sec=${zone.releaseSec.toFixed(4)}`)
+        if (zone.mainSec > 0 || zone.releaseSample) {
+          lines.push(`  // release_mode=${zone.releaseMode} body_sec=${(zone.mainSec || 0).toFixed(4)} tail_sec=${(zone.releaseSec || 0).toFixed(4)}`)
+        }
+        if (zone.releaseSample) {
+          lines.push(`  // release_sample=${zone.releaseSample}`)
         }
       })
     lines.push('')
