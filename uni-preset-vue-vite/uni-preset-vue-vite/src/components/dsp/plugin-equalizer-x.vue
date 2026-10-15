@@ -38,7 +38,93 @@
       />
     </view>
 
-    <view class="strip">
+    <view v-if="focus" class="focus">
+      <view class="bands">
+        <view
+          v-for="(node, i) in nodes"
+          :key="'chip' + i"
+          class="band-chip"
+          :class="{ on: i === activeIndex, muted: node.enabled === false }"
+          :style="{ '--band': eqBandColor(i) }"
+          @click="activeIndex = i"
+        >
+          <view class="band-dot" />
+          <text>{{ i + 1 }}</text>
+          <text class="band-shape">{{ shapeShort(node) }}</text>
+        </view>
+        <view class="band-chip add" :class="{ off: nodes.length >= 7 }" @click="addNodeAtCenter">+</view>
+        <view class="gap" />
+        <view class="band-chip more" :class="{ on: moreOpen }" @click="moreOpen = !moreOpen">More</view>
+      </view>
+      <view v-if="activeNode" class="band-card x-card" :style="{ '--band': eqBandColor(activeIndex) }">
+        <view class="band-row">
+          <view
+            class="x-chip band-on"
+            :class="{ on: activeNode.enabled !== false }"
+            @click="toggleEnableAt(activeIndex)"
+          >{{ activeNode.enabled === false ? 'Off' : 'On' }}</view>
+          <view class="x-seg railed shapes">
+            <view
+              v-for="shape in EQ_SHAPES"
+              :key="shape"
+              class="x-chip"
+              :class="{ on: activeNode.shape === shape }"
+              @click="setShapeAt(activeIndex, shape)"
+            >{{ SHAPE_LABELS_SHORT[shape] || shape }}</view>
+          </view>
+          <view class="gap" />
+          <view class="x-chip" :class="{ on: activeNode.solo }" @click="soloAt(activeIndex)">Solo</view>
+          <view class="x-chip kill" @click="removeAt(activeIndex)">Delete</view>
+        </view>
+        <view class="band-knobs">
+          <dsp-knob
+            :accent="eqBandColor(activeIndex)"
+            :model-value="showGainFor(activeNode) ? activeNode.gain : 0"
+            :min="-18" :max="18" :default-value="0"
+            label="Gain"
+            :format="(v) => fmtDb(v, 1)"
+            :disabled="!showGainFor(activeNode)"
+            @update:model-value="setAt(activeIndex, 'gain', $event)"
+          />
+          <dsp-knob
+            :accent="eqBandColor(activeIndex)"
+            :model-value="activeNode.freq"
+            :min="20" :max="20000" :default-value="1000"
+            scale="log"
+            label="Freq"
+            :format="(v) => fmtHz(v)"
+            @update:model-value="setAt(activeIndex, 'freq', $event)"
+          />
+          <dsp-knob
+            :accent="eqBandColor(activeIndex)"
+            :model-value="activeNode.q"
+            :min="0.2" :max="12" :default-value="0.9"
+            scale="log"
+            label="Q"
+            :format="(v) => Number(v).toFixed(2)"
+            :disabled="!showQFor(activeNode)"
+            @update:model-value="setAt(activeIndex, 'q', $event)"
+          />
+          <view v-if="canSlope(activeNode)" class="band-slope">
+            <text class="dsp-lab">Slope dB/oct</text>
+            <view class="x-seg railed">
+              <view
+                v-for="step in SLOPE_STEPS"
+                :key="step"
+                class="x-chip"
+                :class="{ on: (activeNode.slope || 12) === step }"
+                @click="setAt(activeIndex, 'slope', step)"
+              >{{ step }}</view>
+            </view>
+          </view>
+        </view>
+      </view>
+      <view v-else class="band-card x-card empty-card" @click="addNodeAtCenter">
+        <text class="empty-lab">Double-tap the graph or tap + to add a band</text>
+      </view>
+    </view>
+
+    <view v-else class="strip">
       <view
         v-for="(node, i) in nodes"
         :key="'band' + i"
@@ -121,7 +207,7 @@
       </view>
     </view>
 
-    <view class="x-footer">
+    <view v-if="!focus || moreOpen" class="x-footer">
       <text class="dsp-lab"><text class="x-lab-full">Analyzer</text><text class="x-lab-abbr">AN</text></text>
       <view class="x-seg railed" title="Spectrum analyzer tap: before or after the filters">
         <view
@@ -171,7 +257,7 @@ import {
   applyPreset, resetInsert, createEmptyNode
 } from '../../dsp/registry.js'
 import { eqCurvePoints, nodeToCanvas, canvasToNode } from '../../dsp/eq-curve.js'
-import { showToast } from '../../store/session.js'
+import { showToast, isNewLite } from '../../store/session.js'
 import { canvasRect, prepareCanvas, observeCanvasResize } from './canvas-util.js'
 import {
   DSP_THEME, fmtHz, fmtDb, SHAPE_LABELS, SHAPE_LABELS_SHORT,
@@ -192,6 +278,10 @@ const emit = defineEmits(['change'])
 const canvas = ref(null)
 const activeIndex = ref(0)
 const shapeOpen = ref(-1)
+const moreOpen = ref(false)
+/* Tablet Lite: one band's controls at a time under a full-width graph. */
+const focus = computed(() => !props.embedded && isNewLite())
+const activeNode = computed(() => nodes.value[activeIndex.value] || null)
 
 const SLOPE_STEPS = [6, 12, 24, 48]
 const SLOPE_SHAPES = ['lowcut', 'highcut', 'lowshelf', 'highshelf']
@@ -429,7 +519,7 @@ function onCreate (e) {
 }
 
 function isTouchEvent (e) {
-  return e.type === 'touchstart' || !!(e.touches && e.touches.length)
+  return e.type === 'touchstart' || e.pointerType === 'touch' || e.pointerType === 'pen' || !!(e.touches && e.touches.length)
 }
 
 let lastTouchTap = 0
@@ -583,6 +673,100 @@ function onDown (e) {
 .x-chip.an,
 .x-chip.os { min-width: 38px; text-transform: uppercase; }
 .gap { flex: 1; }
+
+.focus {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bands {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.band-chip {
+  height: 40px;
+  min-width: 44px;
+  padding: 0 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 20px;
+  border: 1px solid var(--x-line);
+  background: var(--x-panel);
+  color: var(--x-ink-2);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.band-chip.on {
+  border-color: var(--band, var(--x-accent));
+  color: var(--x-ink);
+  box-shadow: inset 0 0 0 1px var(--band, var(--x-accent));
+}
+.band-chip.muted { opacity: 0.5; }
+.band-chip.add { font-size: 18px; font-weight: 400; }
+.band-chip.off { opacity: 0.35; pointer-events: none; }
+.band-chip.more.on { color: var(--x-accent); border-color: var(--x-accent); box-shadow: none; }
+.band-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--band, var(--x-accent));
+}
+.band-shape {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--x-ink-3);
+}
+.band-card {
+  border-top: 2px solid var(--band, var(--x-accent));
+  padding: 10px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.band-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.band-row .x-chip.band-on { min-width: 56px; }
+.band-row .x-chip.band-on.on {
+  background: var(--band, var(--x-accent));
+  border-color: var(--band, var(--x-accent));
+}
+.band-row .shapes { flex-wrap: wrap; }
+.band-row .shapes .x-chip { min-width: 0; }
+.band-row .x-chip.kill { color: var(--x-warn); }
+.band-knobs {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-start;
+  gap: 28px;
+  padding: 0 8px;
+}
+.band-slope {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-left: auto;
+  align-self: center;
+}
+.empty-card {
+  min-height: 120px;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
 
 @media (max-width: 720px) {
   /* Single-column stage: the meter moves under the curve so the graph keeps the

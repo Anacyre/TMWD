@@ -349,6 +349,7 @@ import {
   showToast
 } from '../store/session.js'
 import { visibleTrackRows, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../model/playlist-model.js'
+import { applyClipDrag } from '../model/arrange-gestures.js'
 import { interpolateBeats } from '../model/timeline.js'
 import { glyphClass, glyphLetter } from '../model/instrument-glyph.js'
 
@@ -1103,32 +1104,20 @@ function onClipDown (clip, e) {
       if (gesture) gesture.armed = true
     }
     if (!gesture) return
-    const deltaBeats = dx / session.pixelsPerBeat
-    const deltaTracks = Math.round(dy / session.trackHeight)
-    originals.forEach((orig) => {
-      const found = session.clips.find((item) => item.id === orig.id)
+    const placed = applyClipDrag(originals.map((orig) => ({ ...orig, row: rowIndexByTrack.value.get(orig.track) })), {
+      edge,
+      deltaBeats: dx / session.pixelsPerBeat,
+      deltaRows: Math.round(dy / session.trackHeight),
+      snap: snapBeat,
+      rowCount: rows.value.length,
+      canDrop: (row) => !!rows.value[row] && isPlayableTrack(rows.value[row].track)
+    })
+    placed.forEach((next) => {
+      const found = session.clips.find((item) => item.id === next.id)
       if (!found) return
-      if (edge === 'right') {
-        const end = orig.start + orig.length + deltaBeats
-        const snappedEnd = session.snap ? snapBeat(end) : end
-        found.lengthBeats = Math.max(0.25, snappedEnd - orig.start)
-      } else if (edge === 'left') {
-        const rawStart = orig.start + deltaBeats
-        const nextStart = Math.max(0, session.snap ? snapBeat(rawStart) : rawStart)
-        const end = orig.start + orig.length
-        if (end - nextStart >= 0.25) {
-          found.startBeat = nextStart
-          found.lengthBeats = end - nextStart
-        }
-      } else {
-        found.startBeat = Math.max(0, snapBeat(orig.start + deltaBeats))
-        const origVisual = rowIndexByTrack.value.get(orig.track)
-        if (origVisual != null) {
-          const nextVisual = Math.min(rows.value.length - 1, Math.max(0, origVisual + deltaTracks))
-          const dest = rows.value[nextVisual]
-          if (dest && isPlayableTrack(dest.track)) found.trackIndex = dest.index
-        }
-      }
+      found.startBeat = next.start
+      found.lengthBeats = next.length
+      if (edge === 'move' && next.row != null && rows.value[next.row]) found.trackIndex = rows.value[next.row].index
     })
     queueClipMoves(selectedClips())
   }

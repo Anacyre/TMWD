@@ -1,16 +1,16 @@
 <template>
   <view class="lite" :class="engineModeClass()">
-    <daw-lite-transport />
+    <daw-le-transport />
     <daw-cloud-banner compact />
     <view class="work">
       <daw-playlist v-if="session.workspaceView === 'arrangement'" />
       <daw-piano-roll v-else-if="session.workspaceView === 'piano'" embedded />
-      <daw-lite-mixer v-else-if="session.workspaceView === 'mixer'" />
+      <daw-le-mixer v-else-if="session.workspaceView === 'mixer'" />
     </view>
-    <daw-lite-nav />
-    <daw-lite-settings />
-    <daw-lite-track-sheet />
-    <daw-lite-hint />
+    <daw-le-nav />
+    <daw-le-settings />
+    <daw-le-track-sheet />
+    <daw-le-hint />
     <daw-instrument-browser />
     <plugin-host />
     <daw-project-manager />
@@ -20,9 +20,9 @@
 
 <script setup>
 import { defineAsyncComponent } from 'vue'
-import DawLiteTransport from './daw-lite-transport.vue'
-import DawLiteNav from './daw-lite-nav.vue'
-import DawLiteHint from './daw-lite-hint.vue'
+import DawLeTransport from './daw-le-transport.vue'
+import DawLeNav from './daw-le-nav.vue'
+import DawLeHint from './daw-le-hint.vue'
 import DawPlaylist from './daw-playlist.vue'
 import DawCloudBanner from './daw-cloud-banner.vue'
 import { session, engineModeClass } from '../store/session.js'
@@ -31,9 +31,9 @@ import { session, engineModeClass } from '../store/session.js'
     it loads after the arrangement is on screen.
 */
 const DawPianoRoll = defineAsyncComponent(() => import('./daw-piano-roll.vue'))
-const DawLiteMixer = defineAsyncComponent(() => import('./daw-lite-mixer.vue'))
-const DawLiteSettings = defineAsyncComponent(() => import('./daw-lite-settings.vue'))
-const DawLiteTrackSheet = defineAsyncComponent(() => import('./daw-lite-track-sheet.vue'))
+const DawLeMixer = defineAsyncComponent(() => import('./daw-le-mixer.vue'))
+const DawLeSettings = defineAsyncComponent(() => import('./daw-le-settings.vue'))
+const DawLeTrackSheet = defineAsyncComponent(() => import('./daw-le-track-sheet.vue'))
 const DawInstrumentBrowser = defineAsyncComponent(() => import('./daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('./dsp/plugin-host.vue'))
 const DawProjectManager = defineAsyncComponent(() => import('./daw-project-manager.vue'))

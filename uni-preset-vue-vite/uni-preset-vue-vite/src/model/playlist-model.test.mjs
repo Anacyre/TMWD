@@ -33,8 +33,9 @@ const clip = {
   ]
 }
 const preview = buildClipPreview(clip)
-if (preview.length !== 24) throw new Error('preview columns')
-if (!preview.some((col) => col.some((cell) => cell > 0))) throw new Error('preview empty')
+if (preview.bars.length !== 3) throw new Error('preview bars')
+if (preview.lo !== 58 || preview.hi !== 69) throw new Error('preview pitch range should pad the used notes')
+if (Math.abs(preview.bars[1].x0 - 1 / 8) > 1e-9) throw new Error('preview bar must sit at its real time')
 if (clipSourceLength(clip) !== 8) throw new Error('source length')
 
 const edited = {
@@ -49,7 +50,7 @@ const before = buildClipPreview(edited)
 invalidateClipPreview(edited.id)
 const after = buildClipPreview(edited)
 if (before === after) throw new Error('preview should rebuild after invalidation')
-if (!after.some((col, x) => x < 6 && col.some((cell) => cell > 0))) throw new Error('edited preview empty')
+if (!after.bars.some((bar) => bar.x0 < 0.25)) throw new Error('edited preview empty')
 
 const offsets = relativeClipOffsets([
   { startBeat: 1 },

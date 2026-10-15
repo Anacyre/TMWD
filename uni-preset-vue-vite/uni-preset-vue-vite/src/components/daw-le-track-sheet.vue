@@ -1,5 +1,5 @@
 <template>
-  <daw-lite-sheet
+  <daw-le-sheet
     :open="!!session.liteSheet"
     :title="title"
     :tall="tab === 'sampler'"
@@ -24,7 +24,7 @@
           :key="'s' + index"
           class="fx-row"
         >
-          <view class="fx-main" @click.stop="onSlot(index, slot)" @tap.stop="onSlot(index, slot)">
+          <view class="fx-main" @click.stop="onSlot(index, slot)">
             <text class="fx-name">{{ slotLabel(slot) }}</text>
             <view v-if="!slot" class="icon-hit" aria-label="Add effect">
               <daw-icon name="plus" :size="16" />
@@ -39,7 +39,6 @@
             :class="{ dim: slot.enabled === false }"
             aria-label="Bypass"
             @click.stop="toggleInsertEnabled(lane, index)"
-            @tap.stop="toggleInsertEnabled(lane, index)"
           >
             <daw-icon name="power" :size="16" :active="slot.enabled !== false" />
           </view>
@@ -51,18 +50,17 @@
           :key="plugin.id"
           class="pick"
           @click.stop="choose(plugin.id)"
-          @tap.stop="choose(plugin.id)"
         >
           <text class="fx-name">{{ plugin.name }}</text>
         </view>
       </scroll-view>
     </view>
-  </daw-lite-sheet>
+  </daw-le-sheet>
 </template>
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import DawLiteSheet from './daw-lite-sheet.vue'
+import DawLeSheet from './daw-le-sheet.vue'
 import DawIcon from './daw-icon.vue'
 import DawOrchestraSampler from './daw-orchestra-sampler.vue'
 import DawMOrchestra from './daw-m-orchestra.vue'
@@ -143,7 +141,8 @@ function onSlot (index, slot) {
 }
 
 function choose (pluginId) {
-  if (!pluginId) return
+  // A tablet tap can arrive twice; the second one must not insert a second plugin.
+  if (!pluginId || !picker.value) return
   picker.value = false
   const replaceIndex = session.liteSheet && session.liteSheet.replaceIndex
   if (replaceIndex != null && replaceIndex >= 0) replaceInsert(lane.value, replaceIndex, pluginId)

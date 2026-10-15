@@ -15,12 +15,12 @@ export const ORCHESTRA_V_DEFAULT_ID = DEFAULT_INSTRUMENT_ID
 export { isOrchestraVDefinition, DEFAULT_LIBRARY_ID }
 
 export const FAMILIES = [
-  { id: 'strings', label: 'Strings', mark: '🎻' },
-  { id: 'woodwinds', label: 'Woodwinds', mark: '🎶' },
-  { id: 'brass', label: 'Brass', mark: '📯' },
-  { id: 'percussion', label: 'Percussion', mark: '🥁' },
-  { id: 'keyboard', label: 'Keyboard', mark: '🎹' },
-  { id: 'others', label: 'Others', mark: '◇' }
+  { id: 'strings', label: 'Strings', icon: 'family-strings' },
+  { id: 'woodwinds', label: 'Woodwinds', icon: 'family-woodwinds' },
+  { id: 'brass', label: 'Brass', icon: 'family-brass' },
+  { id: 'percussion', label: 'Percussion', icon: 'family-percussion' },
+  { id: 'keyboard', label: 'Keyboard', icon: 'family-keyboard' },
+  { id: 'others', label: 'Others', icon: 'family-others' }
 ]
 
 export const INSTRUMENTS = CATALOG.map((item) => ({

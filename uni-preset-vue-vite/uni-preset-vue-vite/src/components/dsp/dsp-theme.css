@@ -429,17 +429,13 @@ uni-view.x-knobs {
     height: auto !important;
   }
   .x-plug .dsp-canvas,
-  .x-plug .scope {
+  .x-plug .scope,
+  .x-plug .vital-plot,
+  .x-plug .vital-plot.short {
     min-height: 96px !important;
     max-height: 96px !important;
     height: 96px !important;
-    flex: 0 0 96px !important;
-  }
-  .x-plug .vital-plot,
-  .x-plug .vital-plot.short {
-    height: 96px !important;
-    max-height: 96px !important;
-    flex: 0 0 96px !important;
+    flex: 1 1 auto !important;
   }
   .x-lab-full { display: none; }
   .x-lab-abbr { display: inline; }
@@ -462,19 +458,55 @@ uni-view.x-knobs {
   max-height: none !important;
   height: auto !important;
 }
+/* Heights only: these sit in flex rows, where a flex-basis would set the width
+   and squeeze the graph into a 96px sliver. */
 .compact-plugin .x-plug .dsp-canvas,
 .compact-plugin .x-plug .scope,
-.compact-plugin .meter.fill {
-  min-height: 96px !important;
-  max-height: 96px !important;
-  height: 96px !important;
-  flex: 0 0 96px !important;
-}
 .compact-plugin .x-plug .vital-plot,
 .compact-plugin .x-plug .vital-plot.short {
-  height: 96px !important;
-  max-height: 96px !important;
-  flex: 0 0 96px !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  height: clamp(150px, 30vh, 260px) !important;
+  flex: 1 1 auto !important;
+}
+.compact-plugin .meter.fill {
+  min-height: 0 !important;
+  max-height: none !important;
+  height: clamp(150px, 30vh, 260px) !important;
+  flex: 0 0 auto !important;
+}
+
+/* Full-screen panel in the tablet Lite shell: desktop layout with a large graph
+   and finger-sized controls. */
+.full-plugin .x-plug { padding: 0 6px 6px; }
+.full-plugin .x-viz { min-height: clamp(220px, 45vh, 420px); }
+.full-plugin .x-plug .dsp-canvas,
+.full-plugin .x-plug .scope,
+.full-plugin .x-plug .vital-plot {
+  min-height: clamp(220px, 45vh, 420px);
+}
+.full-plugin .x-chip { min-height: 36px; min-width: 52px; font-size: 11px; padding: 0 12px; }
+.full-plugin .x-dot { width: 32px; height: 32px; }
+.full-plugin .x-sel { height: 36px; font-size: 12px; }
+.full-plugin .dsp-hit { min-height: 40px; min-width: 44px; font-size: 10px; }
+.full-plugin .dsp-lab { font-size: 10px; }
+.full-plugin .dsp-val { font-size: 14px; }
+.full-plugin .x-plug .k { width: 84px; min-height: 44px; }
+.full-plugin .x-plug .k.sz-sm { width: 72px; }
+.full-plugin .x-plug .k.sz-lg { width: 108px; }
+.full-plugin .x-plug .k.sz-xl { width: 200px; }
+.full-plugin .x-footer { min-height: 48px; font-size: 10px; }
+.full-plugin .x-plug .shell .power { display: none; }
+
+@media (max-width: 720px) {
+  .full-plugin .x-plug .dsp-canvas,
+  .full-plugin .x-plug .scope,
+  .full-plugin .x-plug .vital-plot,
+  .full-plugin .x-plug .vital-plot.short {
+    min-height: 0 !important;
+    max-height: none !important;
+    height: clamp(180px, 34vh, 320px) !important;
+  }
 }
 
 @media (max-width: 430px) {
@@ -504,6 +536,6 @@ uni-view.x-knobs {
     min-height: 72px !important;
     max-height: 72px !important;
     height: 72px !important;
-    flex-basis: 72px !important;
+    flex: 1 1 auto !important;
   }
 }

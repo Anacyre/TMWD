@@ -62,7 +62,7 @@
               >S</view>
             </view>
             <view class="fx-block">
-              <view class="fx-btn" @click.stop="openFx(track)" @tap.stop="openFx(track)">FX</view>
+              <view class="fx-btn" @click.stop="openFx(track)">FX</view>
               <view class="dots">
                 <view
                   v-for="n in 5"
@@ -99,11 +99,10 @@
                 class="tog"
                 :class="{ on: bus.mute, mute: bus.mute }"
                 @click.stop="toggleBusMute(bus)"
-                @tap.stop="toggleBusMute(bus)"
               >M</view>
             </view>
             <view class="fx-block">
-              <view class="fx-btn" @click.stop="openBusFx(bus)" @tap.stop="openBusFx(bus)">FX</view>
+              <view class="fx-btn" @click.stop="openBusFx(bus)">FX</view>
               <view class="dots">
                 <view
                   v-for="n in 5"
@@ -146,7 +145,7 @@
           >M</view>
         </view>
         <view class="fx-block">
-          <view class="fx-btn" @click.stop="openFx(master)" @tap.stop="openFx(master)">FX</view>
+          <view class="fx-btn" @click.stop="openFx(master)">FX</view>
           <view class="dots">
             <view
               v-for="n in 5"

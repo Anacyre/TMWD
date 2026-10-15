@@ -1,17 +1,18 @@
 import { TICKS_PER_BEAT } from './timeline.js'
+import { expandRepeats } from './note-model.js'
 
-const PREVIEW_COLS = 24
-const PREVIEW_ROWS = 8
+const PREVIEW_PITCH_PAD = 2
+const MIN_SLICE_BEATS = 0.001
 const previewCache = new Map()
 
 function noteStartBeat (note) {
-  if (note.start != null) return Math.max(0, note.start)
-  return Math.max(0, (note.startTick || 0) / TICKS_PER_BEAT)
+  if (note.startTick != null) return Math.max(0, note.startTick / TICKS_PER_BEAT)
+  return Math.max(0, note.start || 0)
 }
 
 function noteDurationBeat (note) {
-  if (note.duration != null) return Math.max(0.02, note.duration)
-  return Math.max(0.02, (note.durationTick || 240) / TICKS_PER_BEAT)
+  if (note.durationTick != null) return Math.max(0.02, note.durationTick / TICKS_PER_BEAT)
+  return Math.max(0.02, note.duration != null ? note.duration : 0.25)
 }
 
 function previewCacheKey (clip, notes) {
@@ -23,7 +24,9 @@ function previewCacheKey (clip, notes) {
     note.pitch,
     note.startTick != null ? note.startTick : Math.round(noteStartBeat(note) * TICKS_PER_BEAT),
     note.durationTick != null ? note.durationTick : Math.round(noteDurationBeat(note) * TICKS_PER_BEAT),
-    note.velocity || 0
+    note.velocity || 0,
+    note.muted ? 1 : 0,
+    note.repeatMode || 0
   ].join('.')).join('|')
   return id + ':' + notes.length + ':' + length + ':' + loop + ':' + digest
 }
@@ -144,45 +147,82 @@ export function buildCollapsedGroupClip (tracks, clips, groupId) {
   }
 }
 
+/**
+ * Notes exactly as the clip plays them, in beats relative to the clip start:
+ * repeat-mode notes expanded, the loop source tiled up to the arranged length,
+ * and everything cropped at the source and clip edges. Playback and the arrange
+ * preview both read this so the picture never disagrees with what you hear.
+ */
+export function clipPlaybackNotes (clip) {
+  const notes = (clip && clip.notes) || []
+  if (!notes.length) return []
+  const source = clipSourceLength(clip)
+  const total = Math.max(0.25, (clip && clip.lengthBeats) || source)
+  const out = []
+  for (let offset = 0, rep = 0; offset < total - MIN_SLICE_BEATS; offset += source, rep++) {
+    notes.forEach((note) => {
+      if (note.muted) return
+      expandRepeats(note).forEach((slice) => {
+        const local = noteStartBeat(slice)
+        if (local >= source) return
+        const start = offset + local
+        const end = Math.min(start + noteDurationBeat(slice), offset + source, total)
+        if (end - start < MIN_SLICE_BEATS) return
+        out.push({
+          key: rep + '.' + (note.id || 0) + '.' + Math.round(local * TICKS_PER_BEAT),
+          pitch: slice.pitch,
+          velocity: slice.velocity,
+          start,
+          duration: end - start,
+          note: slice
+        })
+      })
+    })
+  }
+  return out
+}
+
+/**
+ * Arrange preview model: note bars in clip-relative fractions (0..1 of the clip
+ * width) and a padded pitch range, so the preview lines up with the timeline.
+ */
 export function buildClipPreview (clip) {
   const notes = (clip && clip.notes) || []
   const key = previewCacheKey(clip, notes)
   const cached = previewCache.get(key)
   if (cached) return cached
 
-  const cols = new Array(PREVIEW_COLS).fill(0).map(() => new Array(PREVIEW_ROWS).fill(0))
-  const source = clipSourceLength(clip)
-  if (!notes.length) {
-    previewCache.set(key, cols)
-    return cols
-  }
-
+  const played = clipPlaybackNotes(clip)
+  const total = Math.max(0.25, (clip && clip.lengthBeats) || clipSourceLength(clip))
   let lo = 127
   let hi = 0
-  notes.forEach((note) => {
-    lo = Math.min(lo, note.pitch)
-    hi = Math.max(hi, note.pitch)
+  played.forEach((item) => {
+    lo = Math.min(lo, item.pitch)
+    hi = Math.max(hi, item.pitch)
   })
-  const span = Math.max(1, hi - lo)
-
-  notes.forEach((note) => {
-    const start = noteStartBeat(note)
-    const duration = noteDurationBeat(note)
-    const x0 = Math.floor((start / source) * PREVIEW_COLS)
-    const x1 = Math.min(PREVIEW_COLS - 1, Math.floor(((start + duration) / source) * PREVIEW_COLS))
-    const row = Math.min(PREVIEW_ROWS - 1, Math.floor(((note.pitch - lo) / span) * (PREVIEW_ROWS - 1)))
-    for (let x = Math.max(0, x0); x <= x1; x++) cols[x][row] = Math.max(cols[x][row], 0.35 + (note.velocity || 80) / 220)
-  })
+  const model = { lo: 0, hi: 0, bars: [] }
+  if (played.length) {
+    model.lo = Math.max(0, lo - PREVIEW_PITCH_PAD)
+    model.hi = Math.min(127, hi + PREVIEW_PITCH_PAD)
+    model.bars = played.map((item) => ({
+      x0: item.start / total,
+      x1: (item.start + item.duration) / total,
+      pitch: item.pitch,
+      alpha: 0.45 + Math.min(127, item.velocity || 80) / 254
+    }))
+  }
 
   if (previewCache.size > 4000) previewCache.clear()
-  previewCache.set(key, cols)
-  return cols
+  previewCache.set(key, model)
+  return model
 }
 
 export function invalidateClipPreview (clipId) {
   const prefix = String(clipId) + ':'
   Array.from(previewCache.keys()).forEach((key) => {
-    if (String(key).startsWith(prefix)) previewCache.delete(key)
+    const text = String(key)
+    // Collapsed group previews are built from their children's notes.
+    if (text.startsWith(prefix) || text.startsWith('gclip-')) previewCache.delete(key)
   })
 }
 

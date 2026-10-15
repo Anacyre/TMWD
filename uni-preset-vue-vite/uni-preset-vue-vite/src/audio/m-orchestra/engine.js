@@ -65,8 +65,9 @@ export function findInstrument (definitionId) {
 
 export function articForTrack (track, spec) {
   const mapped = TECHNIQUE_ARTIC[track && track.techniqueId]
-  if (mapped) return mapped
   const arts = (spec && spec.articulations) || ['long']
+  // A saved project can carry a technique the instrument never recorded (pizz on a flute).
+  if (mapped && (!spec || !Array.isArray(spec.articulations) || arts.includes(mapped))) return mapped
   return arts[0] || 'long'
 }
 
@@ -80,7 +81,7 @@ export function dynamicsForTrack (track) {
 export function expressionForTrack (track) {
   const values = (track && track.controllerValues) || {}
   const raw = values.expression
-  if (raw == null) return 100
+  if (raw == null) return 100 / 127
   return raw > 1 ? raw / 127 : raw
 }
 

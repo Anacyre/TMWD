@@ -52,7 +52,7 @@
               <text>{{ item.displayName }}</text>
               <text v-if="item.available === false" class="tag">Needs PC</text>
             </view>
-            <text class="src">{{ item.available === false ? '在电脑上运行 DawWeb 引擎后可用' : (item.sourcePlugin || '') }}</text>
+            <text class="src">{{ item.available === false ? 'Available when the DawWeb engine runs on your PC' : (item.sourcePlugin || '') }}</text>
           </view>
         </scroll-view>
       </view>
@@ -133,7 +133,7 @@ watch(() => session.instrumentPickerMode, () => {
 async function createTrackFromPlugin (item) {
   if (!item) return
   if (item.available === false) {
-    showToast(item.detail || '需要电脑上的 DawWeb 引擎')
+    showToast(item.detail || 'Needs the DawWeb engine on your PC')
     return
   }
   const kind = item.id === 'web_sampler' ? 'web-sampler' : 'midi'
@@ -146,7 +146,7 @@ async function createTrackFromPlugin (item) {
 function choosePlugin (item) {
   if (!item) return
   if (item.available === false) {
-    showToast(item.detail || '需要电脑上的 DawWeb 引擎')
+    showToast(item.detail || 'Needs the DawWeb engine on your PC')
     return
   }
   if (isNewTrack.value) {
@@ -174,7 +174,7 @@ function onPatchTap (item) {
 function choosePatch (item) {
   if (!item) return
   if (item.available === false || item.requiresEngine && !item.available) {
-    showToast(item.sourcePlugin || '需要电脑上的 DawWeb 引擎')
+    showToast(item.sourcePlugin || 'Needs the DawWeb engine on your PC')
     return
   }
   const track = session.tracks[session.instrumentPickerTrack]

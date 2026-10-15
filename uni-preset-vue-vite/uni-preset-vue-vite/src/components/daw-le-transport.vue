@@ -59,7 +59,7 @@
     </view>
     <view v-if="session.sampleLoad.active" class="sample-load">
       <view class="sample-fill" :style="{ width: sampleLoadPct }" />
-      <text class="sample-label">准备接下来的采样</text>
+      <text class="sample-label">Loading samples</text>
     </view>
     <view v-if="session.scaleMenuOpen" class="scale-menu" @click.stop>
       <view

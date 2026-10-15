@@ -1,6 +1,7 @@
 <template>
   <view class="root">
-    <daw-lite-app v-if="lite" />
+    <daw-le-app v-if="shell === 'le'" />
+    <lite-app v-else-if="shell === 'lite'" />
     <view v-else class="daw" :class="engineModeClass()" @click="closeMenus">
     <daw-top-bar @audio-settings="onAudioSettings" />
     <daw-cloud-banner />
@@ -51,7 +52,7 @@
     <daw-status />
     <daw-instrument-browser />
     <daw-diagnostics />
-    <daw-lite-settings />
+    <lite-settings />
     <daw-project-manager />
     <view v-if="session.toast" class="toast">{{ session.toast }}</view>
     </view>
@@ -61,7 +62,7 @@
 
 <script setup>
 import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
-import DawLiteApp from '../../components/daw-lite-app.vue'
+import LiteApp from '../../components/lite/lite-app.vue'
 import DawCloudBanner from '../../components/daw-cloud-banner.vue'
 // Shared with the lite shell, which needs it for first paint.
 import DawPlaylist from '../../components/daw-playlist.vue'
@@ -69,6 +70,7 @@ import DawPlaylist from '../../components/daw-playlist.vue'
 /*  Lite is the default interface, so none of the professional-only surfaces
     belong in the first-paint bundle.
 */
+const DawLeApp = defineAsyncComponent(() => import('../../components/daw-le-app.vue'))
 const DawTopBar = defineAsyncComponent(() => import('../../components/daw-top-bar.vue'))
 const DawInspector = defineAsyncComponent(() => import('../../components/daw-inspector.vue'))
 const DawEditor = defineAsyncComponent(() => import('../../components/daw-editor.vue'))
@@ -77,7 +79,7 @@ const DawStatus = defineAsyncComponent(() => import('../../components/daw-status
 const DawDiagnostics = defineAsyncComponent(() => import('../../components/daw-diagnostics.vue'))
 const DawInstrumentBrowser = defineAsyncComponent(() => import('../../components/daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('../../components/dsp/plugin-host.vue'))
-const DawLiteSettings = defineAsyncComponent(() => import('../../components/daw-lite-settings.vue'))
+const LiteSettings = defineAsyncComponent(() => import('../../components/lite/lite-settings.vue'))
 const DawProjectManager = defineAsyncComponent(() => import('../../components/daw-project-manager.vue'))
 import {
   session,
@@ -103,7 +105,8 @@ import {
   setWorkspaceView,
   setEditorTab,
   closeEditor,
-  isLite
+  isLite,
+  interfaceShell
 } from '../../store/session.js'
 
 const inspectorWidth = ref(250)
@@ -111,6 +114,7 @@ const editorHeight = ref(268)
 const mixerHeight = ref(236)
 const isPhone = ref(false)
 const lite = computed(() => isLite())
+const shell = computed(() => interfaceShell())
 
 const showArrangement = computed(() => !isPhone.value || session.workspaceView === 'arrangement')
 const showEditor = computed(() => !isPhone.value || session.workspaceView === 'piano' || session.workspaceView === 'sampler')

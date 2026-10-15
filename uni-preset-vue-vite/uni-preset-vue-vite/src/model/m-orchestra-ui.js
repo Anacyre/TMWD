@@ -10,12 +10,12 @@ export const TEST_SYNTH_PLUGIN_ID = 'test_synth'
 export const WEB_SAMPLER_PLUGIN_ID = 'web_sampler'
 
 export const FAMILIES = [
-  { id: 'strings', label: 'Strings' },
-  { id: 'woodwinds', label: 'Woodwinds' },
-  { id: 'brass', label: 'Brass' },
-  { id: 'percussion', label: 'Percussion' },
-  { id: 'solo', label: 'Solo' },
-  { id: 'keyboard', label: 'Keyboard' }
+  { id: 'strings', label: 'Strings', icon: 'family-strings' },
+  { id: 'woodwinds', label: 'Woodwinds', icon: 'family-woodwinds' },
+  { id: 'brass', label: 'Brass', icon: 'family-brass' },
+  { id: 'percussion', label: 'Percussion', icon: 'family-percussion' },
+  { id: 'solo', label: 'Solo', icon: 'family-solo' },
+  { id: 'keyboard', label: 'Keyboard', icon: 'family-keyboard' }
 ]
 
 export const INSTRUMENTS = [
@@ -106,6 +106,26 @@ export function cloudTechniquesFor (definitionId) {
   if (PIZZ_IDS.has(definitionId)) list.push(CLOUD_TECHNIQUES.pizz)
   if (TREM_IDS.has(definitionId)) list.push(CLOUD_TECHNIQUES.trem)
   return list
+}
+
+/** Keep the current technique when the instrument can play it, else its first one.
+ * A flute has no pizzicato, so a technique carried over from the violins would be silent. */
+export function cloudTechniqueFor (definitionId, currentId) {
+  const list = cloudTechniquesFor(definitionId)
+  const keep = list.find((entry) => entry.id === currentId && entry.available)
+  return keep ? keep.id : (list[0] ? list[0].id : CLOUD_TECHNIQUES.long.id)
+}
+
+/** Lowest recorded roots sit above C3 for these; a keyboard from 48 would be half silent. */
+const KEYBOARD_START = {
+  m_orch_flute: 60,
+  m_orch_solo_flute: 60,
+  m_orch_oboe: 60,
+  m_orch_trumpet: 55
+}
+
+export function keyboardStartFor (definitionId) {
+  return KEYBOARD_START[definitionId] || 48
 }
 
 export const CLOUD_CONTROLLERS = [

@@ -49,8 +49,8 @@ import {
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
-import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache } from '../model/playlist-model.js'
-import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker, expandRepeats } from '../model/note-model.js'
+import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes } from '../model/playlist-model.js'
+import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker } from '../model/note-model.js'
 import { parseMidiBlob } from '../lib/midi-import.js'
 import {
   INTERFACE_LITE,
@@ -59,7 +59,9 @@ import {
   writeInterfaceMode,
   readLiteHintDismissed,
   writeLiteHintDismissed,
-  isLiteMode
+  isLiteMode,
+  interfaceShellOf,
+  normalizeInterfaceMode
 } from '../model/ui-mode.js'
 import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock } from '../model/expression-lane.js'
 import {
@@ -70,7 +72,8 @@ import {
   WEB_SAMPLER_PLUGIN_ID,
   isMOrchestraTrack,
   insertablePlugins,
-  mOrchestraInstrument
+  mOrchestraInstrument,
+  cloudTechniqueFor
 } from '../model/m-orchestra-ui.js'
 import {
   ORCHESTRA_V_PLUGIN_ID,
@@ -181,6 +184,7 @@ export const session = reactive({
   colourIndex: 0,
   openMenu: '',
   toast: '',
+  undoToast: null,
   engineStatus: '',
   selectedTrack: 1,
   selectedClip: 0,
@@ -930,14 +934,10 @@ function orchestraNoteEvents (fromBeat, untilBeat) {
     const track = session.tracks[clip.trackIndex]
     if (!track || !isCloudSamplerTrack(track)) return
     const events = jobs.get(track) || []
-    ;(clip.notes || []).forEach((note) => {
-      if (!note || note.muted) return
-      expandRepeats(note).forEach((slice) => {
-        const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
-        const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
-        if (start + duration <= fromBeat || start >= untilBeat) return
-        events.push({ pitch: slice.pitch, velocity: noteVelocity(slice), start, duration })
-      })
+    clipPlaybackNotes(clip).forEach((item) => {
+      const start = (clip.startBeat || 0) + item.start
+      if (start + item.duration <= fromBeat || start >= untilBeat) return
+      events.push({ pitch: item.pitch, velocity: noteVelocity(item.note), start, duration: item.duration })
     })
     if (events.length) jobs.set(track, events)
   })
@@ -1051,15 +1051,12 @@ function startEncodedWarm (fromBeat) {
     if (!clip || clip.midi === false) return
     const track = session.tracks[clip.trackIndex]
     if (!track || !isOrchestraVTrack(track)) return
-    ;(clip.notes || []).forEach((note) => {
-      if (!note || note.muted) return
-      expandRepeats(note).forEach((slice) => {
-        const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
-        const pitch = Math.round(slice.pitch)
-        if (soon.has(track.id + ':' + pitch)) return
-        const bucket = start < fromBeat ? earlier : later
-        bucket.push({ track, pitch, start })
-      })
+    clipPlaybackNotes(clip).forEach((item) => {
+      const start = (clip.startBeat || 0) + item.start
+      const pitch = Math.round(item.pitch)
+      if (soon.has(track.id + ':' + pitch)) return
+      const bucket = start < fromBeat ? earlier : later
+      bucket.push({ track, pitch, start })
     })
   })
   later.sort((a, b) => a.start - b.start)
@@ -1438,7 +1435,42 @@ export function removeTrack (index) {
 export function duplicateTrack (index) {
   const track = session.tracks[index]
   if (!track || track.type === 'master') return
-  fire('track.duplicate', { trackId: track.id })
+  if (isEngineConnected()) {
+    fire('track.duplicate', { trackId: track.id })
+    return
+  }
+  if (isGroupTrack(track)) return
+  beginEdit('Duplicate track')
+  const copy = JSON.parse(JSON.stringify(track))
+  copy.id = nextId(session.tracks)
+  copy.name = track.name + ' copy'
+  copy.meterLevel = 0
+  const at = index + 1
+  session.tracks.splice(at, 0, copy)
+  session.clips.forEach((clip) => {
+    if (clip.trackIndex >= at) clip.trackIndex += 1
+  })
+  session.clips
+    .filter((clip) => clip.trackIndex === index)
+    .map((clip) => ({ ...JSON.parse(JSON.stringify(clip)), trackIndex: at }))
+    .forEach((clip) => {
+      clip.id = nextId(session.clips)
+      session.clips.push(clip)
+    })
+  endEdit()
+  session.selectedTrack = at
+  markDirty()
+}
+
+/** Track delete as one undoable step, announced with an Undo toast. */
+export function removeTrackWithUndo (index) {
+  const track = session.tracks[index]
+  if (!track || track.type === 'master') return
+  beginEdit('Delete track')
+  removeTrack(index)
+  endEdit()
+  markDirty()
+  showUndoToast('Deleted ' + (track.name || 'track'), () => undoEdit())
 }
 
 export function moveTrack (index, toIndex) {
@@ -1484,12 +1516,31 @@ export function addMidiClip (trackIndex, startBeat = session.positionBeats, leng
 
 export function deleteClip (clip) {
   if (!clip) return
-  fire('clip.delete', { clipId: clip.id })
+  if (isEngineConnected()) {
+    fire('clip.delete', { clipId: clip.id })
+    return
+  }
+  const index = session.clips.findIndex((item) => item.id === clip.id)
+  if (index < 0) return
+  session.clips.splice(index, 1)
+  session.selectedClipIds = session.selectedClipIds.filter((id) => id !== clip.id)
+  if (session.selectedClip >= session.clips.length) session.selectedClip = session.clips.length - 1
+  markDirty()
 }
 
 export function duplicateClip (clip) {
   if (!clip) return
-  fire('clip.duplicate', { clipId: clip.id })
+  if (isEngineConnected()) {
+    fire('clip.duplicate', { clipId: clip.id })
+    return
+  }
+  const copy = JSON.parse(JSON.stringify(clip))
+  copy.id = nextId(session.clips)
+  copy.startBeat = (clip.startBeat || 0) + (clip.lengthBeats || 0)
+  session.clips.push(copy)
+  session.selectedClipIds = [copy.id]
+  session.selectedClip = session.clips.length - 1
+  markDirty()
 }
 
 export function resizeClip (clip, startBeat, lengthBeats) {
@@ -1858,7 +1909,7 @@ export function orchestraPatchCatalogue () {
           ...item,
           available: connected,
           requiresEngine: true,
-          sourcePlugin: connected ? (item.sourcePlugin || '') : '需要电脑上的 DawWeb 引擎'
+          sourcePlugin: connected ? (item.sourcePlugin || '') : 'Needs the DawWeb engine on your PC'
         }
       })
     }))
@@ -1974,7 +2025,7 @@ export function loadCloudOrchestra (track, definitionId) {
   track.source = 'm-orchestra'
   track.definitionId = id
   track.instrument = (item && item.name) || 'M Orchestra'
-  track.techniqueId = track.techniqueId || ((item && item.family === 'percussion') ? 'm_orch_hit' : 'm_orch_long')
+  track.techniqueId = cloudTechniqueFor(id, track.techniqueId)
   if (!track.controllerValues) track.controllerValues = { dynamics: 100, expression: 100, vibrato: 40 }
   track.loadState = 'Ready'
   track.loadMessage = 'Cloud M Orchestra'
@@ -2257,6 +2308,30 @@ export function showToast (text) {
   }, 1800)
 }
 
+let undoToastAction = null
+let undoToastTimer = 0
+
+/** A toast with an Undo button; the action runs only if Undo is tapped within 5 s. */
+export function showUndoToast (text, action) {
+  if (undoToastTimer) clearTimeout(undoToastTimer)
+  undoToastAction = action || null
+  session.undoToast = { text, id: Date.now() }
+  undoToastTimer = setTimeout(() => {
+    undoToastTimer = 0
+    undoToastAction = null
+    session.undoToast = null
+  }, 5000)
+}
+
+export function runUndoToast () {
+  const action = undoToastAction
+  if (undoToastTimer) clearTimeout(undoToastTimer)
+  undoToastTimer = 0
+  undoToastAction = null
+  session.undoToast = null
+  if (action) action()
+}
+
 export function closeMenus () {
   session.openMenu = ''
 }
@@ -2342,19 +2417,30 @@ export async function redoEdit () {
   session.canRedo = localRedo.length > 0
 }
 
+/** True for both touch shells (Lite and LE). */
 export function isLite () {
   return isLiteMode(session.interfaceMode)
 }
 
+/** 'professional' | 'lite' | 'le' */
+export function interfaceShell () {
+  return interfaceShellOf(session.interfaceMode)
+}
+
+/** The rebuilt tablet shell only, not LE. */
+export function isNewLite () {
+  return interfaceShell() === INTERFACE_LITE
+}
+
 export function setInterfaceMode (mode) {
-  const next = mode === INTERFACE_PROFESSIONAL ? INTERFACE_PROFESSIONAL : INTERFACE_LITE
+  const next = normalizeInterfaceMode(mode)
   if (session.interfaceMode === next) return
   session.interfaceMode = next
   writeInterfaceMode(next)
   session.settingsOpen = false
   session.liteSheet = null
   session.openMenu = ''
-  if (next === INTERFACE_LITE) {
+  if (next !== INTERFACE_PROFESSIONAL) {
     session.inspectorVisible = false
     session.diagnosticsVisible = false
     const invalid = session.workspaceView === 'sampler'
@@ -2489,10 +2575,17 @@ export function deleteClipSustain (clip, index) {
   markDirty()
 }
 
+let lastInsertToggle = { id: '', at: 0 }
+
 export function toggleInsertEnabled (lane, index) {
   const list = laneInserts(session.webMixer, lane).slice()
   const insert = list[index]
   if (!insert) return
+  // One tablet tap can deliver two events; a double flip leaves bypass unchanged.
+  const now = Date.now()
+  const id = insert.instanceId || insert.id || String(index)
+  if (lastInsertToggle.id === id && now - lastInsertToggle.at < 300) return
+  lastInsertToggle = { id, at: now }
   insert.enabled = insert.enabled === false
   setLaneInserts(session.webMixer, lane, list)
   syncTrackInsertMeta(lane)
@@ -2719,7 +2812,9 @@ export function duplicateSelectedClips () {
   const clips = selectedClips()
   if (!clips.length) return
   beginEdit('Duplicate clips')
+  const before = new Set(session.clips.map((clip) => clip.id))
   clips.forEach((clip) => duplicateClip(clip))
+  if (!isEngineConnected()) session.selectedClipIds = session.clips.filter((clip) => !before.has(clip.id)).map((clip) => clip.id)
   endEdit()
 }
 
@@ -3562,32 +3657,31 @@ function tickLocalNotes (nowBeats) {
   const lookSec = scheduleAheadSec()
   const lookBeats = lookSec * (Math.max(20, Number(session.bpm) || 120) / 60)
   session.clips.forEach((clip) => {
-    if (!clip || clip.midi === false) return
+    if (!clip || clip.midi === false || clip.muted) return
     const track = session.tracks[clip.trackIndex]
     if (!track || track.type === 'master' || !isTrackAudible(clip.trackIndex)) return
     const browserOwned = track.source === 'web-sampler' || isCloudSamplerTrack(track)
     if (session.remoteAudioOn && !browserOwned) return
-    ;(clip.notes || []).forEach((note) => {
-      if (note.muted) return
-      expandRepeats(note).forEach((slice) => {
-        const start = (clip.startBeat || 0) + (slice.start != null ? slice.start : (slice.startTick || 0) / TICKS_PER_BEAT)
-        const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
-        if (nowBeats + lookBeats < start || nowBeats >= start + duration) return
-        const key = (clip.id || 0) + ':' + (note.id || 0) + ':' + (slice.startTick || start) + ':' + slice.pitch
-        next.add(key)
-        if (!soundingNotes.has(key)) {
-          if (isOrchestraVTrack(track) && audioGraph && !orchestraVCloud.noteReady(audioGraph, track, slice.pitch, noteVelocity(slice))) {
-            return
-          }
-          const when = ctx && isOrchestraVTrack(track)
-            ? ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / Math.max(20, Number(session.bpm) || 120))
-            : undefined
-          const voiceKey = isCloudSamplerTrack(track)
-            ? previewCloudSampler(track, slice.pitch, noteVelocity(slice), key, when)
-            : previewWebSampler(track, slice.pitch, noteVelocity(slice), key)
-          soundingNotes.set(key, voiceKey)
+    const clipStart = clip.startBeat || 0
+    if (nowBeats + lookBeats < clipStart || nowBeats >= clipStart + Math.max(0.25, clip.lengthBeats || 0)) return
+    clipPlaybackNotes(clip).forEach((item) => {
+      const start = clipStart + item.start
+      if (nowBeats + lookBeats < start || nowBeats >= start + item.duration) return
+      const key = (clip.id || 0) + ':' + item.key + ':' + item.pitch
+      next.add(key)
+      if (!soundingNotes.has(key)) {
+        const velocity = noteVelocity(item.note)
+        if (isOrchestraVTrack(track) && audioGraph && !orchestraVCloud.noteReady(audioGraph, track, item.pitch, velocity)) {
+          return
         }
-      })
+        const when = ctx && isOrchestraVTrack(track)
+          ? ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / Math.max(20, Number(session.bpm) || 120))
+          : undefined
+        const voiceKey = isCloudSamplerTrack(track)
+          ? previewCloudSampler(track, item.pitch, velocity, key, when)
+          : previewWebSampler(track, item.pitch, velocity, key)
+        soundingNotes.set(key, voiceKey)
+      }
     })
   })
   Array.from(soundingNotes.entries()).forEach(([key, voiceKey]) => {
@@ -4011,6 +4105,39 @@ export function removeInsert (lane, index) {
     ensureMixerAttached().catch(() => {})
   }
   if (session.openPlugin && session.openPlugin.index === index) closePlugin()
+}
+
+/** Remove an insert straight away and offer a 5 s Undo that puts it back in its slot. */
+export function removeInsertWithUndo (lane, index) {
+  const list = laneInserts(session.webMixer, lane)
+  const removed = list[index]
+  if (!removed) return
+  const name = (plugins[removed.pluginId] && plugins[removed.pluginId].name) || 'effect'
+  const saved = JSON.parse(JSON.stringify(removed))
+  const laneCopy = { type: lane.type, id: lane.id }
+  removeInsert(lane, index)
+  showUndoToast('Removed ' + name, () => restoreInsert(laneCopy, index, saved))
+}
+
+export function restoreInsert (lane, index, insert) {
+  if (!insert) return
+  const list = laneInserts(session.webMixer, lane).slice()
+  while (list.length < MIXER_INSERT_SLOTS) list.push(null)
+  if (list[index]) {
+    const free = list.findIndex((slot) => !slot)
+    if (free < 0) {
+      showToast('Maximum 5 effects on this channel')
+      return
+    }
+    index = free
+  }
+  list[index] = insert
+  setLaneInserts(session.webMixer, lane, list)
+  syncTrackInsertMeta(lane)
+  persistWebMixer()
+  unlockAudio().then(() => ensureMixerAttached()).then((graph) => {
+    if (graph && graph.mixerNodes) refreshMixerGraph()
+  }).catch(() => {})
 }
 
 export function loadDemoFxChain () {

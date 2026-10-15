@@ -1,23 +1,30 @@
 <template>
-  <daw-lite-sheet :open="session.settingsOpen" title="Settings" @close="closeSettings">
+  <daw-le-sheet :open="session.settingsOpen" title="Settings" @close="closeSettings">
     <text class="cap">Interface Mode</text>
     <view class="radios">
-      <view class="radio" :class="{ on: !lite }" @click="setInterfaceMode('professional')">
+      <view class="radio" :class="{ on: shell === 'professional' }" @click="setInterfaceMode('professional')">
         <view class="dot" />
         <view class="copy">
           <text class="lab">Professional</text>
           <text class="sub">Full desktop layout</text>
         </view>
       </view>
-      <view class="radio" :class="{ on: lite }" @click="setInterfaceMode('lite')">
+      <view class="radio" :class="{ on: shell === 'lite' }" @click="setInterfaceMode('lite')">
         <view class="dot" />
         <view class="copy">
           <text class="lab">Lite</text>
-          <text class="sub">Mobile-first arrangement, piano roll, mixer</text>
+          <text class="sub">Tablet layout</text>
+        </view>
+      </view>
+      <view class="radio" :class="{ on: shell === 'le' }" @click="setInterfaceMode('le')">
+        <view class="dot" />
+        <view class="copy">
+          <text class="lab">LE</text>
+          <text class="sub">Previous mobile layout</text>
         </view>
       </view>
     </view>
-    <text class="note">Both modes edit the same project. Switching does not reload.</text>
+    <text class="note">All modes edit the same project. Switching does not reload.</text>
     <view class="row">
       <text>Snap</text>
       <view class="chip" @click="toggleSnap">{{ session.snap ? 'On' : 'Off' }}</view>
@@ -43,17 +50,17 @@
       @change="onHost"
     >
     <text class="note">{{ hostHint }}</text>
-  </daw-lite-sheet>
+  </daw-le-sheet>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import DawLiteSheet from './daw-lite-sheet.vue'
+import DawLeSheet from './daw-le-sheet.vue'
 import {
   session,
   closeSettings,
   setInterfaceMode,
-  isLite,
+  interfaceShell,
   toggleSnap,
   toggleMetronome,
   engineState,
@@ -64,7 +71,7 @@ import {
 } from '../store/session.js'
 import { engineHostHintText, parseEngineHost } from '../bridge/engine.js'
 
-const lite = computed(() => isLite())
+const shell = computed(() => interfaceShell())
 const host = ref(engineHostValue())
 const hostHint = computed(() => engineHostHintText({ parsed: parseEngineHost(host.value) }))
 const cloud = computed(() => isCloudMode())

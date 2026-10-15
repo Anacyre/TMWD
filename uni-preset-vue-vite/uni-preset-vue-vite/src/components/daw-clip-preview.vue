@@ -11,8 +11,11 @@ const props = defineProps({
   revision: { type: Number, default: 0 }
 })
 
+const MAX_ROW_PX = 5
+
 const hostRef = ref(null)
 let canvasEl = null
+let resizeObserver = null
 
 function resolveHost () {
   let el = hostRef.value
@@ -31,6 +34,10 @@ function mountCanvas () {
   el.style.cssText = 'width:100%;height:100%;display:block;pointer-events:none;'
   parent.appendChild(el)
   canvasEl = el
+  if (typeof ResizeObserver === 'function') {
+    resizeObserver = new ResizeObserver(() => paint())
+    resizeObserver.observe(parent)
+  }
   return el
 }
 
@@ -49,30 +56,37 @@ function paint () {
   if (!ctx) return
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
-  const cols = buildClipPreview(props.clip)
-  if (!cols.length) return
-  const rows = (cols[0] && cols[0].length) || 8
-  const cw = width / cols.length
-  const rh = height / rows
+  const model = buildClipPreview(props.clip)
+  if (!model.bars.length) return
+  const rows = model.hi - model.lo + 1
+  const rh = Math.min(MAX_ROW_PX, height / rows)
+  const top = (height - rh * rows) / 2
+  const barH = Math.max(1, rh - (rh > 2.5 ? 1 : 0))
   ctx.fillStyle = '#fff'
-  for (let x = 0; x < cols.length; x++) {
-    const col = cols[x]
-    for (let y = 0; y < rows; y++) {
-      const cell = col[y]
-      if (!(cell > 0)) continue
-      ctx.globalAlpha = cell
-      ctx.fillRect(x * cw + cw * 0.1, height - (y + 1) * rh, cw * 0.8, rh * 0.9)
-    }
-  }
+  model.bars.forEach((bar) => {
+    const x = bar.x0 * width
+    const w = Math.max(1.5, (bar.x1 - bar.x0) * width - 1)
+    const y = top + (model.hi - bar.pitch) * rh
+    ctx.globalAlpha = bar.alpha
+    ctx.fillRect(x, y, w, barH)
+  })
   ctx.globalAlpha = 1
 }
 
-watch(() => [props.clip && props.clip.id, props.revision, props.clip && props.clip.lengthBeats], () => {
+watch(() => [
+  props.clip && props.clip.id,
+  props.revision,
+  props.clip && props.clip.lengthBeats,
+  props.clip && props.clip.loopLengthBeats,
+  props.clip && props.clip.notes && props.clip.notes.length
+], () => {
   nextTick(paint)
 })
 
 onMounted(() => { nextTick(paint) })
 onUnmounted(() => {
+  if (resizeObserver) resizeObserver.disconnect()
+  resizeObserver = null
   if (canvasEl && canvasEl.parentNode) canvasEl.parentNode.removeChild(canvasEl)
   canvasEl = null
 })

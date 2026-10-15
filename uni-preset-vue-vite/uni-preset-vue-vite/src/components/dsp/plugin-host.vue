@@ -1,8 +1,31 @@
 <template>
-  <view v-if="session.openPlugin" class="host" :class="{ lite: lite }" @click.self="onHostClick">
-      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite, 'viz-off': !vizOn, 'compact-plugin': lite || narrow }]" @click.stop>
-        <view class="grab" :class="{ 'head-lite': lite }">
-          <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin" @tap="changePlugin">
+  <view v-if="session.openPlugin" class="host" :class="{ lite: lite && !full, full }" @click.self="onHostClick">
+      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite && !full, 'viz-off': !vizOn, 'compact-plugin': !full && (lite || narrow), 'full-plugin': full }]" @click.stop>
+        <view v-if="full" class="full-head">
+          <view
+            class="full-btn power"
+            :class="{ off: insert && insert.enabled === false }"
+            :title="insert && insert.enabled === false ? 'Turn on' : 'Bypass'"
+            @click="toggleBypass"
+          >
+            <daw-icon name="power" :size="20" color="currentColor" />
+          </view>
+          <text class="full-title">{{ pluginTitle }}</text>
+          <text v-if="insert && insert.enabled === false" class="full-state">Bypassed</text>
+          <text v-else-if="visNotice" class="full-state">{{ visNotice }}</text>
+          <view class="full-spacer" />
+          <view class="full-btn" title="Change effect" @click="changePlugin">
+            <daw-icon name="swap" :size="20" color="currentColor" />
+          </view>
+          <view class="full-btn danger" title="Remove effect" @click="remove">
+            <daw-icon name="trash" :size="20" color="currentColor" />
+          </view>
+          <view class="full-btn" title="Close" @click="close">
+            <daw-icon name="close" :size="20" color="currentColor" />
+          </view>
+        </view>
+        <view v-else class="grab" :class="{ 'head-lite': lite }">
+          <view class="grab-btn" title="Change plugin" aria-label="Change plugin" @click="changePlugin">
             <daw-icon name="swap" :size="18" />
           </view>
           <view
@@ -12,7 +35,6 @@
             title="Show or hide the graph"
             aria-label="Show or hide the graph"
             @click.stop="vizOn = !vizOn"
-            @tap.stop="vizOn = !vizOn"
           >
             <daw-icon name="wave" :size="18" />
           </view>
@@ -22,12 +44,11 @@
             title="Remove plugin"
             aria-label="Remove plugin"
             @click="remove"
-            @tap="remove"
           >
             <daw-icon name="trash" :size="18" />
           </view>
           <text v-if="visNotice" class="grab-state">{{ visNotice }}</text>
-          <view class="grab-btn close" title="Close" aria-label="Close" @click="close" @tap="close">
+          <view class="grab-btn close" title="Close" aria-label="Close" @click="close">
             <daw-icon name="close" :size="18" />
           </view>
         </view>
@@ -99,7 +120,20 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from '../daw-icon.vue'
-import { session, closePlugin, persistWebMixer, getFxAnalyser, getFxMeterPayload, removeInsert, openLiteSheet, isLite } from '../../store/session.js'
+import {
+  session,
+  closePlugin,
+  persistWebMixer,
+  getFxAnalyser,
+  getFxMeterPayload,
+  removeInsert,
+  removeInsertWithUndo,
+  toggleInsertEnabled,
+  openLiteSheet,
+  isLite,
+  isNewLite
+} from '../../store/session.js'
+import { plugins } from '../../dsp/registry.js'
 import { resolveOpenInsert, fxMeterLaneKey, laneFromOpen } from '../../model/web-mixer.js'
 import { pickPluginSpectrum, pickPreSpectrum, metersForInsert, visualState, visualStateLabel, VIS_UNATTACHED } from '../../dsp/runtime.js'
 import PluginReverbX from './plugin-reverb-x.vue'
@@ -113,6 +147,7 @@ import './dsp-theme.css'
 import './lite-plugin-surface.css'
 
 const lite = computed(() => isLite())
+const full = computed(() => isNewLite())
 const narrow = ref(false)
 const vizOn = ref(true)
 
@@ -125,6 +160,10 @@ const liveMeters = ref({})
 const liveState = ref('')
 const insert = computed(() => resolveOpenInsert(session.webMixer, session.openPlugin, session.tracks))
 const isVitalLite = computed(() => isVitalLiteId(insert.value && insert.value.pluginId))
+const pluginTitle = computed(() => {
+  const id = insert.value && insert.value.pluginId
+  return (id && plugins[id] && plugins[id].name) || 'Effect'
+})
 const skinClass = computed(() => {
   const id = insert.value && insert.value.pluginId
   if (id === 'equalizer-x') return 'dsp-skin skin-eq'
@@ -218,13 +257,23 @@ function onHostClick () {
 function remove () {
   const open = session.openPlugin
   if (!open) return
-  removeInsert(laneFromOpen(open), open.index)
+  if (full.value) removeInsertWithUndo(laneFromOpen(open), open.index)
+  else removeInsert(laneFromOpen(open), open.index)
   closePlugin()
+}
+function toggleBypass () {
+  const open = session.openPlugin
+  if (open) toggleInsertEnabled(laneFromOpen(open), open.index)
 }
 function changePlugin () {
   const open = session.openPlugin
   if (!open) return
   const lane = laneFromOpen(open)
+  if (full.value) {
+    closePlugin()
+    openLiteSheet({ kind: 'fx', lane: { type: lane.type, id: lane.id }, slot: open.index, replace: true })
+    return
+  }
   const trackIndex = lane && lane.type === 'track'
     ? session.tracks.findIndex((track) => String(track.id) === String(lane.id))
     : session.tracks.findIndex((track) => track.type === 'master')
@@ -312,6 +361,61 @@ function onChange () { persistWebMixer() }
   max-height: calc(78vh - 56px);
   overflow: auto;
 }
+.host.full {
+  padding: 0;
+  background: #0b0c0e;
+}
+.host.full .sheet {
+  width: 100%;
+  height: 100%;
+  max-width: none;
+  max-height: none;
+  border: none;
+  border-radius: 0;
+  padding: 0 max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
+  box-shadow: none;
+}
+.full-head {
+  height: 60px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: env(safe-area-inset-top, 0px);
+  color: #26282C;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+.full-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #4A4E56;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.full-btn:active { background: rgba(38, 40, 44, 0.08); }
+.full-btn.danger { color: #C4503C; }
+.full-btn.power { color: #2E9E6A; }
+.full-btn.power.off { color: #A0A4AC; }
+.full-title {
+  font-size: 17px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.full-state {
+  font-size: 12px;
+  color: #B0764A;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.full-spacer { flex: 1; }
+.sheet:has(.vital-on) .full-head,
+.sheet:has(.vital-on) .full-btn { color: #c5ced6; }
 .grab-btn.on { color: #26282C; background: rgba(38, 40, 44, 0.08); }
 .sheet.compact-plugin :deep(.k),
 .sheet.compact-plugin :deep(.sz-sm) { width: 96px; }

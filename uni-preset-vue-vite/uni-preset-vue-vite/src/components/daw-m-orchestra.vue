@@ -116,7 +116,8 @@ import {
   mOrchestraInstrument,
   cloudTechniquesFor,
   CLOUD_CONTROLLERS,
-  isMOrchestraTrack
+  isMOrchestraTrack,
+  keyboardStartFor
 } from '../model/m-orchestra-ui.js'
 import {
   session,
@@ -248,11 +249,12 @@ const hasHiddenKnobs = computed(() => dense.value && knobs.value.length > 3)
 
 // A shorter span on phones keeps each white key wide enough for a thumb.
 const keys = computed(() => {
-  const top = dense.value ? 67 : 72
+  const low = keyboardStartFor(selectedId.value)
+  const top = low + (dense.value ? 19 : 24)
   const whites = []
   const blacks = []
   let whiteIndex = 0
-  for (let pitch = 48; pitch <= top; pitch++) {
+  for (let pitch = low; pitch <= top; pitch++) {
     const pc = pitch % 12
     const black = pc === 1 || pc === 3 || pc === 6 || pc === 8 || pc === 10
     if (black) blacks.push({ pitch, black: true, whiteIndex })

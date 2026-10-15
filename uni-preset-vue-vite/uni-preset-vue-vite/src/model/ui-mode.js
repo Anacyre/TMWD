@@ -5,13 +5,19 @@ export const LITE_HINT_KEY = 'dawweb.liteHintDismissed'
 
 export const INTERFACE_PROFESSIONAL = 'professional'
 export const INTERFACE_LITE = 'lite'
+/** The previous touch shell, kept as-is for users who prefer it. */
+export const INTERFACE_LE = 'le'
+
+const MODES = [INTERFACE_PROFESSIONAL, INTERFACE_LITE, INTERFACE_LE]
+
+export function normalizeInterfaceMode (mode) {
+  return MODES.includes(mode) ? mode : INTERFACE_LITE
+}
 
 export function readInterfaceMode () {
   if (typeof localStorage === 'undefined') return INTERFACE_LITE
   try {
-    const value = localStorage.getItem(INTERFACE_MODE_KEY)
-    if (value === INTERFACE_PROFESSIONAL) return INTERFACE_PROFESSIONAL
-    return INTERFACE_LITE
+    return normalizeInterfaceMode(localStorage.getItem(INTERFACE_MODE_KEY))
   } catch (err) {
     return INTERFACE_LITE
   }
@@ -20,7 +26,7 @@ export function readInterfaceMode () {
 export function writeInterfaceMode (mode) {
   if (typeof localStorage === 'undefined') return
   try {
-    localStorage.setItem(INTERFACE_MODE_KEY, mode === INTERFACE_PROFESSIONAL ? INTERFACE_PROFESSIONAL : INTERFACE_LITE)
+    localStorage.setItem(INTERFACE_MODE_KEY, normalizeInterfaceMode(mode))
   } catch (err) { /* private mode */ }
 }
 
@@ -40,6 +46,12 @@ export function writeLiteHintDismissed () {
   } catch (err) { /* private mode */ }
 }
 
+/** True for both touch shells (Lite and LE). Shared components key touch behaviour off this. */
 export function isLiteMode (mode) {
-  return mode !== INTERFACE_PROFESSIONAL
+  return normalizeInterfaceMode(mode) !== INTERFACE_PROFESSIONAL
+}
+
+/** Which shell to mount: 'professional' | 'lite' | 'le'. */
+export function interfaceShellOf (mode) {
+  return normalizeInterfaceMode(mode)
 }

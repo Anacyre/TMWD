@@ -42,8 +42,6 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { fmtDb, peakToDb, peakToMeterT } from './dsp-theme.js'
-import { beginPointerDrag } from '../../lib/pointer-drag.js'
-
 const props = defineProps({
   level: { type: Number, default: 0 },
   levelR: { type: Number, default: null },
@@ -84,12 +82,18 @@ const dbText = computed(() => {
   return fmtDb(peakToDb(peak), 1)
 })
 const gainText = computed(() => fmtDb(Number(props.gain) || 0, 1))
+const ticks = SCALE_TICKS
+const thumbStyle = computed(() => ({ bottom: (gainT.value * 100) + '%' }))
 
 function dbMark (db) {
   const t = Math.min(1, Math.max(0, (db - METER_MIN_DB) / (METER_MAX_DB - METER_MIN_DB)))
   if (t <= 0.01) return '2px'
   if (t >= 0.99) return 'calc(100% - 9px)'
   return (t * 100) + '%'
+}
+
+function tickStyle (mark) {
+  return { bottom: dbMark(mark) }
 }
 
 function fillStyle (peak) {

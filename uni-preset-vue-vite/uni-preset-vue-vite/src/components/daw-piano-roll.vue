@@ -4,7 +4,7 @@
       <text>PIANO ROLL</text>
       <text class="sub">{{ clip ? clip.name : 'No clip selected' }}</text>
       <view class="spacer" />
-      <view class="icon-btn" @click.stop="closeEditor" @tap.stop="closeEditor">×</view>
+      <view class="icon-btn" @click.stop="closeEditor">×</view>
     </view>
 
     <view v-if="!lite" class="tools">
@@ -52,8 +52,8 @@
       <daw-expression-panel
         v-if="lite"
         :selected-notes="selectedNotes"
-        :pixels-per-beat="view.pixelsPerBeat"
-        :scroll-x="view.scrollX"
+        :pixels-per-beat="panelView.pixelsPerBeat"
+        :scroll-x="panelView.scrollX"
         @velocity="patchVelocityFromPanel"
       />
       <view v-if="lite && selectedNotes.length" class="note-bar">
@@ -237,6 +237,7 @@ const snapLabel = computed(() => snapPresets.find((item) => item.id === snapId.v
 
 const view = defaultView()
 view.snapId = '1/16'
+const panelView = reactive({ pixelsPerBeat: view.pixelsPerBeat, scrollX: view.scrollX })
 // 14 px rows are a desktop-mouse default; on touch they are hard to hit, so
 // lite starts zoomed in far enough that a note is a comfortable target.
 if (lite.value) {
@@ -376,6 +377,9 @@ function paint () {
   const velH = view.velocityHeight || 0
   const gridH = Math.max(1, height - gridY - velH)
   clampScroll(view, contentW, Math.max(1, width - view.keyboardWidth), gridH)
+  // `view` is a plain object mutated every frame; the lane below needs a reactive copy.
+  if (panelView.pixelsPerBeat !== view.pixelsPerBeat) panelView.pixelsPerBeat = view.pixelsPerBeat
+  if (panelView.scrollX !== view.scrollX) panelView.scrollX = view.scrollX
   const dpr = resizeCanvas(canvasEl, width, height)
   const ctx = canvasEl.getContext('2d')
   layout = drawPianoRoll(ctx, {
@@ -609,10 +613,6 @@ function onPointerMove (e) {
         startPreview(note.pitch, velocity / 127)
       }
     })
-    return
-  }
-  if (gesture.type === 'expression') {
-    applyExpression(p, gesture.erase)
     return
   }
   if (gesture.type === 'rubber') {

@@ -1,0 +1,116 @@
+/* Lite design tokens. One background, three surfaces, two text tones, one
+   accent. Separation comes from surface steps and hairlines, not borders. */
+.lt {
+  --lt-bg: #0b0c0e;
+  --lt-s1: #131418;
+  --lt-s2: #1a1c21;
+  --lt-s3: #23262c;
+  --lt-line: rgba(255, 255, 255, 0.06);
+  --lt-line-2: rgba(255, 255, 255, 0.1);
+  --lt-ink: #ececee;
+  --lt-ink-2: #8b8e96;
+  --lt-accent: #6aa8ff;
+  --lt-accent-soft: rgba(106, 168, 255, 0.16);
+  --lt-warn: #ff6b5e;
+  --lt-ok: #4cc38a;
+  --lt-radius: 10px;
+  --lt-radius-lg: 14px;
+  --lt-hit: 44px;
+  --lt-fs-s: 13px;
+  --lt-fs-m: 15px;
+  --lt-fs-l: 20px;
+  --lt-font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Inter', 'Segoe UI', sans-serif;
+  font-family: var(--lt-font);
+  color: var(--lt-ink);
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.lt .lt-hit {
+  min-width: var(--lt-hit);
+  height: var(--lt-hit);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--lt-radius);
+  color: var(--lt-ink);
+  flex-shrink: 0;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.lt .lt-hit:active { background: var(--lt-s3); }
+.lt .lt-hit.dim { opacity: 0.32; }
+
+.lt .lt-seg {
+  display: flex;
+  padding: 3px;
+  gap: 2px;
+  background: var(--lt-s2);
+  border-radius: var(--lt-radius);
+}
+.lt .lt-seg-item {
+  min-width: 72px;
+  height: 36px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  font-size: var(--lt-fs-s);
+  font-weight: 500;
+  color: var(--lt-ink-2);
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+.lt .lt-seg-item.on { background: var(--lt-s3); color: var(--lt-ink); }
+.lt .lt-seg-item.off { opacity: 0.35; pointer-events: none; }
+
+.lt .lt-chip {
+  height: 36px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 18px;
+  background: var(--lt-s2);
+  color: var(--lt-ink);
+  font-size: var(--lt-fs-s);
+  cursor: pointer;
+  box-sizing: border-box;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.lt .lt-chip > *, .lt .lt-seg-item > * { white-space: nowrap; flex-shrink: 0; }
+.lt .lt-chip > .icon, .lt .lt-seg-item > .icon { width: auto; height: auto; }
+.lt .lt-chip.on { background: var(--lt-accent-soft); color: var(--lt-accent); }
+.lt .lt-chip.off { opacity: 0.35; pointer-events: none; }
+
+.lt .lt-row {
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 4px;
+  font-size: var(--lt-fs-m);
+  color: var(--lt-ink);
+  box-shadow: inset 0 -1px 0 var(--lt-line);
+  cursor: pointer;
+}
+.lt .lt-row:last-child { box-shadow: none; }
+.lt .lt-row.danger { color: var(--lt-warn); }
+.lt .lt-row .grow { flex: 1; min-width: 0; }
+.lt .lt-row .sub { color: var(--lt-ink-2); font-size: var(--lt-fs-s); }
+
+.lt .lt-cap {
+  display: block;
+  color: var(--lt-ink-2);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin: 18px 0 8px;
+}
+.lt .lt-cap:first-child { margin-top: 0; }

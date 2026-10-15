@@ -3,13 +3,13 @@
     <view class="head">
       <text class="title">MIX</text>
       <view class="modes">
-        <view class="mode" :class="{ on: session.mixerMode === 'compact' }" @click="setMode('compact')" @tap="setMode('compact')">Compact</view>
-        <view class="mode" :class="{ on: session.mixerMode === 'detail' }" @click="setMode('detail')" @tap="setMode('detail')">Detail</view>
+        <view class="mode" :class="{ on: session.mixerMode === 'compact' }" @click="setMode('compact')">Compact</view>
+        <view class="mode" :class="{ on: session.mixerMode === 'detail' }" @click="setMode('detail')">Detail</view>
       </view>
       <view class="head-hits">
-        <view class="text-hit" :class="{ on: session.showSends }" @click.stop="toggleSends" @tap.stop="toggleSends">Sends</view>
-        <view class="text-hit" @click.stop="loadDemoFxChain" @tap.stop="loadDemoFxChain">Demo</view>
-        <view class="icon-close" @click.stop="toggleMixer" @tap.stop="toggleMixer">
+        <view class="text-hit" :class="{ on: session.showSends }" @click.stop="toggleSends">Sends</view>
+        <view class="text-hit" @click.stop="loadDemoFxChain">Demo</view>
+        <view class="icon-close" @click.stop="toggleMixer">
           <daw-icon name="chevron" :size="18" />
         </view>
       </view>
@@ -24,7 +24,6 @@
           class="strip"
           :class="{ on: isSelected(track), dim: !isTrackAudible(session.tracks.indexOf(track)) }"
           @click="focusTrack(track)"
-          @tap="focusTrack(track)"
         >
           <view class="strip-body">
             <view class="strip-head">
@@ -40,7 +39,6 @@
                 class="slot"
                 :class="slotClass(webTrackInsert(track, slot - 1))"
                 @click.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
-                @tap.stop="onInsert({ type: 'track', id: track.id }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'track', id: track.id }, slot - 1)"
                 @pointerdown.stop="beginSlotDrag({ type: 'track', id: track.id }, slot - 1, $event)"
               >{{ slotLabel(webTrackInsert(track, slot - 1)) }}</view>
@@ -91,8 +89,8 @@
             </view>
             <text class="db">{{ formatVolumeDb(dbFromFader(track.volume)) }}</text>
             <view class="toggles">
-              <view class="tog mute" :class="{ on: track.mute }" @click.stop="setTrackParameter(track, 'mute', !track.mute)" @tap.stop="setTrackParameter(track, 'mute', !track.mute)">M</view>
-              <view class="tog solo" :class="{ on: track.solo }" @click.stop="setTrackParameter(track, 'solo', !track.solo)" @tap.stop="setTrackParameter(track, 'solo', !track.solo)">S</view>
+              <view class="tog mute" :class="{ on: track.mute }" @click.stop="setTrackParameter(track, 'mute', !track.mute)">M</view>
+              <view class="tog solo" :class="{ on: track.solo }" @click.stop="setTrackParameter(track, 'solo', !track.solo)">S</view>
             </view>
           </view>
         </view>
@@ -101,7 +99,6 @@
           class="strip fx"
           :class="{ on: lane.type === 'remote' }"
           @click="focusLane({ type: 'remote' })"
-          @tap="focusLane({ type: 'remote' })"
         >
           <view class="strip-body">
             <text class="name">Mix</text>
@@ -113,7 +110,6 @@
                 class="slot"
                 :class="slotClass(remoteInsert(slot - 1))"
                 @click.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
-                @tap.stop="onInsert({ type: 'remote' }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'remote' }, slot - 1)"
                 @pointerdown.stop="beginSlotDrag({ type: 'remote' }, slot - 1, $event)"
               >{{ slotLabel(remoteInsert(slot - 1)) }}</view>
@@ -149,7 +145,6 @@
           class="strip fx return"
           :class="{ on: lane.type === 'bus' && lane.id === bus.id, dim: bus.mute }"
           @click="focusLane({ type: 'bus', id: bus.id })"
-          @tap="focusLane({ type: 'bus', id: bus.id })"
         >
           <view class="strip-body">
             <text class="name">↻ {{ bus.name }}</text>
@@ -161,7 +156,6 @@
                 class="slot"
                 :class="slotClass(busInsert(bus, slot - 1))"
                 @click.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
-                @tap.stop="onInsert({ type: 'bus', id: bus.id }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'bus', id: bus.id }, slot - 1)"
                 @pointerdown.stop="beginSlotDrag({ type: 'bus', id: bus.id }, slot - 1, $event)"
               >{{ slotLabel(busInsert(bus, slot - 1)) }}</view>
@@ -182,8 +176,8 @@
             </view>
             <text class="db">{{ formatVolumeDb(bus.volumeDb != null ? bus.volumeDb : dbFromFader(bus.volume)) }}</text>
             <view class="toggles">
-              <view class="tog mute" :class="{ on: bus.mute }" @click.stop="toggleBusMute(bus)" @tap.stop="toggleBusMute(bus)">M</view>
-              <view class="tog solo" :class="{ on: bus.solo }" @click.stop="toggleBusSolo(bus)" @tap.stop="toggleBusSolo(bus)">S</view>
+              <view class="tog mute" :class="{ on: bus.mute }" @click.stop="toggleBusMute(bus)">M</view>
+              <view class="tog solo" :class="{ on: bus.solo }" @click.stop="toggleBusSolo(bus)">S</view>
             </view>
           </view>
         </view>
@@ -195,7 +189,6 @@
       class="strip master"
       :class="{ on: isSelected(master) || lane.type === 'master', clip: masterClip }"
       @click="focusMaster"
-      @tap="focusMaster"
     >
       <view class="strip-body">
         <text class="name">Master</text>
@@ -207,7 +200,6 @@
             class="slot"
             :class="slotClass(masterInsert(slot - 1))"
             @click.stop="onInsert({ type: 'master' }, slot - 1, $event)"
-            @tap.stop="onInsert({ type: 'master' }, slot - 1, $event)"
                 @contextmenu.prevent.stop="onSlotMenu({ type: 'master' }, slot - 1)"
                 @pointerdown.stop="beginSlotDrag({ type: 'master' }, slot - 1, $event)"
           >{{ slotLabel(masterInsert(slot - 1)) }}</view>
@@ -232,27 +224,26 @@
         </view>
         <text class="db">{{ formatVolumeDb(dbFromFader(master.volume)) }}</text>
         <view class="toggles">
-          <view class="tog mute" :class="{ on: master.mute }" @click.stop="setTrackParameter(master, 'mute', !master.mute)" @tap.stop="setTrackParameter(master, 'mute', !master.mute)">M</view>
+          <view class="tog mute" :class="{ on: master.mute }" @click.stop="setTrackParameter(master, 'mute', !master.mute)">M</view>
           <view class="tog clip" :class="{ on: masterClip }">CLIP</view>
         </view>
       </view>
     </view>
 
     <Teleport to="body">
-      <view v-if="picker" class="picker-mask" @click="picker = null" @tap="picker = null">
-        <view class="picker" @click.stop @tap.stop>
+      <view v-if="picker" class="picker-mask" @click="picker = null">
+        <view class="picker" @click.stop>
           <text class="pick-title">{{ picker.insert ? 'Replace' : 'Effect' }}</text>
           <view
             v-for="plugin in catalogue"
             :key="plugin.id"
             class="pick"
             @click="addPlugin(plugin.id)"
-            @tap="addPlugin(plugin.id)"
           >
             <text class="pick-short">{{ PLUGIN_SHORT[plugin.id] || plugin.name }}</text>
             <text class="pick-name">{{ plugin.name }}</text>
           </view>
-          <view v-if="picker.insert" class="pick remove" aria-label="Remove plugin" @click="removeCurrent" @tap="removeCurrent">
+          <view v-if="picker.insert" class="pick remove" aria-label="Remove plugin" @click="removeCurrent">
             <daw-icon name="trash" :size="18" />
           </view>
         </view>

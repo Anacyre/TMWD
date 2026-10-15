@@ -6,7 +6,7 @@
       <text class="tab" :class="{ on: session.editorTab === 'automation' }" @click="setEditorTab('automation')">Automation</text>
       <text class="tab" :class="{ on: session.editorTab === 'info' }" @click="setEditorTab('info')">Track Info</text>
       <view class="spacer" />
-      <view class="icon-btn" @click.stop="closeEditor" @tap.stop="closeEditor">×</view>
+      <view class="icon-btn" @click.stop="closeEditor">×</view>
     </view>
     <daw-piano-roll v-if="session.editorTab === 'piano'" embedded />
     <daw-orchestra-v v-else-if="pluginTabOn && (session.editorTab === 'orchestra-v' || orchestraV)" />
