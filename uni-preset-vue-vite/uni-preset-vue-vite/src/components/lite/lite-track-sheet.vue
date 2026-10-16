@@ -135,9 +135,18 @@ const title = computed(() => {
 })
 
 const GROUPS = [
-  { label: 'Tone', ids: ['equalizer-x', 'boost-x'] },
-  { label: 'Dynamics', ids: ['dynamic-x', 'limiter-x'] },
-  { label: 'Space', ids: ['reverb-x'] }
+  {
+    label: 'Space',
+    ids: ['reverb-x', 'reverb-lite', 'delay-lite']
+  },
+  {
+    label: 'Tone',
+    ids: ['equalizer-x', 'equalizer-lite', 'filter-lite', 'boost-x', 'chorus-lite', 'flanger-lite', 'phaser-lite', 'distortion-lite']
+  },
+  {
+    label: 'Dynamics',
+    ids: ['dynamic-x', 'compressor-lite', 'limiter-x']
+  }
 ]
 const pluginGroups = computed(() => {
   const all = listPlugins()
@@ -157,11 +166,21 @@ const DETAIL = {
   'boost-x': 'Drive, width, chorus',
   'dynamic-x': 'Compressor',
   'limiter-x': 'Limiter',
-  'reverb-x': 'Reverb'
+  'reverb-x': 'Reverb',
+  'reverb-lite': 'Reverb',
+  'delay-lite': 'Delay',
+  'chorus-lite': 'Chorus',
+  'flanger-lite': 'Flanger',
+  'phaser-lite': 'Phaser',
+  'distortion-lite': 'Distortion',
+  'equalizer-lite': 'Equalizer',
+  'filter-lite': 'Filter',
+  'compressor-lite': 'Compressor'
 }
 
 function describe (plugin) {
-  return { id: plugin.id, name: plugin.name, detail: DETAIL[plugin.id] || '' }
+  const name = String(plugin.name || '').replace(/^VitalLite\s+/i, '')
+  return { id: plugin.id, name, detail: DETAIL[plugin.id] || '' }
 }
 
 function sameColour (a, b) { return String(a || '').toLowerCase() === String(b).toLowerCase() }

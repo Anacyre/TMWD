@@ -788,7 +788,16 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
   const artic = articForTrack(track, def)
   const velocityMidi = Math.round(Math.max(0.05, Math.min(1, velocity)) * 127)
   const layerVelocity = targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
-  const selection = selectZone(map, pitch, layerVelocity, articulationChain(artic), seqStateFor(track.id))
+  const contextForCache = graph.context
+  const selection = selectZone(
+    map,
+    pitch,
+    layerVelocity,
+    articulationChain(artic),
+    seqStateFor(track.id),
+    true,
+    (zone) => zoneHasBuffer(contextForCache, library, zone)
+  )
   if (!selection.length) {
     pending.delete(key)
     return null
@@ -1069,7 +1078,19 @@ function layerVelocityFor (track, def, velocity) {
   return targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
 }
 
-/** True when the zones this note will actually play are already PCM, or have failed. */
+function zoneHasBuffer (context, library, zone) {
+  if (!zone || !context) return false
+  return !!bufferCache.get(decodeKey(library, zone, context))
+}
+
+function zoneFailed (context, library, zone) {
+  if (!zone || !context) return false
+  return failedDecodes.has(decodeKey(library, zone, context))
+}
+
+/** True when every velocity layer this note can sound has some decoded variation.
+ * A chord shares one round-robin counter, so readiness follows the cached set
+ * rather than whichever variation the counter happens to be pointing at. */
 export function noteReady (graph, track, pitch, velocity = 0.8) {
   if (!graph || !track) return true
   const def = findDefinition(track.definitionId)
@@ -1077,19 +1098,26 @@ export function noteReady (graph, track, pitch, velocity = 0.8) {
   const map = regionMapFor(def.id)
   if (!map) return false
   const layerVelocity = layerVelocityFor(track, def, velocity)
-  const selection = selectZone(
+  const zones = zonesForVelocity(
     map,
     pitch,
     layerVelocity,
-    articulationChain(articForTrack(track, def)),
-    seqStateFor(track.id),
-    false
+    articulationChain(articForTrack(track, def))
   )
-  if (!selection.length) return true
-  return selection.every((item) => {
-    const key = decodeKey(map.library, item.zone, graph.context)
-    return failedDecodes.has(key) || !!bufferCache.get(key)
-  })
+  if (!zones.length) return true
+  const groups = new Map()
+  for (const item of zones) {
+    const list = groups.get(item.zone.group) || []
+    list.push(item)
+    groups.set(item.zone.group, list)
+  }
+  for (const list of groups.values()) {
+    if (list.some((item) => zoneHasBuffer(graph.context, map.library, item.zone))) continue
+    // A failed download must not hold the clock, and it must not count as the
+    // sample a later note is allowed to play.
+    if (!list.every((item) => zoneFailed(graph.context, map.library, item.zone))) return false
+  }
+  return true
 }
 
 /** Zones a pitch will play, so the transport can warm files without decoding them. */
@@ -1156,21 +1184,35 @@ export async function preloadNotes (graph, track, pitches, velocity = 0.8, prior
   const rules = playbackRules(library)
   const artic = articForTrack(track, def)
   const chain = articulationChain(artic)
-  const wanted = new Map()
+  const urgent = []
+  const later = []
+  const seen = new Set()
   const ordered = list.slice().sort((a, b) => (a.start || 0) - (b.start || 0))
   for (const event of ordered) {
     const pitch = Math.round(Number(event && event.pitch != null ? event.pitch : event))
     if (!Number.isFinite(pitch)) continue
     const vel = event && event.velocity != null ? event.velocity : velocity
     const layerVelocity = layerVelocityFor(track, def, vel)
+    const firstInGroup = new Set()
     for (const item of zonesForVelocity(map, pitch, layerVelocity, chain)) {
-      wanted.set(item.zone.sample, item.zone)
+      const sample = item.zone.sample
+      if (seen.has(sample)) continue
+      seen.add(sample)
+      const group = item.zone.group || sample
+      if (!firstInGroup.has(group)) {
+        firstInGroup.add(group)
+        urgent.push(item.zone)
+      } else {
+        later.push(item.zone)
+      }
     }
   }
   const pin = priority === true || priority === 'now'
-  await Promise.all(Array.from(wanted.values()).map(async (zone) => {
-    try { await decodeZone(graph.context, library, zone, rules, priority, pin) } catch (err) { /* retry on note-on */ }
-  }))
+  const decode = (zone, lanePriority, shouldPin) => decodeZone(graph.context, library, zone, rules, lanePriority, shouldPin).catch(() => {})
+  // One variation per layer goes first. The other round-robin takes wait behind it,
+  // so a chord cannot fill the decode queue and leave every later note silent.
+  await Promise.all(urgent.map((zone) => decode(zone, priority, pin)))
+  later.forEach((zone) => { decode(zone, false, false) })
 }
 
 export async function renderNoteAt (context, dest, track, pitch, velocity, when, durationSec) {

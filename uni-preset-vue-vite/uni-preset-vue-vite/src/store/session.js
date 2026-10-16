@@ -12,7 +12,7 @@ import {
   setStoredEngineHost,
   mixedContentHint
 } from '../bridge/engine.js'
-import { canAddInsert, dbFromFader, dbToGain, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix } from '../model/mixer-model.js'
+import { canAddInsert, dbFromFader, dbToGain, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
 import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
@@ -67,7 +67,7 @@ import {
   normalizeInputMode,
   INPUT_TOUCH
 } from '../model/ui-mode.js'
-import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock } from '../model/expression-lane.js'
+import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock, sortSustain } from '../model/expression-lane.js'
 import {
   M_ORCHESTRA_PLUGIN_ID,
   M_ORCHESTRA_DEFAULT_ID,
@@ -329,7 +329,7 @@ function mapTrack (track) {
     instrumentLoadState: track.loadState || '',
     instrumentLoadMessage: track.loadMessage || '',
     midiChannel: track.midiChannel || 1,
-    controllerValues: track.controllerValues || {},
+    controllerValues: track.controllerValues || track.controllers || existing.controllerValues || {},
     inserts: Array.from({ length: MIXER_INSERT_SLOTS }, (_, i) => {
       const slot = (track.inserts || [])[i] || { name: '', bypassed: false }
       return {
@@ -367,7 +367,9 @@ function mapClip (clip) {
       id: note.noteId != null ? note.noteId : note.id
     }))
   }
-  mapped.expression = clip.expression || existing.expression || { cc1: [], cc11: [] }
+  mapped.expression = clip.expression != null
+    ? clip.expression
+    : (existing.expression || { cc1: [], cc11: [], cc64: [] })
   return mapped
 }
 
@@ -736,6 +738,19 @@ export function setBpm (value) {
   fire('transport.setBpm', { bpm: session.bpm })
 }
 
+/** The canvas playhead extrapolates from clockStamp. Rebase it when the audio
+ * clock has been held for samples, so the line does not run ahead of the sound. */
+function rebaseVisualClock (now) {
+  const stamp = session.clockStamp
+  if (!stamp || !session.playing) return
+  const predicted = interpolateBeats(stamp, now, session.bpm)
+  if (Math.abs(predicted - clockBeats) < 0.12) return
+  stamp.positionBeats = clockBeats
+  stamp.playing = true
+  stamp.bpm = session.bpm
+  stamp.receivedAt = now
+}
+
 function stampClock () {
   session.clockStamp = {
     positionBeats: session.positionBeats,
@@ -805,6 +820,24 @@ export function flushTrackMix () {
   mixQueue.clear()
 }
 
+/** Point a track at a return. Level 0 turns the send off. */
+export function setTrackSend (track, destination, level) {
+  if (!track || track.type === 'master' || track.type === 'group') return
+  const bus = destination === BUS_DELAY ? BUS_DELAY : BUS_REVERB
+  const amount = Math.min(1, Math.max(0, Number(level) || 0))
+  const sends = normalizeSends(track.sends)
+  const slotId = bus === BUS_DELAY ? 'send_b' : 'send_a'
+  const slot = sends.find((item) => item.id === slotId) || sends[0]
+  if (!slot) return
+  slot.destination = bus
+  slot.level = amount
+  slot.enabled = amount > 0.001
+  track.sends = sends
+  syncTrackMixLane(track)
+  refreshMixerGraph({ mixOnly: true })
+  markDirty()
+}
+
 export function setTrackParameter (track, parameter, value) {
   if (!track) return
   track[parameter] = value
@@ -870,6 +903,7 @@ function loop (now) {
   if (!remoteClock) {
     const step = dt * session.bpm / 60
     clockBeats = gateOrchestraClock(clockBeats, clockBeats + step)
+    rebaseVisualClock(now)
     if (session.looping && clockBeats >= session.loopEnd) {
       const length = Math.max(0.25, session.loopEnd - session.loopStart)
       clockBeats = session.loopStart + ((clockBeats - session.loopStart) % length)
@@ -975,7 +1009,7 @@ function upcomingUnready (fromBeat, toBeat) {
         sampleWaits.add(id)
         orchestraVCloud.preloadNotes(
           audioGraph, track, [event.pitch], event.velocity, 'now', [event]
-        ).catch(() => {})
+        ).finally(() => sampleWaits.delete(id))
       }
     }
   }
@@ -1528,7 +1562,7 @@ export function addMidiClip (trackIndex, startBeat = session.positionBeats, leng
     colour: track.colour,
     midi: track.type !== 'audio',
     notes: [],
-    expression: { cc1: [], cc11: [] }
+    expression: { cc1: [], cc11: [], cc64: [] }
   }
   session.clips.push(clip)
   bumpClipPreview(clip.id)
@@ -2604,7 +2638,7 @@ export function moveClipSustain (clip, index, startTick, endTick) {
 export function deleteClipSustain (clip, index) {
   if (!clip) return
   const expr = ensureExpression(clip)
-  expr.cc64 = deleteSustainBlock(expr.cc64, index)
+  expr.cc64 = deleteSustainBlock(sortSustain(expr.cc64), index)
   markDirty()
 }
 
@@ -2868,7 +2902,7 @@ export function copySelectedClips () {
     name: clip.name,
     midi: clip.midi,
     notes: (clip.notes || []).map((note) => ({ ...note })),
-    expression: clip.expression ? JSON.parse(JSON.stringify(clip.expression)) : { cc1: [], cc11: [] }
+    expression: clip.expression ? JSON.parse(JSON.stringify(clip.expression)) : { cc1: [], cc11: [], cc64: [] }
   }))
 }
 
@@ -3755,8 +3789,10 @@ function previewCloudSampler (track, pitch, velocity, id, when) {
     if (!graph) return
     await graph.context.resume()
     const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when)
+    if (!engineKey && soundingNotes.get(logicalId) === logicalId) soundingNotes.delete(logicalId)
     if (engineKey && !graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
+    if (soundingNotes.get(logicalId) === logicalId) soundingNotes.delete(logicalId)
     console.warn('[cloud-sampler] preview failed:', err)
   })
   return logicalId

@@ -364,15 +364,29 @@ export function zonesForVelocity (map, pitch, velocity, articulation) {
   return picked
 }
 
-export function selectZone (map, pitch, velocity, articulation, seqState, advance = true) {
+export function selectZone (map, pitch, velocity, articulation, seqState, advance = true, isPlayable = null) {
   const pools = activePools(map, pitch, velocity, articulation)
   if (!pools) return []
   const picked = []
   pools.forEach((pool, group) => {
     const list = pool.zones.slice().sort((a, b) => a.seqPosition - b.seqPosition)
-    const index = advance === false
-      ? ((!seqState || list.length <= 1) ? 0 : (seqState.get(group) || 0))
-      : nextSeq(seqState, group, list.length)
+    const start = (!seqState || list.length <= 1) ? 0 : ((seqState.get(group) || 0) % list.length)
+    let index = start
+    if (typeof isPlayable === 'function' && list.length) {
+      let found = -1
+      for (let step = 0; step < list.length; step++) {
+        const at = (start + step) % list.length
+        if (isPlayable(list[at])) { found = at; break }
+      }
+      if (found >= 0) {
+        index = found
+        if (advance !== false && seqState && list.length > 1) seqState.set(group, (found + 1) % list.length)
+      } else {
+        index = advance === false ? start : nextSeq(seqState, group, list.length)
+      }
+    } else {
+      index = advance === false ? start : nextSeq(seqState, group, list.length)
+    }
     picked.push({ zone: list[Math.min(index, list.length - 1)], gain: pool.gain })
   })
   return picked

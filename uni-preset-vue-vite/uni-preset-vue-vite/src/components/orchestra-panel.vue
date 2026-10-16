@@ -453,6 +453,7 @@ function onSlider (id, event) {
   gap: 6px;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .inst {
   height: 52px;
@@ -549,7 +550,7 @@ function onSlider (id, event) {
 .orch.stacked .head { flex-wrap: wrap; }
 .orch.stacked .libs { order: 3; flex-basis: 100%; }
 .orch.stacked .libs .seg-item { flex: 1; justify-content: center; }
-.orch.stacked .body { flex-direction: column; overflow-y: auto; }
+.orch.stacked .body { flex-direction: column; overflow-y: auto; touch-action: pan-y; }
 .orch.stacked .browse { box-shadow: inset 0 -1px 0 var(--o-line); flex: 0 0 auto; }
 .orch.stacked .list { max-height: 260px; }
 .orch.stacked .play { max-width: none; min-width: 0; }
@@ -600,5 +601,16 @@ function onSlider (id, event) {
   .browse { flex: 0 0 auto; box-shadow: inset 0 -1px 0 var(--o-line); }
   .list { max-height: 280px; }
   .play { max-width: none; min-width: 0; }
+}
+</style>
+<style>
+.orch uni-view.list,
+.orch.stacked > uni-view.body,
+.orch.stacked uni-view.body {
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 </style>

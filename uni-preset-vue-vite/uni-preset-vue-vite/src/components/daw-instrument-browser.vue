@@ -243,6 +243,18 @@ function confirm () {
   min-height: 0;
   height: 0;
   background: #0e0e0e;
+  overflow-x: hidden;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.plugin-list :deep(.uni-scroll-view),
+.cats :deep(.uni-scroll-view),
+.list :deep(.uni-scroll-view) {
+  height: 100%;
+  min-height: 0;
+  touch-action: pan-y;
   -webkit-overflow-scrolling: touch;
 }
 .plugin {
@@ -264,6 +276,10 @@ function confirm () {
   width: 148px;
   border-right: 1px solid #2a2a2a;
   height: 100%;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
 }
 .cat {
   padding: 7px 12px;
@@ -275,7 +291,16 @@ function confirm () {
   cursor: pointer;
 }
 .cat.on { background: #232323; color: #e6e6e6; border-left: 2px solid #4da3ff; }
-.list { flex: 1; height: 100%; background: #0e0e0e; }
+.list {
+  flex: 1;
+  height: 100%;
+  min-height: 0;
+  background: #0e0e0e;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+}
 .item {
   padding: 8px 12px;
   min-height: 44px;
@@ -327,4 +352,19 @@ function confirm () {
   cursor: pointer;
 }
 .icon-btn { width: 22px; height: 22px; cursor: pointer; color: #8d8d8d; text-align: center; }
+</style>
+<style>
+uni-scroll-view.plugin-list,
+uni-scroll-view.cats,
+uni-scroll-view.list {
+  touch-action: pan-y;
+}
+uni-scroll-view.plugin-list .uni-scroll-view,
+uni-scroll-view.cats .uni-scroll-view,
+uni-scroll-view.list .uni-scroll-view {
+  height: 100%;
+  min-height: 0;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+}
 </style>

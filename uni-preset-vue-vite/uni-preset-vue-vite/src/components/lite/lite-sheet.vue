@@ -82,9 +82,14 @@ const emit = defineEmits(['close', 'back'])
   text-overflow: ellipsis;
 }
 .lt-sheet-body {
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  max-height: calc(min(86dvh, 100dvh - 32px) - 56px);
+  display: block;
+  overflow-x: hidden;
   overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
   padding: 0 16px 18px;
   box-sizing: border-box;
@@ -96,5 +101,17 @@ const emit = defineEmits(['close', 'back'])
 }
 @media (prefers-reduced-motion: reduce) {
   .lt-sheet { animation: none; }
+}
+</style>
+<style>
+/* uni-app forces overflow:hidden and flex on every view, which stops a finger
+   from scrolling a menu. This rule is stronger than that framework style. */
+uni-view.lt-sheet-body:not(.flush) {
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 </style>

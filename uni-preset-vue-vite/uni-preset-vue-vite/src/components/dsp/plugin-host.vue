@@ -348,6 +348,7 @@ function onChange () { persistWebMixer() }
   overflow: auto;
   overscroll-behavior: contain;
   -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
 }
 .host.lite .sheet {
   width: min(560px, 100%);
@@ -359,7 +360,11 @@ function onChange () { persistWebMixer() }
   flex: 0 1 auto;
   height: auto;
   max-height: calc(78vh - 56px);
-  overflow: auto;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
 }
 .host.full {
   padding: 0;

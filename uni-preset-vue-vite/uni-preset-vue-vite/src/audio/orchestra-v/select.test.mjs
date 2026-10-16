@@ -116,6 +116,21 @@ function def (overrides = {}) {
   assert(selectZone(map, 60, 100, 'long', state)[0].zone.seqPosition === 1, 'key 60 advanced independently')
 }
 
+// --- a chord plays a cached variation instead of walking onto a silent one --
+{
+  const map = compileRegions(
+    ['a', 'b', 'c'].map((tag) => sample(`t_60_15_forte_${tag}.mp3`, 60, 96)),
+    def(),
+    MANIFEST
+  )
+  const state = new Map()
+  const cached = (zone) => zone.seqPosition === 0
+  const chord = [0, 1, 2].map(() => selectZone(map, 60, 100, 'long', state, true, cached)[0].zone.seqPosition)
+  assert(chord.join(',') === '0,0,0', 'simultaneous notes stay on the cached variation')
+  const next = selectZone(map, 60, 100, 'long', state, true, (zone) => zone.seqPosition === 0 || zone.seqPosition === 1)
+  assert(next[0].zone.seqPosition === 1, 'the next note takes the newly cached variation')
+}
+
 // --- articulations fall back when the requested one is incomplete -----------
 {
   const samples = [

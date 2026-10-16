@@ -4141,6 +4141,8 @@ juce::var EngineAPI::describeProject() const
             noteArray.add (noteToEngineVar (note));
 
         object->setProperty ("notes", noteArray);
+        if (! clip.expression.isVoid())
+            object->setProperty ("expression", clip.expression);
         clipArray.add (juce::var (object));
     }
 

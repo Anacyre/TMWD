@@ -1,6 +1,6 @@
 <template>
   <view v-if="session.projectManagerOpen" class="overlay" @click.self="close">
-    <view class="sheet" @click.stop>
+    <view class="sheet project-sheet" @click.stop>
       <view class="head">
         <text class="title">Projects</text>
         <view class="hit" title="Close" aria-label="Close" @click="close">
@@ -168,7 +168,11 @@ onMounted(() => {
 .sheet {
   width: min(560px, 100%);
   max-height: min(80vh, 640px);
+  display: block;
   overflow: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
   background: #1c1c1c;
   border: 1px solid #333;
   border-radius: 10px;
@@ -217,4 +221,13 @@ onMounted(() => {
 .when { display: block; font-size: 11px; color: #888; }
 .row-actions { display: flex; gap: 6px; }
 .mini.danger { color: #d96a6a; }
+</style>
+<style>
+uni-view.project-sheet {
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
 </style>

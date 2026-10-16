@@ -58,12 +58,37 @@ function stripSampler (sampler) {
   return next
 }
 
+function migrateExpression (expression) {
+  const src = expression && typeof expression === 'object' ? expression : {}
+  const points = (list) => (Array.isArray(list) ? list : []).map((point) => ({
+    t: Math.max(0, Number(point && point.t) || 0),
+    v: Math.max(0, Math.min(127, Math.round(Number(point && point.v) || 0)))
+  })).filter((point) => Number.isFinite(point.t))
+  const blocks = (Array.isArray(src.cc64) ? src.cc64 : []).map((block) => {
+    const startTick = Math.max(0, Math.round(Number(block && block.startTick) || 0))
+    const endTick = Math.max(startTick + 1, Math.round(Number(block && block.endTick) || 0))
+    return { startTick, endTick }
+  }).filter((block) => block.endTick > block.startTick)
+  return { cc1: points(src.cc1), cc11: points(src.cc11), cc64: blocks }
+}
+
+function migrateNotes (notes) {
+  return (Array.isArray(notes) ? notes : []).map((note) => {
+    const next = note && typeof note === 'object' ? { ...note } : {}
+    const velocity = Number(next.velocity)
+    next.velocity = Number.isFinite(velocity) && velocity > 0 ? velocity : 100
+    return next
+  })
+}
+
 function migrateTrack (track) {
   const id = trackIdOf(track)
+  const controllers = track.controllerValues || track.controllers || {}
   const next = {
     ...track,
     id,
     trackId: id,
+    controllerValues: { ...controllers },
     parentId: track.parentId || 0,
     type: track.type || 'midi',
     name: track.name || 'Track',
@@ -79,6 +104,7 @@ function migrateTrack (track) {
     sends: Array.isArray(track.sends) ? track.sends : []
   }
   RUNTIME_TRACK.forEach((key) => { delete next[key] })
+  delete next.controllers
   if (next.webSampler) next.webSampler = stripSampler(next.webSampler)
   return next
 }
@@ -94,7 +120,8 @@ function migrateClip (clip) {
     lengthBeats: clip.lengthBeats != null ? clip.lengthBeats : (clip.length != null ? clip.length : 4),
     kind: clip.kind || (clip.midi === false ? 'audio' : 'midi'),
     midi: clip.midi !== false && clip.kind !== 'audio' && clip.kind !== 'sampler',
-    notes: Array.isArray(clip.notes) ? clip.notes : [],
+    notes: migrateNotes(clip.notes),
+    expression: migrateExpression(clip.expression),
     muted: !!clip.muted,
     loopCount: clip.loopCount || 1,
     loopLengthBeats: clip.loopLengthBeats || 0,

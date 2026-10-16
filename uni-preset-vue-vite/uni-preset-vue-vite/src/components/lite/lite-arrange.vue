@@ -144,6 +144,7 @@ import { interpolateBeats } from '../../model/timeline.js'
 const ROW_H = 76
 const DOUBLE_TAP_MS = 320
 const DRAG_SLOP = 8
+const TAP_SLOP = 22
 
 const bodyRef = ref(null)
 const lanesRef = ref(null)
@@ -379,10 +380,11 @@ function onDown (e) {
     return
   }
   if (pointers.size > 2) return
-  const inLanes = e.target && e.target.closest && e.target.closest('.lanes')
+  const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
+  const inLanes = target && target.closest && target.closest('.lanes')
   if (!inLanes) return
   capture(e)
-  const clipEl = e.target.closest('[data-clip]')
+  const clipEl = target.closest('[data-clip]')
   const point = contentPoint(e.clientX, e.clientY)
   const now = Date.now()
   if (clipEl) {
@@ -433,6 +435,7 @@ function onDown (e) {
       scrollY: scrollY.value,
       origin: point,
       row,
+      travel: 0,
       hold: setTimeout(() => {
         if (gesture && gesture.type === 'pan') gesture.type = 'band'
       }, 450)
@@ -481,7 +484,9 @@ function onMove (e) {
     return
   }
   if (gesture.type === 'pan') {
-    if (Math.hypot(dx, dy) >= DRAG_SLOP) {
+    const travel = Math.hypot(dx, dy)
+    if (Number.isFinite(travel)) gesture.travel = travel
+    if (travel >= TAP_SLOP) {
       clearHold()
       scrollX.value = gesture.scrollX - dx
       scrollY.value = gesture.scrollY - dy
@@ -512,8 +517,9 @@ function onUp (e) {
   if (!gesture) return
   clearHold()
   if (gesture.type === 'pan') {
-    const moved = Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY)
-    if (moved < DRAG_SLOP) {
+    if (!Number.isFinite(gesture.travel) || gesture.travel < TAP_SLOP) {
+      scrollX.value = gesture.scrollX
+      scrollY.value = gesture.scrollY
       session.selectedClipIds = []
       if (gesture.row) selectTrack(gesture.row.index)
     }

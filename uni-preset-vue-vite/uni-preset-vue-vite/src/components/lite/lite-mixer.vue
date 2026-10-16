@@ -26,6 +26,16 @@
             <view v-else class="insert blank" />
           </template>
         </view>
+        <view v-if="strip.kind === 'track'" class="sends">
+          <view class="send" @pointerdown.stop.prevent="onSendDown(strip, 'bus_reverb', $event)">
+            <text class="send-name">Reverb</text>
+            <view class="send-track"><view class="send-fill" :style="{ width: (strip.reverb * 100) + '%' }" /></view>
+          </view>
+          <view class="send" @pointerdown.stop.prevent="onSendDown(strip, 'bus_delay', $event)">
+            <text class="send-name">Delay</text>
+            <view class="send-track"><view class="send-fill" :style="{ width: (strip.delay * 100) + '%' }" /></view>
+          </view>
+        </view>
         <view
           v-if="strip.pan != null"
           class="pan"
@@ -112,12 +122,13 @@ import {
   isTrackAudible,
   openLiteSheet,
   openPlugin,
+  setTrackSend,
   toggleInsertEnabled,
   ensureMixerAttached,
   persistWebMixer
 } from '../../store/session.js'
 import { plugins } from '../../dsp/registry.js'
-import { formatVolumeDb, formatPan, dbFromFader, faderFromDb } from '../../model/mixer-model.js'
+import { formatVolumeDb, formatPan, dbFromFader, faderFromDb, normalizeSends, BUS_REVERB, BUS_DELAY } from '../../model/mixer-model.js'
 import { fxMeterLaneKey, laneInserts } from '../../model/web-mixer.js'
 import { beginPointerDrag, pointerCoord } from '../../lib/pointer-drag.js'
 
@@ -134,8 +145,15 @@ function slotsOf (lane) {
   return list.map((slot) => (slot && slot.pluginId ? slot : null))
 }
 
+function sendAmount (track, busId) {
+  return normalizeSends(track && track.sends)
+    .filter((send) => send.destination === busId && send.enabled)
+    .reduce((sum, send) => sum + (Number(send.level) || 0), 0)
+}
+
 function trackStrip (track, index) {
   const master = track.type === 'master'
+  const group = track.type === 'group'
   const lane = master ? { type: 'master' } : { type: 'track', id: track.id }
   const slots = slotsOf(lane)
   const db = track.volumeDb != null ? track.volumeDb : dbFromFader(track.volume)
@@ -144,7 +162,9 @@ function trackStrip (track, index) {
     : fxMeterLaneKey({ laneType: 'track', laneId: track.id }, session.tracks, { localPlayback: !session.remoteAudioOn })
   return {
     key: 't' + track.id,
-    kind: master ? 'master' : 'track',
+    kind: master ? 'master' : (group ? 'group' : 'track'),
+    reverb: group || master ? 0 : Math.min(1, sendAmount(track, BUS_REVERB)),
+    delay: group || master ? 0 : Math.min(1, sendAmount(track, BUS_DELAY)),
     track,
     index,
     lane,
@@ -255,6 +275,28 @@ function panFill (pan) {
 }
 
 let lastPanTap = { key: '', at: 0 }
+
+function sendNode (event) {
+  const raw = event && event.target
+  const node = raw && raw.nodeType === 1 ? raw : (raw && raw.parentElement)
+  return node && node.closest ? node.closest('.send') : null
+}
+
+function onSendDown (strip, busId, event) {
+  const el = sendNode(event)
+  const apply = (ev) => {
+    if (!el || !el.getBoundingClientRect) return
+    const at = pointerCoord(ev)
+    if (!at) return
+    const rect = el.getBoundingClientRect()
+    const bar = el.querySelector('.send-track')
+    const box = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : rect
+    const level = Math.min(1, Math.max(0, (at.x - box.left) / Math.max(8, box.width)))
+    setTrackSend(strip.track, busId, level < 0.02 ? 0 : level)
+  }
+  apply(event)
+  beginPointerDrag(event, { onMove: apply })
+}
 
 function onPanDown (strip, event) {
   const now = Date.now()
@@ -412,6 +454,42 @@ onMounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   cursor: pointer;
+}
+.sends {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 8px 2px;
+}
+.send {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 18px;
+  touch-action: none;
+  cursor: pointer;
+}
+.send-name {
+  width: 42px;
+  flex-shrink: 0;
+  font-size: 10px;
+  color: var(--lt-ink-2);
+}
+.send-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--lt-s3);
+  position: relative;
+}
+.send-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  border-radius: 2px;
+  background: var(--lt-accent);
 }
 .pan {
   height: 52px;

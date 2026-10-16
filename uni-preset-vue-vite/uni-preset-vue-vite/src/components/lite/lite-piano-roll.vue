@@ -49,6 +49,15 @@
             @click="lane = item.id"
           >{{ item.label }}</view>
         </view>
+        <view
+          v-if="lane === 'dynamics' || lane === 'expression'"
+          class="lt-chip pen"
+          :class="{ on: laneDraw }"
+          aria-label="Draw curve"
+          @click="laneDraw = !laneDraw"
+        >
+          <daw-icon name="pencil" :size="16" color="currentColor" />
+        </view>
         <text class="lane-hint">{{ laneHint }}</text>
       </view>
       <view ref="laneHost" class="lane-host" />
@@ -113,7 +122,9 @@ import {
   toggleScaleSnap,
   paintClipExpression,
   deleteClipExpressionPoint,
+  moveClipExpressionPoint,
   addClipSustain,
+  moveClipSustain,
   deleteClipSustain,
   isTouchInput
 } from '../../store/session.js'
@@ -164,6 +175,8 @@ const lanes = [
   { id: 'pedal', label: 'Pedal', cc: 64 }
 ]
 const MOVE_SLOP = 6
+const SIXTEENTH = 0.25
+const LONG_PRESS_MS = 480
 const keyNames = KEY_NAMES
 const scaleNames = SCALE_NAMES
 
@@ -171,6 +184,7 @@ const rollHost = ref(null)
 const laneHost = ref(null)
 const tool = ref('draw')
 const lane = ref('velocity')
+const laneDraw = ref(true)
 const scaleOpen = ref(false)
 const selectedIds = reactive(new Set())
 const laneReadout = ref('')
@@ -187,7 +201,12 @@ const snapLabel = computed(() => {
 const laneHint = computed(() => {
   if (laneReadout.value) return laneReadout.value
   if (lane.value === 'velocity') return 'Drag across notes to set how hard they play'
-  if (lane.value === 'pedal') return 'Drag to hold the pedal · tap a bar to remove it'
+  if (lane.value === 'pedal') return 'Double-tap to add a pedal · drag its edge to change the length · double-tap a pedal to remove it'
+  if (lane.value === 'dynamics' || lane.value === 'expression') {
+    return laneDraw.value
+    ? 'Pen on · drag to draw on 16th notes · drag a point to move it'
+    : 'Pen off · drag a point to move it · double-tap to remove'
+  }
   return 'Drag to draw · double-tap a point to remove it'
 })
 
@@ -211,6 +230,7 @@ let gesture = null
 let laneGesture = null
 let lastNoteTap = { at: 0, id: 0 }
 let lastPointTap = { at: 0, index: -1 }
+let lastPedalTap = { at: 0 }
 let fitted = false
 const pointers = new Map()
 
@@ -435,6 +455,7 @@ function onRollDown (e) {
   const g = { x: p.x - layout.gridX, y: p.y - layout.gridY }
   const hit = hitNote(notes.value, g.x, g.y, view, e.pointerType === 'touch' ? 22 : 10)
   gesture = { type: 'pending', origin: p, hit, started: false }
+  armSelectHold()
   if (hit) {
     if (!selectedIds.has(hit.note.id)) {
       selectedIds.clear()
@@ -444,7 +465,30 @@ function onRollDown (e) {
   }
 }
 
+function clearRollHold () {
+  if (gesture && gesture.hold) {
+    clearTimeout(gesture.hold)
+    gesture.hold = 0
+  }
+}
+
+function armSelectHold () {
+  if (!isTouchInput() || !gesture || gesture.type !== 'pending') return
+  const origin = gesture.origin
+  const hadHit = !!gesture.hit
+  gesture.hold = setTimeout(() => {
+    if (!gesture || gesture.type !== 'pending') return
+    tool.value = 'select'
+    if (hadHit) return
+    rubber = { x: origin.x, y: origin.y, w: 0, h: 0 }
+    gesture = { type: 'rubber', origin, started: true }
+    selectedIds.clear()
+    markDirty()
+  }, LONG_PRESS_MS)
+}
+
 function cancelSingle () {
+  clearRollHold()
   if (gesture && gesture.started && (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create')) {
     if (gesture.type === 'create' && gesture.note) deleteNotes(clip.value, [gesture.note])
     else restore(gesture.originals)
@@ -470,6 +514,7 @@ function seekTo (x) {
 }
 
 function beginDrag () {
+  clearRollHold()
   const { hit, origin } = gesture
   const g = { x: origin.x - layout.gridX, y: origin.y - layout.gridY }
   if (hit) {
@@ -479,14 +524,14 @@ function beginDrag () {
     gesture = { type, origin, originals: capture(selectedIds), started: true }
     return
   }
-  if (isTouchInput()) {
-    gesture = { type: 'pan', origin, scrollX: view.scrollX, scrollY: view.scrollY, started: true }
-    return
-  }
   if (tool.value === 'select') {
     rubber = { x: origin.x, y: origin.y, w: 0, h: 0 }
     gesture = { type: 'rubber', origin, started: true }
     selectedIds.clear()
+    return
+  }
+  if (isTouchInput()) {
+    gesture = { type: 'pan', origin, scrollX: view.scrollX, scrollY: view.scrollY, started: true }
     return
   }
   const pitch = snapPitch(yToPitch(g.y, view))
@@ -576,6 +621,7 @@ function onRollMove (e) {
 function onRollUp (e) {
   pointers.delete(e.pointerId)
   markDirty()
+  clearRollHold()
   if (!gesture) return
   if (gesture.type === 'pinch') {
     if (!pointers.size) gesture = null
@@ -838,17 +884,22 @@ function paintPedal (ctx, height, colour) {
     ctx.fillStyle = shade(colour, 1.1)
     ctx.fillRect(x0, y, Math.max(2, x1 - x0), 2)
   })
-  if (laneGesture && laneGesture.type === 'pedal') {
-    const a = beatToLaneX(Math.min(laneGesture.from, laneGesture.to))
-    const b = beatToLaneX(Math.max(laneGesture.from, laneGesture.to))
-    ctx.fillStyle = 'rgba(106,168,255,0.3)'
-    ctx.fillRect(a, y, Math.max(2, b - a), h)
-  }
 }
 
-function laneGrid () {
-  const grid = gridTicks()
-  return grid > 0 ? grid / PPQ : 0
+function snapSixteenth (beat) {
+  return Math.max(0, Math.round((Number(beat) || 0) / SIXTEENTH) * SIXTEENTH)
+}
+
+function drawSixteenths (cc, fromBeat, toBeat, fromValue, toValue) {
+  const a = snapSixteenth(fromBeat)
+  const b = snapSixteenth(toBeat)
+  const dir = b >= a ? 1 : -1
+  const count = Math.round(Math.abs(b - a) / SIXTEENTH)
+  for (let i = 0; i <= count; i++) {
+    const t = a + dir * i * SIXTEENTH
+    const u = count === 0 ? 1 : i / count
+    paintClipExpression(clip.value, cc, t, fromValue + (toValue - fromValue) * u)
+  }
 }
 
 function onLaneDown (e) {
@@ -870,10 +921,40 @@ function onLaneDown (e) {
   }
   if (active.id === 'pedal') {
     const tick = beat * PPQ
-    const hit = hitSustainBlock(ensureExpression(clip.value).cc64, tick, 0)
-    const grid = laneGrid()
-    const start = grid ? Math.floor(beat / grid) * grid : beat
-    laneGesture = { type: 'pedal', from: start, to: start, hitIndex: hit ? hit.index : -1, originX: p.x }
+    const blocks = sortSustain(ensureExpression(clip.value).cc64)
+    const hit = hitSustainBlock(blocks, tick, PPQ / 8)
+    const now = Date.now()
+    if (hit && now - lastPedalTap.at < 360 && lastPedalTap.index === hit.index) {
+      beginEdit('Delete pedal')
+      deleteClipSustain(clip.value, hit.index)
+      endEdit()
+      lastPedalTap = { at: 0, index: -1 }
+      return
+    }
+    if (!hit && now - lastPedalTap.at < 360) {
+      const length = Math.max(PPQ / 4, session.lastNoteDurationTicks || PPQ)
+      const start = Math.round(snapSixteenth(beat) * PPQ)
+      beginEdit('Pedal')
+      addClipSustain(clip.value, start, start + length)
+      endEdit()
+      lastPedalTap = { at: 0, index: -1 }
+      return
+    }
+    lastPedalTap = { at: now, index: hit ? hit.index : -1 }
+    if (!hit) return
+    const block = blocks[hit.index]
+    beginEdit('Pedal')
+    laneGesture = {
+      type: 'pedal',
+      edge: hit.edge,
+      originBeat: snapSixteenth(beat),
+      startTick: block.startTick,
+      endTick: block.endTick,
+      liveStart: block.startTick,
+      liveEnd: block.endTick,
+      originX: p.x,
+      dragged: false
+    }
     return
   }
   const points = ensureExpression(clip.value)[laneKey(active.cc)] || []
@@ -884,13 +965,30 @@ function onLaneDown (e) {
     deleteClipExpressionPoint(clip.value, active.cc, index)
     endEdit()
     lastPointTap = { at: 0, index: -1 }
-    laneGesture = null
     return
   }
-  lastPointTap = { at: now, index }
+  if (index >= 0) {
+    lastPointTap = { at: now, index }
+    const point = points[index]
+    beginEdit('Move point')
+    laneGesture = {
+      type: 'move-point',
+      cc: active.cc,
+      liveT: point.t,
+      originBeat: point.t,
+      originValue: point.v,
+      grabBeat: beat,
+      grabValue: value
+    }
+    setReadout(active.label, point.v)
+    return
+  }
+  lastPointTap = { at: now, index: -1 }
+  if (!laneDraw.value) return
+  const snapped = snapSixteenth(beat)
   beginEdit('Draw ' + active.label)
-  laneGesture = { type: 'curve', cc: active.cc, lastBeat: beat, lastValue: value, moved: false, startedOnPoint: index >= 0 }
-  if (index < 0) paintClipExpression(clip.value, active.cc, beat, value)
+  laneGesture = { type: 'curve', cc: active.cc, lastBeat: snapped, lastValue: value }
+  drawSixteenths(active.cc, snapped, snapped, value, value)
   setReadout(active.label, value)
 }
 
@@ -906,24 +1004,43 @@ function onLaneMove (e) {
     return
   }
   if (laneGesture.type === 'pedal') {
-    const beat = laneXToBeat(p.x)
-    const grid = laneGrid()
-    laneGesture.to = grid ? Math.round(beat / grid) * grid : beat
     if (Math.abs(p.x - laneGesture.originX) > MOVE_SLOP) laneGesture.dragged = true
+    const blocks = sortSustain(ensureExpression(clip.value).cc64)
+    const index = blocks.findIndex((block) => block.startTick === laneGesture.liveStart && block.endTick === laneGesture.liveEnd)
+    if (index < 0) return
+    const beat = snapSixteenth(laneXToBeat(p.x))
+    const delta = Math.round((beat - laneGesture.originBeat) * PPQ)
+    let start = laneGesture.startTick
+    let end = laneGesture.endTick
+    if (laneGesture.edge === 'end') end = Math.max(start + PPQ / 4, laneGesture.endTick + delta)
+    else if (laneGesture.edge === 'start') start = Math.max(0, Math.min(end - PPQ / 4, laneGesture.startTick + delta))
+    else {
+      const length = Math.max(PPQ / 4, laneGesture.endTick - laneGesture.startTick)
+      start = Math.max(0, laneGesture.startTick + delta)
+      end = start + length
+    }
+    moveClipSustain(clip.value, index, start, end)
+    laneGesture.liveStart = start
+    laneGesture.liveEnd = end
     return
   }
-  const beat = laneXToBeat(p.x)
-  const step = Math.max(1 / 16, 10 / view.pixelsPerBeat)
-  const from = laneGesture.lastBeat
-  const span = beat - from
-  const count = Math.max(1, Math.ceil(Math.abs(span) / step))
-  for (let i = 1; i <= count; i++) {
-    const u = i / count
-    paintClipExpression(clip.value, laneGesture.cc, from + span * u, laneGesture.lastValue + (value - laneGesture.lastValue) * u)
+  if (laneGesture.type === 'move-point') {
+    const beat = snapSixteenth(laneGesture.originBeat + (laneXToBeat(p.x) - laneGesture.grabBeat))
+    const nextValue = Math.max(0, Math.min(127, laneGesture.originValue + (value - laneGesture.grabValue)))
+    const points = ensureExpression(clip.value)[laneKey(laneGesture.cc)] || []
+    const index = points.findIndex((point) => Math.abs(point.t - laneGesture.liveT) < 1e-4)
+    const blocked = points.some((point, i) => i !== index && Math.abs(point.t - beat) < SIXTEENTH * 0.5)
+    if (index >= 0 && !blocked) {
+      moveClipExpressionPoint(clip.value, laneGesture.cc, index, beat, nextValue)
+      laneGesture.liveT = beat
+    }
+    setReadout(currentLane().label, nextValue)
+    return
   }
+  const beat = snapSixteenth(laneXToBeat(p.x))
+  drawSixteenths(laneGesture.cc, laneGesture.lastBeat, beat, laneGesture.lastValue, value)
   laneGesture.lastBeat = beat
   laneGesture.lastValue = value
-  laneGesture.moved = true
   setReadout(currentLane().label, value)
 }
 
@@ -939,19 +1056,7 @@ function onLaneUp () {
     setPianoDragActive(0)
     endEdit()
   } else if (g.type === 'pedal') {
-    if (!g.dragged && g.hitIndex >= 0) {
-      beginEdit('Remove pedal')
-      deleteClipSustain(clip.value, g.hitIndex)
-      endEdit()
-    } else if (g.dragged) {
-      const a = Math.min(g.from, g.to)
-      const b = Math.max(g.from, g.to)
-      if (b - a > 1e-3) {
-        beginEdit('Pedal')
-        addClipSustain(clip.value, Math.round(a * PPQ), Math.round(b * PPQ))
-        endEdit()
-      }
-    }
+    endEdit()
   } else {
     endEdit()
   }
@@ -1115,6 +1220,14 @@ onUnmounted(() => {
   box-shadow: inset 0 1px 0 var(--lt-line);
 }
 .lane-head .lt-seg-item { min-width: 0; height: 32px; }
+.lane-head .pen {
+  width: 36px;
+  min-width: 36px;
+  height: 32px;
+  padding: 0;
+  justify-content: center;
+}
+.lane-head .pen :deep(.icon) { width: 16px; height: 16px; }
 .lane-hint {
   font-size: var(--lt-fs-s);
   color: var(--lt-ink-2);

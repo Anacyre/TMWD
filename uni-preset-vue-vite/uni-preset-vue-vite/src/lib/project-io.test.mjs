@@ -100,6 +100,43 @@ function assert (ok, message) {
 }
 
 {
+  const data = serializeSession({
+    projectName: 'Lanes',
+    bpm: 120,
+    tracks: [{
+      id: 5,
+      name: 'Violins',
+      type: 'midi',
+      definitionId: 'ov_violin_1',
+      controllers: { dynamics: 0.4, expression: 0.7, pedal: 0 }
+    }],
+    clips: [{
+      id: 9,
+      trackIndex: 0,
+      startBeat: 0,
+      lengthBeats: 4,
+      midi: true,
+      notes: [{ id: 1, pitch: 60, startTick: 0, durationTick: 480, velocity: 42 }],
+      expression: {
+        cc1: [{ t: 0, v: 80 }],
+        cc11: [{ t: 1, v: 110 }],
+        cc64: [{ startTick: 0, endTick: 960 }]
+      }
+    }]
+  })
+  const clip = data.clips[0]
+  assert(clip.notes[0].velocity === 42, 'note velocity is saved')
+  assert(clip.expression.cc1[0].v === 80, 'dynamics lane is saved')
+  assert(clip.expression.cc11[0].v === 110, 'expression lane is saved')
+  assert(clip.expression.cc64[0].endTick === 960, 'pedal blocks are saved')
+  assert(data.tracks[0].controllerValues.dynamics === 0.4, 'dynamics controller is saved from the controllers alias')
+  assert(data.tracks[0].controllerValues.expression === 0.7, 'expression controller is saved')
+  const again = migrateProject(data)
+  assert(again.clips[0].expression.cc64[0].startTick === 0, 'pedal survives a second load')
+  assert(again.clips[0].notes[0].velocity === 42, 'velocity survives a second load')
+}
+
+{
   const reactiveMixer = {
     master: { inserts: [{ pluginId: 'equalizer-x', enabled: true, onMeter: () => 0 }] },
     remote: { inserts: [] },

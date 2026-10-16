@@ -505,6 +505,9 @@ struct ClipData
     double audioOffsetBeats = 0.0;
     juce::File sourceFile;
     std::vector<MidiNote> notes;
+    /** Clip-local dynamics (cc1), expression (cc11) and sustain (cc64). Opaque so the
+     * browser piano-roll lanes round-trip through the engine without a second schema. */
+    juce::var expression;
 
     double getSourceLengthBeats() const noexcept
     {

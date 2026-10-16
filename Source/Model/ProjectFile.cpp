@@ -112,7 +112,9 @@ juce::var ProjectFile::toVar (const Project& project)
         auto* controllers = new juce::DynamicObject();
         for (const auto& [id, value] : track->controllerValues)
             controllers->setProperty (id, value);
-        object->setProperty ("controllers", juce::var (controllers));
+        const auto controllersVar = juce::var (controllers);
+        object->setProperty ("controllers", controllersVar);
+        object->setProperty ("controllerValues", controllersVar);
 
         juce::Array<juce::var> sendArray;
         for (const auto& send : track->sends)
@@ -160,6 +162,8 @@ juce::var ProjectFile::toVar (const Project& project)
         for (const auto& note : clip.notes)
             notes.add (noteToVar (note));
         object->setProperty ("notes", notes);
+        if (! clip.expression.isVoid())
+            object->setProperty ("expression", clip.expression);
         clipArray.add (juce::var (object));
     }
 
@@ -332,7 +336,10 @@ bool ProjectFile::fromVar (const juce::var& parsed, Project& project, juce::Stri
                 track.pluginState.reset();
             track.instrumentLoadState = InstrumentLoadState::Unloaded;
 
-            if (auto* controllers = entry.getProperty ("controllers", juce::var()).getDynamicObject())
+            const auto controllerVar = entry.getProperty ("controllerValues", juce::var()).isVoid()
+                ? entry.getProperty ("controllers", juce::var())
+                : entry.getProperty ("controllerValues", juce::var());
+            if (auto* controllers = controllerVar.getDynamicObject())
                 for (const auto& prop : controllers->getProperties())
                     track.controllerValues[prop.name.toString()] = (float) (double) prop.value;
 
@@ -403,6 +410,9 @@ bool ProjectFile::fromVar (const juce::var& parsed, Project& project, juce::Stri
             if (auto* notes = entry.getProperty ("notes", juce::var()).getArray())
                 for (const auto& note : *notes)
                     clip.notes.push_back (noteFromVar (note));
+
+            if (! entry.getProperty ("expression", juce::var()).isVoid())
+                clip.expression = entry.getProperty ("expression", juce::var());
 
             project.addClip (clip);
         }
