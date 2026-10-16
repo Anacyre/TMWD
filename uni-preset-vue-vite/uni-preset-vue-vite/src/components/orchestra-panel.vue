@@ -78,13 +78,38 @@
         </view>
       </view>
     </view>
+
+    <view v-if="keyboard" class="keys-wrap">
+      <view class="keys-label">
+        <text class="cap">Keyboard</text>
+        <text class="range">{{ rangeLabel }}</text>
+      </view>
+      <view class="keys" data-keys @pointerdown.stop.prevent="onKeys">
+        <view class="bed" data-bed :style="{ width: model.width + 'px' }">
+          <view
+            v-for="key in model.whites"
+            :key="'w' + key.pitch"
+            class="key"
+            :class="{ on: sounding === key.pitch, out: !key.playable }"
+            :style="{ left: key.left + 'px', width: key.width + 'px' }"
+          />
+          <view
+            v-for="key in model.blacks"
+            :key="'b' + key.pitch"
+            class="key black"
+            :class="{ on: sounding === key.pitch, out: !key.playable }"
+            :style="{ left: key.left + 'px', width: key.width + 'px' }"
+          />
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from './daw-icon.vue'
-import { beginPointerDrag, trackRatio } from '../lib/pointer-drag.js'
+import { beginPointerDrag, pointerCoord, trackRatio } from '../lib/pointer-drag.js'
 
 const props = defineProps({
   title: { type: String, default: '' },
@@ -101,11 +126,18 @@ const props = defineProps({
   dynamics: { type: Number, default: 0.8 },
   expression: { type: Number, default: 0.8 },
   showChange: { type: Boolean, default: true },
-  stacked: { type: Boolean, default: false }
+  stacked: { type: Boolean, default: false },
+  keyboard: { type: Boolean, default: false },
+  keyLow: { type: Number, default: 21 },
+  keyHigh: { type: Number, default: 108 }
 })
-const emit = defineEmits(['family', 'library', 'select', 'technique', 'controller', 'change'])
+const emit = defineEmits(['family', 'library', 'select', 'technique', 'controller', 'change', 'note-on', 'note-off'])
+
+const WHITE = 36
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 const root = ref(null)
+const sounding = ref(-1)
 const familyInstruments = computed(() => props.instruments.filter((item) => item.family === props.familyId))
 const sliders = computed(() => [
   { id: 'dynamics', label: 'Dynamics', value: clamp01(props.dynamics) },
@@ -120,6 +152,163 @@ function clamp01 (v) {
 function hasFamily (id) {
   return props.instruments.some((item) => item.family === id)
 }
+
+function noteName (pitch) {
+  const pc = ((pitch % 12) + 12) % 12
+  return NOTE_NAMES[pc] + (Math.floor(pitch / 12) - 1)
+}
+
+const model = computed(() => {
+  const playLo = clamp01Key(props.keyLow)
+  const playHi = Math.max(playLo, clamp01Key(props.keyHigh))
+  const from = whiteFloor(moveWhites(playLo, -5))
+  const to = Math.max(from, moveWhites(playHi, 5))
+  const whites = []
+  const blacks = []
+  let count = 0
+  for (let pitch = from; pitch <= to; pitch++) {
+    const playable = pitch >= playLo && pitch <= playHi
+    const black = isBlackPitch(pitch)
+    if (black) {
+      const width = Math.round(WHITE * 0.58)
+      blacks.push({ pitch, playable, left: count * WHITE - Math.round(width / 2), width })
+    } else {
+      whites.push({ pitch, playable, left: count * WHITE + 1, width: WHITE - 2 })
+      count += 1
+    }
+  }
+  return { whites, blacks, width: Math.max(WHITE, count * WHITE), playLo, playHi }
+})
+
+const rangeLabel = computed(() => noteName(model.value.playLo) + ' – ' + noteName(model.value.playHi))
+
+function clamp01Key (value) {
+  const n = Math.round(Number(value))
+  return Number.isFinite(n) ? Math.min(127, Math.max(0, n)) : 60
+}
+
+function isBlackPitch (pitch) {
+  return pitch % 12 === 1 || pitch % 12 === 3 || pitch % 12 === 6 || pitch % 12 === 8 || pitch % 12 === 10
+}
+
+function whiteFloor (pitch) {
+  let n = pitch
+  while (n > 0 && isBlackPitch(n)) n -= 1
+  return n
+}
+
+function moveWhites (pitch, count) {
+  let n = pitch
+  let left = Math.abs(count)
+  const dir = count < 0 ? -1 : 1
+  while (left > 0) {
+    const next = n + dir
+    if (next < 0 || next > 127) break
+    n = next
+    if (!isBlackPitch(n)) left -= 1
+  }
+  return n
+}
+
+function keysEl () {
+  const r = root.value
+  const el = r && (r.nodeType === 1 ? r : r.$el)
+  return el && el.querySelector ? el.querySelector('[data-keys]') : null
+}
+
+function pitchAt (x, y) {
+  const el = keysEl()
+  if (!el || typeof el.getBoundingClientRect !== 'function') return -1
+  const rect = el.getBoundingClientRect()
+  if (y < rect.top || y > rect.bottom || x < rect.left || x > rect.right) return -1
+  const localX = x - rect.left + (el.scrollLeft || 0)
+  const localY = y - rect.top
+  if (localY < rect.height * 0.58) {
+    const black = model.value.blacks.find((key) => localX >= key.left && localX <= key.left + key.width)
+    if (black) return black.pitch
+  }
+  const white = model.value.whites[Math.floor(localX / WHITE)]
+  return white ? white.pitch : -1
+}
+
+function playable (pitch) {
+  return pitch >= model.value.playLo && pitch <= model.value.playHi
+}
+
+function sound (pitch) {
+  if (pitch === sounding.value) return
+  if (sounding.value >= 0) emit('note-off', sounding.value)
+  sounding.value = pitch
+  if (pitch >= 0) emit('note-on', pitch)
+}
+
+function silence () {
+  if (sounding.value >= 0) emit('note-off', sounding.value)
+  sounding.value = -1
+}
+
+function onKeys (event) {
+  const el = keysEl()
+  let mode = 'play'
+  let origin = pointerCoord(event)
+  const startScroll = el ? el.scrollLeft || 0 : 0
+  const step = (ev) => {
+    const at = pointerCoord(ev)
+    if (!at) return
+    if (!origin) origin = at
+    const dx = at.x - origin.x
+    const dy = at.y - origin.y
+    if (mode === 'play' && Math.abs(dx) > 16 && Math.abs(dx) > Math.abs(dy) * 1.3) {
+      mode = 'scroll'
+      silence()
+    }
+    if (mode === 'scroll') {
+      if (el) el.scrollLeft = Math.max(0, startScroll - dx)
+      return
+    }
+    const pitch = pitchAt(at.x, at.y)
+    if (!playable(pitch)) {
+      silence()
+      return
+    }
+    sound(pitch)
+  }
+  step(event)
+  beginPointerDrag(event, {
+    onMove: step,
+    onEnd: (ev) => {
+      if (mode === 'play' && sounding.value < 0) {
+        step(ev)
+        setTimeout(silence, 140)
+        return
+      }
+      silence()
+    }
+  })
+}
+
+function revealRange () {
+  const el = keysEl()
+  if (!el || !props.keyboard) return
+  const playableKeys = model.value.whites.filter((key) => key.playable)
+  const first = playableKeys[0]
+  const last = playableKeys[playableKeys.length - 1]
+  if (!first || !last) return
+  const span = last.left + last.width - first.left
+  const view = el.clientWidth || 0
+  const pad = 36 * 4
+  const target = span + pad * 2 < view
+    ? first.left - pad - (view - span - pad * 2) / 2
+    : first.left - pad
+  el.scrollLeft = Math.max(0, target)
+}
+
+watch(() => [props.keyLow, props.keyHigh, props.keyboard], () => nextTick(revealRange))
+onMounted(() => {
+  nextTick(revealRange)
+  setTimeout(revealRange, 80)
+})
+onUnmounted(silence)
 
 function sliderEl (id) {
   const r = root.value
@@ -364,6 +553,45 @@ function onSlider (id, event) {
 .orch.stacked .browse { box-shadow: inset 0 -1px 0 var(--o-line); flex: 0 0 auto; }
 .orch.stacked .list { max-height: 260px; }
 .orch.stacked .play { max-width: none; min-width: 0; }
+.keys-wrap {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 16px 14px;
+  box-shadow: inset 0 1px 0 var(--o-line);
+}
+.keys-label { display: flex; align-items: baseline; justify-content: space-between; }
+.keys-label .cap { margin: 0; }
+.range { font-size: 12px; color: var(--o-ink-2); font-variant-numeric: tabular-nums; }
+.keys {
+  height: 96px;
+  border-radius: 12px;
+  background: #090a0c;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: none;
+  overscroll-behavior: contain;
+}
+.bed { position: relative; height: 100%; }
+.key {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: #e6e7ea;
+  border-radius: 0 0 5px 5px;
+  box-sizing: border-box;
+}
+.key.out { background: #2c2f36; opacity: 0.38; }
+.key.on { background: var(--o-accent); }
+.key.black {
+  bottom: 42%;
+  background: #101114;
+  border-radius: 0 0 4px 4px;
+  z-index: 2;
+}
+.key.black.out { background: #181a1e; }
+.key.black.on { background: #9ec0ff; }
 @media (max-width: 760px) {
   .head { flex-wrap: wrap; }
   .libs { order: 3; flex-basis: 100%; }

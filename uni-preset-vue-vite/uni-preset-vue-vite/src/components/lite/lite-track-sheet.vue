@@ -6,20 +6,19 @@
     :flush="kind === 'instrument'"
     @close="closeLiteSheet"
   >
-    <template v-if="kind === 'instrument'" #actions>
-      <view class="change" @click.stop="changeInstrument">Change</view>
-    </template>
+    <view v-if="kind === 'track-menu' && track" class="menu">
+      <view class="name-field">
+        <view class="name-dot" :style="{ background: track.colour || '#6aa8ff' }" />
+        <input
+          class="rename"
+          :value="track.name"
+          maxlength="40"
+          @focus="setTyping(true)"
+          @blur="commitName"
+          @confirm="commitName"
+        >
+      </view>
 
-    <view v-if="kind === 'track-menu' && track">
-      <text class="lt-cap">Name</text>
-      <input
-        class="rename"
-        :value="track.name"
-        maxlength="40"
-        @focus="setTyping(true)"
-        @blur="commitName"
-        @confirm="commitName"
-      >
       <text class="lt-cap">Colour</text>
       <view class="swatches">
         <view
@@ -31,19 +30,27 @@
           @click.stop="setColour(colour)"
         />
       </view>
-      <view class="lt-cap" />
-      <view v-if="!isGroup" class="lt-row" @click.stop="openInstrument">
-        <daw-icon name="piano" :size="18" color="currentColor" />
-        <text class="grow">Instrument</text>
-        <text class="sub">{{ track.instrument || 'None' }}</text>
+
+      <view v-if="!isGroup" class="instrument" @click.stop="openInstrument">
+        <view class="instrument-ico">
+          <daw-icon name="piano" :size="20" color="currentColor" />
+        </view>
+        <view class="instrument-text">
+          <text class="instrument-k">Instrument</text>
+          <text class="instrument-v">{{ track.instrument || 'Choose instrument' }}</text>
+        </view>
+        <daw-icon name="chevron" :size="16" color="currentColor" />
       </view>
-      <view v-if="!isGroup" class="lt-row" @click.stop="duplicate">
-        <daw-icon name="copy" :size="18" color="currentColor" />
-        <text class="grow">Duplicate</text>
-      </view>
-      <view class="lt-row danger" @click.stop="remove">
-        <daw-icon name="trash" :size="18" color="currentColor" />
-        <text class="grow">Delete track</text>
+
+      <view class="group">
+        <view v-if="!isGroup" class="lt-row" @click.stop="duplicate">
+          <view class="row-ico"><daw-icon name="copy" :size="18" color="currentColor" /></view>
+          <text class="grow">Duplicate</text>
+        </view>
+        <view class="lt-row danger" @click.stop="remove">
+          <view class="row-ico"><daw-icon name="trash" :size="18" color="currentColor" /></view>
+          <text class="grow">Delete track</text>
+        </view>
       </view>
     </view>
 
@@ -87,7 +94,6 @@ import {
   duplicateTrack,
   removeTrackWithUndo,
   onTrackInstrumentClick,
-  openPluginPicker,
   addInsert,
   replaceInsert,
   listPlugins
@@ -125,7 +131,7 @@ const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.v
 const title = computed(() => {
   if (kind.value === 'fx') return 'Add effect'
   if (kind.value === 'instrument') return (track.value && track.value.name) || 'Instrument'
-  return (track.value && track.value.name) || 'Track'
+  return 'Track'
 })
 
 const GROUPS = [
@@ -194,12 +200,6 @@ function remove () {
   if (index >= 0) removeTrackWithUndo(index)
 }
 
-function changeInstrument () {
-  const index = trackIndex.value
-  closeLiteSheet()
-  if (index >= 0) openPluginPicker(index)
-}
-
 const allowChoose = createTapGuard()
 function choose (pluginId) {
   const s = sheet.value
@@ -212,40 +212,87 @@ function choose (pluginId) {
 </script>
 
 <style scoped>
-.change {
-  height: 36px;
-  padding: 0 14px;
-  margin-right: 4px;
+.menu { display: flex; flex-direction: column; }
+.name-field {
+  height: 56px;
   display: flex;
   align-items: center;
-  border-radius: 18px;
-  background: var(--lt-s2);
-  font-size: var(--lt-fs-s);
-  font-weight: 500;
-  cursor: pointer;
-}
-.rename {
-  height: 46px;
-  width: 100%;
+  gap: 12px;
   padding: 0 14px;
-  border-radius: var(--lt-radius);
+  border-radius: 12px;
   background: var(--lt-s2);
-  color: var(--lt-ink);
-  font-size: var(--lt-fs-m);
-  box-sizing: border-box;
 }
-.swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+.name-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.rename {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  background: transparent;
+  color: var(--lt-ink);
+  font-size: 20px;
+  font-weight: 600;
+}
+.swatches { display: flex; justify-content: space-between; gap: 8px; }
 .swatch {
-  width: 34px;
-  height: 34px;
+  width: 28px;
+  height: 28px;
   border-radius: 50%;
   cursor: pointer;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 .swatch.on { box-shadow: 0 0 0 2px var(--lt-s1), 0 0 0 4px var(--lt-ink); }
+.instrument {
+  margin-top: 16px;
+  min-height: 72px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 14px;
+  border-radius: 12px;
+  background: var(--lt-s2);
+  cursor: pointer;
+}
+.instrument:active { background: var(--lt-s3); }
+.instrument-ico {
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--lt-accent-soft);
+  color: var(--lt-accent);
+  flex-shrink: 0;
+}
+.instrument-ico .icon, .instrument > .icon { width: auto; height: auto; }
+.instrument > .icon { color: var(--lt-ink-2); }
+.instrument-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.instrument-k { font-size: 12px; color: var(--lt-ink-2); }
+.instrument-v {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.group {
+  margin-top: 16px;
+  padding: 4px 14px;
+  border-radius: 12px;
+  background: var(--lt-s2);
+  overflow: hidden;
+}
+.group .lt-row { padding: 0; min-width: 0; }
+.row-ico { width: 18px; height: 18px; flex: none; display: flex; }
+.row-ico :deep(.icon) { width: 18px; height: 18px; }
+:deep(.lt-sheet.wide) {
+  height: min(880px, calc(100dvh - 32px));
+}
 .inst {
-  height: min(620px, calc(86vh - 56px));
-  min-height: 360px;
+  flex: 1;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
 }

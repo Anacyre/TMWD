@@ -1,8 +1,8 @@
 <template>
   <view v-if="!session.liteHintDismissed" class="hint">
     <view class="lines">
-      <text class="main">One finger edits · Two fingers move and zoom</text>
-      <text class="sub">Double-tap an empty lane to add a clip. Double-tap a clip to open it.</text>
+      <text class="main">{{ session.inputMode === 'touch' ? 'One finger scrolls · Pinch to zoom' : 'One finger edits · Two fingers move and zoom' }}</text>
+      <text class="sub">{{ session.inputMode === 'touch' ? 'Drag a clip to move it. Double-tap a clip to open it.' : 'Double-tap an empty lane to add a clip. Double-tap a clip to open it.' }}</text>
     </view>
     <view class="ok" @click.stop="dismissLiteHint">Got it</view>
   </view>

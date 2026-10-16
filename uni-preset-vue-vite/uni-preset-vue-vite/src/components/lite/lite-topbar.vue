@@ -2,7 +2,6 @@
   <view class="bar">
     <view class="side left">
       <view class="project" aria-label="Projects" @click.stop="openProjects">
-        <view class="led" :class="ledState" />
         <text class="name">{{ session.projectName || 'Untitled' }}</text>
         <daw-icon name="chevron" :size="14" color="currentColor" />
       </view>
@@ -79,16 +78,10 @@ import {
   setTyping,
   openSettings,
   openProjects,
-  engineState,
   unlockAudioForUser
 } from '../../store/session.js'
 
 const editingBpm = ref(false)
-/* Browser playback is a normal mode, so a missing PC engine is not shown as an error. */
-const ledState = computed(() => {
-  const state = engineState()
-  return state === 'error' || state === 'offline' ? 'browser' : state
-})
 const view = computed(() => session.workspaceView)
 const positionDisplay = computed(() => (session.positionFormat === 'time' ? secondsText.value : positionText.value))
 const sampleLoadPct = computed(() => {
@@ -156,10 +149,6 @@ function commitBpm (e) {
   text-overflow: ellipsis;
   min-width: 0;
 }
-.led { width: 7px; height: 7px; border-radius: 50%; background: var(--lt-accent); flex-shrink: 0; }
-.led.connected { background: var(--lt-ok); }
-.led.loading { background: #e0b341; }
-.led.error { background: var(--lt-warn); }
 .center {
   display: flex;
   align-items: center;

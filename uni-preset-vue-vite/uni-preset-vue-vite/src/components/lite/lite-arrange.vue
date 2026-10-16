@@ -2,7 +2,7 @@
   <view class="arr">
     <view class="top">
       <view class="corner" :style="{ width: headW + 'px' }">
-        <view class="add" aria-label="Add track" @click.stop="openNewTrackPicker">
+        <view class="add" aria-label="Add track" @click.stop="addLiteInstrumentTrack">
           <daw-icon name="plus" :size="16" color="currentColor" />
           <text>Track</text>
         </view>
@@ -80,7 +80,7 @@
         </view>
         <view v-if="emptyProject" class="empty">
           <text class="empty-title">Start with a track</text>
-          <view class="empty-btn" @click.stop="openNewTrackPicker">Add track</view>
+          <view class="empty-btn" @click.stop="addLiteInstrumentTrack">Add track</view>
         </view>
       </view>
     </view>
@@ -132,7 +132,8 @@ import {
   undoEdit,
   showUndoToast,
   openVirtualClip,
-  openNewTrackPicker,
+  addLiteInstrumentTrack,
+  isTouchInput,
   onTrackInstrumentClick,
   openLiteSheet
 } from '../../store/session.js'
@@ -346,7 +347,15 @@ function startPinch () {
   }
 }
 
+function clearHold () {
+  if (gesture && gesture.hold) {
+    clearTimeout(gesture.hold)
+    gesture.hold = 0
+  }
+}
+
 function cancelGesture () {
+  clearHold()
   if (gesture && gesture.type === 'clip' && gesture.armed) {
     gesture.originals.forEach((orig) => {
       const clip = session.clips.find((item) => item.id === orig.id)
@@ -415,6 +424,21 @@ function onDown (e) {
     }
     return
   }
+  if (isTouchInput()) {
+    gesture = {
+      type: 'pan',
+      startX: e.clientX,
+      startY: e.clientY,
+      scrollX: scrollX.value,
+      scrollY: scrollY.value,
+      origin: point,
+      row,
+      hold: setTimeout(() => {
+        if (gesture && gesture.type === 'pan') gesture.type = 'band'
+      }, 450)
+    }
+    return
+  }
   gesture = { type: 'empty', startX: e.clientX, startY: e.clientY, origin: point, row }
 }
 
@@ -456,6 +480,15 @@ function onMove (e) {
     queueClipMoves(selectedClips())
     return
   }
+  if (gesture.type === 'pan') {
+    if (Math.hypot(dx, dy) >= DRAG_SLOP) {
+      clearHold()
+      scrollX.value = gesture.scrollX - dx
+      scrollY.value = gesture.scrollY - dy
+      clampScroll()
+    }
+    return
+  }
   if (gesture.type === 'empty' && Math.hypot(dx, dy) >= DRAG_SLOP) {
     gesture.type = 'band'
   }
@@ -477,7 +510,14 @@ function onUp (e) {
     return
   }
   if (!gesture) return
-  if (gesture.type === 'clip') {
+  clearHold()
+  if (gesture.type === 'pan') {
+    const moved = Math.hypot(e.clientX - gesture.startX, e.clientY - gesture.startY)
+    if (moved < DRAG_SLOP) {
+      session.selectedClipIds = []
+      if (gesture.row) selectTrack(gesture.row.index)
+    }
+  } else if (gesture.type === 'clip') {
     if (gesture.armed) {
       flushClipMoves()
       selectedClips().forEach((clip) => {

@@ -15,6 +15,11 @@
     :expression="controllerValue('expression')"
     :show-change="!lite"
     :stacked="compact"
+    keyboard
+    :key-low="range[0]"
+    :key-high="range[1]"
+    @note-on="onNoteOn"
+    @note-off="onNoteOff"
     @family="familyId = $event"
     @library="libraryId = $event"
     @select="selectInstrument"
@@ -35,12 +40,15 @@ import {
   LIBRARY_OPTIONS,
   familyOf,
   libraryIdFor,
+  keyRangeFor,
   orchestraVInstrument,
   techniquesFor
 } from '../model/orchestra-v-ui.js'
 import {
   getSelectedTrack,
   loadInstrument,
+  previewNoteOff,
+  previewNoteOn,
   setController,
   setTechnique,
   openPluginPicker
@@ -67,6 +75,8 @@ watch(selectedId, (id) => {
   const family = familyOf(id)
   if (family) familyId.value = family
 }, { immediate: true })
+
+const range = computed(() => keyRangeFor(selectedId.value))
 
 const currentName = computed(() => {
   if (current.value) return current.value.name
@@ -96,6 +106,14 @@ function controllerValue (id) {
 
 function onController (id, value) {
   if (track.value) setController(track.value, id, value)
+}
+
+function onNoteOn (pitch) {
+  if (track.value) previewNoteOn(track.value, pitch, controllerValue('dynamics'))
+}
+
+function onNoteOff (pitch) {
+  if (track.value) previewNoteOff(track.value, pitch)
 }
 
 function onTechnique (id) {

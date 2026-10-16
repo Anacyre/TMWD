@@ -55,3 +55,28 @@ export function isLiteMode (mode) {
 export function interfaceShellOf (mode) {
   return normalizeInterfaceMode(mode)
 }
+
+/** How Lite listens to a pointer. Not a project format. */
+export const INPUT_MODE_KEY = 'dawweb.inputMode'
+export const INPUT_TOUCH = 'touch'
+export const INPUT_PC = 'pc'
+
+export function normalizeInputMode (mode) {
+  return mode === INPUT_TOUCH ? INPUT_TOUCH : INPUT_PC
+}
+
+export function readInputMode () {
+  if (typeof localStorage === 'undefined') return INPUT_PC
+  try {
+    return normalizeInputMode(localStorage.getItem(INPUT_MODE_KEY))
+  } catch (err) {
+    return INPUT_PC
+  }
+}
+
+export function writeInputMode (mode) {
+  if (typeof localStorage === 'undefined') return
+  try {
+    localStorage.setItem(INPUT_MODE_KEY, normalizeInputMode(mode))
+  } catch (err) { /* private mode */ }
+}

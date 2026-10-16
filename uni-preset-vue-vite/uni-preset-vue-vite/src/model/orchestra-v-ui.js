@@ -69,6 +69,16 @@ export function familyOf (definitionId) {
   return item ? item.family : 'strings'
 }
 
+/** Playable MIDI span for the on-screen keyboard. A missing map stays inside an 88-key piano. */
+export function keyRangeFor (definitionId) {
+  const def = findDefinition(definitionId)
+  const range = def && def.keyRange
+  if (!Array.isArray(range) || range.length < 2) return [21, 108]
+  const lo = Math.max(0, Math.min(127, Math.round(Number(range[0]))))
+  const hi = Math.max(0, Math.min(127, Math.round(Number(range[1]))))
+  return lo <= hi ? [lo, hi] : [hi, lo]
+}
+
 export function isOrchestraVTrack (track) {
   if (!track) return false
   return track.source === 'orchestra-v' || isOrchestraVDefinition(track.definitionId)

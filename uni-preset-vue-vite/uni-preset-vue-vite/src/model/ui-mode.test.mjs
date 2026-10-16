@@ -7,7 +7,13 @@ import {
   isLiteMode,
   normalizeInterfaceMode,
   readInterfaceMode,
-  writeInterfaceMode
+  writeInterfaceMode,
+  INPUT_MODE_KEY,
+  INPUT_PC,
+  INPUT_TOUCH,
+  normalizeInputMode,
+  readInputMode,
+  writeInputMode
 } from './ui-mode.js'
 
 const store = new Map()
@@ -31,5 +37,14 @@ if (!isLiteMode(INTERFACE_LITE) || !isLiteMode(INTERFACE_LE)) throw new Error('l
 
 store.set(INTERFACE_MODE_KEY, 'garbage')
 if (readInterfaceMode() !== INTERFACE_LITE) throw new Error('a corrupt stored mode reads as lite')
+
+if (normalizeInputMode('touch') !== INPUT_TOUCH) throw new Error('touch is a pointer mode')
+if (normalizeInputMode('pc') !== INPUT_PC) throw new Error('pc is a pointer mode')
+if (normalizeInputMode('tablet') !== INPUT_PC) throw new Error('unknown pointer modes stay on PC')
+writeInputMode(INPUT_TOUCH)
+if (store.get(INPUT_MODE_KEY) !== INPUT_TOUCH) throw new Error('touch mode was not stored')
+if (readInputMode() !== INPUT_TOUCH) throw new Error('touch mode was not read back')
+writeInputMode(INPUT_PC)
+if (readInputMode() !== INPUT_PC) throw new Error('PC mode was not read back')
 
 console.log('ui-mode ok')

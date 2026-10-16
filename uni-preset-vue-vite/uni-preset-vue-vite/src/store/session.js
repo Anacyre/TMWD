@@ -61,7 +61,11 @@ import {
   writeLiteHintDismissed,
   isLiteMode,
   interfaceShellOf,
-  normalizeInterfaceMode
+  normalizeInterfaceMode,
+  readInputMode,
+  writeInputMode,
+  normalizeInputMode,
+  INPUT_TOUCH
 } from '../model/ui-mode.js'
 import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock } from '../model/expression-lane.js'
 import {
@@ -201,6 +205,7 @@ export const session = reactive({
   pianoRollFocus: false,
   workspaceView: 'arrangement',
   interfaceMode: readInterfaceMode(),
+  inputMode: readInputMode(),
   liteHintDismissed: readLiteHintDismissed(),
   liteSheet: null,
   settingsOpen: false,
@@ -1383,6 +1388,9 @@ export async function addTrack (type = 'audio', customName = '') {
       const track = session.tracks.find((item) => item.id === reply.trackId)
       if (track) loadWebSampler(track)
     }
+    if (isNewLite() && type === 'midi' && reply && reply.index != null && session.tracks[reply.index]) {
+      loadOrchestraV(session.tracks[reply.index], ORCHESTRA_V_DEFAULT_ID)
+    }
     return reply && reply.index != null ? reply.index : -1
   }
   const colour = PALETTE[session.colourIndex % PALETTE.length]
@@ -1412,10 +1420,26 @@ export async function addTrack (type = 'audio', customName = '') {
   })
   const created = session.tracks[session.tracks.length - 1]
   // Offline, Test Synth is the least interesting thing the browser can do, so
-  // new instrument tracks start on the cloud library instead.
-  if (type === 'midi') loadCloudOrchestra(created, M_ORCHESTRA_DEFAULT_ID)
+  // new instrument tracks start on a playable library. Lite only offers Orchestra V.
+  if (type === 'midi') {
+    if (isNewLite()) loadOrchestraV(created, ORCHESTRA_V_DEFAULT_ID)
+    else loadCloudOrchestra(created, M_ORCHESTRA_DEFAULT_ID)
+  }
   markDirty()
   return session.tracks.length - 1
+}
+
+/** Lite has one generator. Add the track and open it so the instrument can be chosen. */
+export async function addLiteInstrumentTrack () {
+  const item = orchestraVInstrument(ORCHESTRA_V_DEFAULT_ID)
+  const base = (item && item.name) || 'Orchestra'
+  const name = session.tracks.some((track) => track.name === base) ? base + ' ' + session.tracks.length : base
+  const index = await addTrack('midi', name)
+  if (index >= 0) {
+    session.selectedTrack = index
+    openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+  }
+  return index
 }
 
 export function removeTrack (index) {
@@ -2430,6 +2454,15 @@ export function interfaceShell () {
 /** The rebuilt tablet shell only, not LE. */
 export function isNewLite () {
   return interfaceShell() === INTERFACE_LITE
+}
+
+export function setInputMode (mode) {
+  session.inputMode = normalizeInputMode(mode)
+  writeInputMode(session.inputMode)
+}
+
+export function isTouchInput () {
+  return session.inputMode === INPUT_TOUCH
 }
 
 export function setInterfaceMode (mode) {

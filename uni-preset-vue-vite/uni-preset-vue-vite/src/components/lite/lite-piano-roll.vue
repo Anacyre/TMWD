@@ -114,7 +114,8 @@ import {
   paintClipExpression,
   deleteClipExpressionPoint,
   addClipSustain,
-  deleteClipSustain
+  deleteClipSustain,
+  isTouchInput
 } from '../../store/session.js'
 import {
   PPQ,
@@ -478,6 +479,10 @@ function beginDrag () {
     gesture = { type, origin, originals: capture(selectedIds), started: true }
     return
   }
+  if (isTouchInput()) {
+    gesture = { type: 'pan', origin, scrollX: view.scrollX, scrollY: view.scrollY, started: true }
+    return
+  }
   if (tool.value === 'select') {
     rubber = { x: origin.x, y: origin.y, w: 0, h: 0 }
     gesture = { type: 'rubber', origin, started: true }
@@ -517,6 +522,18 @@ function onRollMove (e) {
   if (gesture.type === 'pending') {
     if (Math.hypot(p.x - gesture.origin.x, p.y - gesture.origin.y) < MOVE_SLOP) return
     beginDrag()
+  }
+  if (gesture.type === 'pan') {
+    view.scrollX = gesture.scrollX - (p.x - gesture.origin.x)
+    view.scrollY = gesture.scrollY - (p.y - gesture.origin.y)
+    const beats = Math.max(64, ((clip.value && clip.value.lengthBeats) || 0) + 16)
+    clampScroll(
+      view,
+      beats * view.pixelsPerBeat,
+      Math.max(1, rollCanvas.clientWidth - layout.gridX),
+      Math.max(1, rollCanvas.clientHeight - layout.gridY)
+    )
+    return
   }
   const grid = gridTicks()
   if (gesture.type === 'rubber') {

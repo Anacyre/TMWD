@@ -17,6 +17,7 @@ import {
   defaultTechniqueFor,
   instrumentsInLibrary,
   isOrchestraVTrack,
+  keyRangeFor,
   orchestraVUsesPedal,
   techniquesFor
 } from './orchestra-v-ui.js'
@@ -348,6 +349,8 @@ function validate (value, spec, path) {
   assert(isOrchestraVTrack({ definitionId: 'ov_violin_1' }), 'an ov_ definition marks a track as ours')
   assert(!isOrchestraVTrack({ source: 'm-orchestra', definitionId: 'm_orch_violin_1' }), 'M Orchestra tracks are not ours')
   assert(!isOrchestraVTrack(null), 'a missing track is not ours')
+  assert(keyRangeFor('ov_violin_1').join(',') === '55,103', 'violin range comes from the catalogue')
+  assert(keyRangeFor('missing').join(',') === '21,108', 'an unknown instrument stays on an 88-key span')
 }
 
 console.log('orchestra-v ui ok')
