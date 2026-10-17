@@ -53,7 +53,7 @@
       </view>
     </view>
 
-    <view v-if="session.sampleLoad.active" class="load" aria-label="Loading samples">
+    <view v-if="busyBar" class="load" :aria-label="busyLabel">
       <view class="load-fill" :style="{ width: sampleLoadPct }" />
     </view>
     <view v-if="session.audioBlocked" class="unlock" @click.stop="unlockAudioForUser">Tap to enable sound</view>
@@ -80,14 +80,25 @@ import {
   openProjects,
   unlockAudioForUser
 } from '../../store/session.js'
+import { cloudAuth } from '../../store/cloud-auth.js'
 
 const editingBpm = ref(false)
 const view = computed(() => session.workspaceView)
 const positionDisplay = computed(() => (session.positionFormat === 'time' ? secondsText.value : positionText.value))
+const busyBar = computed(() => {
+  if (session.sampleLoad.active) return true
+  const status = String(session.saveStatus || '')
+  if (/saving|exporting|loading|upload/i.test(status)) return true
+  return !!cloudAuth.busy
+})
+const busyLabel = computed(() => session.saveStatus || (cloudAuth.busy ? 'Cloud' : 'Loading'))
 const sampleLoadPct = computed(() => {
-  const total = session.sampleLoad.total || 0
-  if (!total) return '8%'
-  return Math.max(8, Math.min(100, Math.round(session.sampleLoad.done / total * 100))) + '%'
+  if (session.sampleLoad.active) {
+    const total = session.sampleLoad.total || 0
+    if (!total) return '8%'
+    return Math.max(8, Math.min(100, Math.round(session.sampleLoad.done / total * 100))) + '%'
+  }
+  return '36%'
 })
 
 function toggleFormat () {

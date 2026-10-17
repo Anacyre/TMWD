@@ -588,6 +588,9 @@ function choose (pluginId) {
 :deep(.lt-sheet.wide) {
   height: min(880px, calc(100dvh - 32px));
 }
+:deep(.lt-sheet.wide):has(.twin) {
+  width: min(1120px, calc(100vw - 32px));
+}
 .inst {
   flex: 1;
   height: 100%;

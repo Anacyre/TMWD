@@ -58,6 +58,12 @@ const emit = defineEmits(['close', 'back'])
   box-sizing: border-box;
 }
 .lt-sheet.wide { width: min(760px, 100%); }
+.lt-sheet.wide .lt-sheet-body,
+.lt-sheet.full .lt-sheet-body {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+}
 .lt-sheet.full {
   width: 100%;
   height: 100%;

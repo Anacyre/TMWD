@@ -927,7 +927,7 @@ function loop (now) {
     clockBeats = gateOrchestraClock(clockBeats, clockBeats + step)
     rebaseVisualClock(now)
     if (session.looping && clockBeats >= session.loopEnd) {
-      const length = Math.max(0.25, session.loopEnd - session.loopStart)
+    const length = Math.max(0.25, session.loopEnd - session.loopStart)
       clockBeats = session.loopStart + ((clockBeats - session.loopStart) % length)
       publishClockBeats(now)
       stampClock()
@@ -1173,7 +1173,7 @@ export async function play () {
       await startRemoteAudio()
     } catch (err) {
       showToast(err.message || 'Browser audio fallback')
-    }
+  }
   }
   startLocalClock()
 }
@@ -1569,7 +1569,7 @@ export function duplicateTrack (index) {
   const track = session.tracks[index]
   if (!track || track.type === 'master') return
   if (isEngineConnected()) {
-    fire('track.duplicate', { trackId: track.id })
+  fire('track.duplicate', { trackId: track.id })
     return
   }
   if (isGroupTrack(track)) return
@@ -1700,14 +1700,14 @@ export function addMidiClip (trackIndex, startBeat = session.positionBeats, leng
   if (!track || track.type === 'master' || track.type === 'group') return
   const start = snapBeat(startBeat)
   if (isEngineConnected()) {
-    fire('clip.create', {
-      trackId: track.id,
-      trackIndex,
+  fire('clip.create', {
+    trackId: track.id,
+    trackIndex,
       start,
-      length: lengthBeats,
-      name: track.name,
-      sketch: track.type === 'midi'
-    })
+    length: lengthBeats,
+    name: track.name,
+    sketch: track.type === 'midi'
+  })
     return
   }
   beginEdit('Create pattern')
@@ -1733,7 +1733,7 @@ export function addMidiClip (trackIndex, startBeat = session.positionBeats, leng
 export function deleteClip (clip) {
   if (!clip) return
   if (isEngineConnected()) {
-    fire('clip.delete', { clipId: clip.id })
+  fire('clip.delete', { clipId: clip.id })
     return
   }
   const index = session.clips.findIndex((item) => item.id === clip.id)
@@ -1747,7 +1747,7 @@ export function deleteClip (clip) {
 export function duplicateClip (clip) {
   if (!clip) return
   if (isEngineConnected()) {
-    fire('clip.duplicate', { clipId: clip.id })
+  fire('clip.duplicate', { clipId: clip.id })
     return
   }
   const copy = JSON.parse(JSON.stringify(clip))
@@ -1761,8 +1761,14 @@ export function duplicateClip (clip) {
 
 export function resizeClip (clip, startBeat, lengthBeats) {
   if (!clip) return
-  clip.startBeat = Math.max(0, startBeat)
-  clip.lengthBeats = Math.max(0.25, lengthBeats)
+  const nextStart = Math.max(0, startBeat)
+  const nextLen = Math.max(0.25, lengthBeats)
+  if (isAudioClip(clip)) {
+    const delta = nextStart - (Number(clip.startBeat) || 0)
+    clip.audioOffsetBeats = Math.max(0, (Number(clip.audioOffsetBeats) || 0) + delta)
+  }
+  clip.startBeat = nextStart
+  clip.lengthBeats = nextLen
   bumpClipPreview(clip.id)
   fire('clip.move', {
     clipId: clip.id,
@@ -2481,7 +2487,7 @@ export function previewNoteOn (track, pitch, velocity = 0.8) {
     }
     if (isEngineConnected() && track.source !== 'web-sampler') {
       startRemoteAudio().catch(() => {})
-      fire('preview.noteOn', { trackId: track.id, pitch, velocity })
+  fire('preview.noteOn', { trackId: track.id, pitch, velocity })
       return
     }
     previewWebSampler(track, pitch, velocity)
