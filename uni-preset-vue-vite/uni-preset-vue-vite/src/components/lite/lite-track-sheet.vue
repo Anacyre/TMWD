@@ -84,6 +84,21 @@
         <daw-icon name="chevron" :size="16" color="currentColor" />
       </view>
 
+      <text v-if="!isGroup" class="lt-cap">Track type</text>
+      <view v-if="!isGroup" class="group">
+        <view
+          v-for="mode in TRACK_TYPES"
+          :key="mode.id"
+          class="lt-row"
+          :class="{ on: mode.id === activeTrackType }"
+          @click.stop="setTrackType(mode.id)"
+        >
+          <view class="row-ico"><daw-icon :name="mode.icon" :size="18" color="currentColor" /></view>
+          <text class="grow">{{ mode.label }}</text>
+          <text v-if="mode.id === activeTrackType" class="sub">Current</text>
+        </view>
+      </view>
+
       <view class="group">
         <template v-if="isGroup">
           <view class="lt-row" @click.stop="fold">
@@ -206,12 +221,15 @@ import {
   addTrackToGroup,
   groupTracksById,
   applyGroupColourToChildren,
-  addLiteInstrumentTrack
+  addLiteInstrumentTrack,
+  loadOrchestraV,
+  insertPlugin
 } from '../../store/session.js'
+import { ORCHESTRA_V_DEFAULT_ID, isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
+import { TWIN_PLUGIN_ID, SF2_PLUGIN_ID } from '../../model/m-orchestra-ui.js'
 import { isGroupTrack, isPlayableTrack } from '../../model/playlist-model.js'
 import { createTapGuard } from '../../lib/tap-guard.js'
 import { isMOrchestraTrack, isTwinTrack, isSf2Track } from '../../model/m-orchestra-ui.js'
-import { isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
 
 const DawOrchestraV = defineAsyncComponent(() => import('../daw-orchestra-v.vue'))
 const DawMOrchestraLite = defineAsyncComponent(() => import('./lite-m-orchestra.vue'))
@@ -220,13 +238,19 @@ const PluginTwin = defineAsyncComponent(() => import('../dsp/plugin-twin.vue'))
 const DawSf2 = defineAsyncComponent(() => import('../daw-sf2.vue'))
 
 const COLOURS = ['#6aa8ff', '#5bc4c9', '#4cc38a', '#b7cf5a', '#e0b341', '#f08a4b', '#ef6a6a', '#e46aa8', '#a77df0', '#8b8e96']
+const TRACK_TYPES = [
+  { id: 'orchestra', label: 'Orchestra V', icon: 'piano' },
+  { id: 'twin', label: 'Twin synth', icon: 'wave' },
+  { id: 'sf2', label: 'Sampler', icon: 'note' },
+  { id: 'audio', label: 'Audio', icon: 'wave' }
+]
 
 const sheet = computed(() => session.liteSheet)
 const kind = computed(() => {
   const s = sheet.value
   if (!s) return ''
   if (s.kind === 'track-menu') return 'track-menu'
-  if (s.kind === 'fx') return 'fx'
+  if (s.kind === 'fx' || s.kind === 'bus') return 'fx'
   if (s.kind === 'new-track') return 'new-track'
   if (s.kind === 'track' && s.tab === 'sampler') return 'instrument'
   return ''
@@ -243,6 +267,14 @@ const orchestraV = computed(() => isOrchestraVTrack(track.value))
 const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
 const twin = computed(() => isTwinTrack(track.value))
 const sf2 = computed(() => isSf2Track(track.value))
+const activeTrackType = computed(() => {
+  const t = track.value
+  if (!t || t.type === 'audio' || t.source === 'audio') return 'audio'
+  if (isOrchestraVTrack(t)) return 'orchestra'
+  if (isTwinTrack(t)) return 'twin'
+  if (isSf2Track(t)) return 'sf2'
+  return ''
+})
 const title = computed(() => {
   if (kind.value === 'fx') return 'Add effect'
   if (kind.value === 'new-track') return 'New track'
@@ -389,6 +421,29 @@ function openInstrument () {
   if (index >= 0) onTrackInstrumentClick(index)
 }
 
+function setTrackType (kind) {
+  const t = track.value
+  const index = trackIndex.value
+  if (!t || index < 0 || isGroupTrack(t)) return
+  if (kind === 'audio') {
+    t.type = 'audio'
+    t.source = 'audio'
+    t.definitionId = ''
+    t.instrument = 'Audio'
+    closeLiteSheet()
+    return
+  }
+  t.type = 'midi'
+  if (kind === 'orchestra') {
+    loadOrchestraV(t, ORCHESTRA_V_DEFAULT_ID)
+  } else if (kind === 'twin') {
+    insertPlugin(t, TWIN_PLUGIN_ID)
+  } else if (kind === 'sf2') {
+    insertPlugin(t, SF2_PLUGIN_ID)
+  }
+  openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+}
+
 function duplicate () {
   const index = trackIndex.value
   closeLiteSheet()
@@ -402,10 +457,20 @@ function remove () {
 }
 
 const allowChoose = createTapGuard()
+function fxLane (s) {
+  if (!s) return null
+  if (s.lane) return s.lane
+  if (s.kind === 'bus' && s.busId) return { type: 'bus', id: s.busId }
+  const t = track.value
+  if (!t || t.type === 'master') return { type: 'master' }
+  return { type: 'track', id: t.id }
+}
+
 function choose (pluginId) {
   const s = sheet.value
   if (!s || !allowChoose()) return
-  const lane = s.lane
+  const lane = fxLane(s)
+  if (!lane) return
   if (s.slot != null && s.replace) replaceInsert(lane, s.slot, pluginId)
   else addInsert(lane, pluginId, s.slot != null ? s.slot : 0)
   closeLiteSheet()

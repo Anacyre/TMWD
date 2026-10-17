@@ -13,7 +13,7 @@
     :technique-id="currentTechniqueId"
     :dynamics="controllerValue('dynamics')"
     :expression="controllerValue('expression')"
-    :show-change="!lite"
+    :show-change="true"
     :stacked="compact"
     keyboard
     :key-low="range[0]"

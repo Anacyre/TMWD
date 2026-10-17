@@ -9,7 +9,8 @@
     </view>
     <daw-le-nav />
     <daw-le-settings />
-    <daw-le-track-sheet />
+    <lite-track-sheet v-if="liteTrackSheet" />
+    <daw-le-track-sheet v-else-if="session.liteSheet" />
     <daw-le-hint />
     <daw-instrument-browser />
     <plugin-host />
@@ -19,7 +20,7 @@
 </template>
 
 <script setup>
-import { defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import DawLeTransport from './daw-le-transport.vue'
 import DawLeNav from './daw-le-nav.vue'
 import DawLeHint from './daw-le-hint.vue'
@@ -34,6 +35,16 @@ const DawPianoRoll = defineAsyncComponent(() => import('./daw-piano-roll.vue'))
 const DawLeMixer = defineAsyncComponent(() => import('./daw-le-mixer.vue'))
 const DawLeSettings = defineAsyncComponent(() => import('./daw-le-settings.vue'))
 const DawLeTrackSheet = defineAsyncComponent(() => import('./daw-le-track-sheet.vue'))
+const LiteTrackSheet = defineAsyncComponent(() => import('./lite/lite-track-sheet.vue'))
+
+const liteTrackSheet = computed(() => {
+  const s = session.liteSheet
+  if (!s) return false
+  if (s.kind === 'track-menu' || s.kind === 'new-track') return true
+  if (s.kind === 'track' && s.tab === 'sampler') return true
+  if (s.kind === 'fx' && s.lane) return true
+  return false
+})
 const DawInstrumentBrowser = defineAsyncComponent(() => import('./daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('./dsp/plugin-host.vue'))
 const DawProjectManager = defineAsyncComponent(() => import('./daw-project-manager.vue'))

@@ -1306,8 +1306,12 @@ export function openInstrumentPicker (trackIndex) {
 }
 
 export function openNewTrackPicker () {
+  if (isLite()) {
+    openLiteNewTrack()
+    return
+  }
   session.instrumentPickerMode = 'new-track'
-  session.instrumentPickerTrack = -2
+  session.instrumentPickerTrack = Math.max(0, session.selectedTrack)
 }
 
 export function openPluginPicker (trackOrIndex) {

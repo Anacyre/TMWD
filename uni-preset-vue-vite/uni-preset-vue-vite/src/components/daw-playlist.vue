@@ -341,6 +341,7 @@ import {
   onTrackInstrumentClick,
   openPluginPicker,
   openNewTrackPicker,
+  openLiteSheet,
   openVirtualClip,
   assignTrackToGroup,
   ungroupTrack,
@@ -919,6 +920,11 @@ function onLaneMenu (e) {
 }
 
 function openTrackMenu (row, e) {
+  if (lite.value) {
+    selectTrack(row.index)
+    openLiteSheet({ kind: 'track-menu', trackIndex: row.index })
+    return
+  }
   const track = row.track
   const items = [
     { label: 'Change instrument', run: () => openPluginPicker(row.index) },
