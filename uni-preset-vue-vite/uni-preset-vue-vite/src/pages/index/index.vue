@@ -92,6 +92,7 @@ import {
   toggleRecord,
   getSelectedClip,
   saveCurrentProject,
+  restoreLastSession,
   showToast,
   startEngineBridge,
   stopEngineBridge,
@@ -220,6 +221,8 @@ onMounted(() => {
     window.addEventListener('resize', measure)
   }
   startEngineBridge()
+  // A refresh must land back in the project that was open, not the starter demo.
+  restoreLastSession().catch(() => {})
 })
 onUnmounted(() => {
   if (typeof window !== 'undefined') {

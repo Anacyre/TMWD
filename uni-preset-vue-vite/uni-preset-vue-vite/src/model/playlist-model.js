@@ -97,6 +97,85 @@ export function childTrackIndexes (tracks, groupId) {
   return indexes
 }
 
+/** Indexes of a track and every track nested under it, in array order. */
+export function subtreeIndexes (tracks, index) {
+  const list = tracks || []
+  const root = list[index]
+  if (!root) return []
+  const ids = new Set([root.id])
+  let grew = true
+  while (grew) {
+    grew = false
+    list.forEach((track) => {
+      if (track.parentId && ids.has(track.parentId) && !ids.has(track.id)) {
+        ids.add(track.id)
+        grew = true
+      }
+    })
+  }
+  const out = []
+  list.forEach((track, i) => { if (ids.has(track.id)) out.push(i) })
+  return out
+}
+
+/**
+ * Move the track at `fromIndex` (with everything nested under it) so that it lands at
+ * `toIndex`. Returns the new track order plus an old→new index map so clips can follow.
+ * The moved track adopts the group of the row it lands under: dropping straight below
+ * an open group header joins that group, dropping between two children keeps their group,
+ * dropping below the last child of a collapsed group leaves it. Groups never nest by drag.
+ */
+export function reorderTrackList (tracks, fromIndex, toIndex) {
+  const list = (tracks || []).slice()
+  const moving = list[fromIndex]
+  if (!moving || moving.type === 'master' || fromIndex === toIndex) return null
+  const block = subtreeIndexes(list, fromIndex)
+  const blockSet = new Set(block)
+  let target = Math.max(0, Math.min(list.length - 1, toIndex))
+  if (blockSet.has(target)) return null
+  // Dropping below a collapsed group means below everything hidden under it as well.
+  if (target > fromIndex && isGroupTrack(list[target]) && list[target].collapsed) {
+    const tail = subtreeIndexes(list, target)
+    target = tail.length ? tail[tail.length - 1] : target
+  }
+  const rest = []
+  const restOld = []
+  list.forEach((track, i) => {
+    if (blockSet.has(i)) return
+    rest.push(track)
+    restOld.push(i)
+  })
+  let insertAt = target - block.filter((i) => i < target).length
+  if (target > fromIndex) insertAt += 1
+  insertAt = Math.max(0, Math.min(rest.length, insertAt))
+  // Master stays first.
+  if (rest[0] && rest[0].type === 'master') insertAt = Math.max(1, insertAt)
+
+  const order = rest.slice(0, insertAt).concat(block.map((i) => list[i]), rest.slice(insertAt))
+  const indexMap = new Map()
+  order.forEach((track, next) => indexMap.set(list.indexOf(track), next))
+
+  const prev = insertAt > 0 ? rest[insertAt - 1] : null
+  let parentId = 0
+  if (prev && prev.type !== 'master') {
+    parentId = isGroupTrack(prev) && !prev.collapsed ? prev.id : (prev.parentId || 0)
+    // The row above may be hidden under a collapsed group: visually the drop happened
+    // below that group, so the track joins whatever the collapsed group belongs to.
+    const byId = new Map(list.map((track) => [track.id, track]))
+    let cursor = prev
+    let guard = 0
+    while (cursor && cursor.parentId && guard++ < 32) {
+      const parent = byId.get(cursor.parentId)
+      if (!parent) break
+      if (parent.collapsed) parentId = parent.parentId || 0
+      cursor = parent
+    }
+  }
+  if (isGroupTrack(moving)) parentId = 0
+  const patched = order.map((track) => (track === moving ? { ...track, parentId } : track))
+  return { order: patched, indexMap, parentId }
+}
+
 export function buildCollapsedGroupClip (tracks, clips, groupId) {
   const list = tracks || []
   const groupIndex = list.findIndex((track) => track.id === groupId)

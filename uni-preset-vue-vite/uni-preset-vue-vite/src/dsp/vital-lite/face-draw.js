@@ -7,6 +7,8 @@
  */
 
 import { midiToHz } from './params.js'
+import { normalizeEqualizerLiteState } from './equalizer.js'
+import { normalizeFilterLiteState } from './filter.js'
 
 const SR = 48000
 
@@ -76,11 +78,15 @@ export function rateHz (state, aux) {
   return Math.max(0.05, Number(frequency) || (aux ? 4 : 0.25))
 }
 
+/** Magnitude in dB of an RBJ biquad with corner `fc`, evaluated at `f`. The coefficients
+ * come from the corner frequency; the response is then read at the probe frequency. */
 function biquadDb (f, fc, q, type, gainDb) {
   const A = Math.pow(10, (Number(gainDb) || 0) / 40)
+  const fcSafe = Number.isFinite(Number(fc)) ? Number(fc) : 1000
+  const w0 = 2 * Math.PI * clamp(fcSafe, 1, SR * 0.49) / SR
   const w = 2 * Math.PI * clamp(f, 1, SR * 0.49) / SR
-  const cw = Math.cos(w)
-  const alpha = Math.sin(w) / (2 * Math.max(0.15, q))
+  const cw = Math.cos(w0)
+  const alpha = Math.sin(w0) / (2 * Math.max(0.15, Number.isFinite(q) ? q : 0.7))
   let b0, b1, b2, a0, a1, a2
   if (type === 'hp') {
     b0 = (1 + cw) / 2
@@ -160,22 +166,24 @@ function qOf (res) {
 }
 
 export function eqResponse (state) {
-  const lowType = state.lowMode === 'highpass' ? 'hp' : 'lowshelf'
-  const bandType = state.bandMode === 'notch' ? 'notch' : 'bell'
-  const highType = state.highMode === 'lowpass' ? 'lp' : 'highshelf'
+  const s = normalizeEqualizerLiteState(state)
+  const lowType = s.lowMode === 'highpass' ? 'hp' : 'lowshelf'
+  const bandType = s.bandMode === 'notch' ? 'notch' : 'bell'
+  const highType = s.highMode === 'lowpass' ? 'lp' : 'highshelf'
   const pts = sweep((f) => {
-    return biquadDb(f, midiToHz(state.lowMidi), qOf(state.lowRes), lowType, state.lowGainDb)
-      + biquadDb(f, midiToHz(state.bandMidi), qOf(state.bandRes), bandType, state.bandGainDb)
-      + biquadDb(f, midiToHz(state.highMidi), qOf(state.highRes), highType, state.highGainDb)
+    return biquadDb(f, midiToHz(s.lowMidi), qOf(s.lowRes), lowType, s.lowGainDb)
+      + biquadDb(f, midiToHz(s.bandMidi), qOf(s.bandRes), bandType, s.bandGainDb)
+      + biquadDb(f, midiToHz(s.highMidi), qOf(s.highRes), highType, s.highGainDb)
   })
   return curve(pts, 96)
 }
 
 export function eqHandles (state) {
+  const s = normalizeEqualizerLiteState(state)
   const bands = [
-    { id: 'low', type: state.lowMode, midi: state.lowMidi, gain: state.lowGainDb },
-    { id: 'band', type: state.bandMode, midi: state.bandMidi, gain: state.bandGainDb },
-    { id: 'high', type: state.highMode, midi: state.highMidi, gain: state.highGainDb }
+    { id: 'low', type: s.lowMode, midi: s.lowMidi, gain: s.lowGainDb },
+    { id: 'band', type: s.bandMode, midi: s.bandMidi, gain: s.bandGainDb },
+    { id: 'high', type: s.highMode, midi: s.highMidi, gain: s.highGainDb }
   ]
   return bands.map((b) => {
     const gainless = b.type === 'highpass' || b.type === 'notch' || b.type === 'lowpass'
@@ -211,11 +219,12 @@ function filterDb (f, state) {
 }
 
 export function filterResponse (state) {
-  const pts = sweep((f) => filterDb(f, state))
-  const fc = midiToHz(state.cutoffMidi)
+  const s = normalizeFilterLiteState(state)
+  const pts = sweep((f) => filterDb(f, s))
+  const fc = midiToHz(s.cutoffMidi)
   return {
     ...curve(pts, 96),
-    handle: { x: freqX(fc), y: dbY(filterDb(fc, state), -24, 18) }
+    handle: { x: freqX(fc), y: dbY(filterDb(fc, s), -24, 18) }
   }
 }
 
@@ -296,12 +305,13 @@ export function delayBars (state) {
   const wet = Math.sin(clamp(Number(state.mix) || 0, 0, 1) * Math.PI * 0.5)
   const span = 2
   const bars = []
+  // Echoes mirror around the centre line: left channel rises from it, right channel
+  // hangs below it, and both decay left to right like a tape echo.
   function push (ch, t, amp) {
-    const top = ch ? 54 : 8
-    const h = Math.max(1.5, amp * 34)
+    const h = Math.max(1.5, amp * 40)
     bars.push({
       x: 8 + (t / span) * 184,
-      y: top + (36 - h),
+      y: ch ? 50 : 50 - h,
       w: 3.2,
       h,
       cls: ch ? 'b2' : 'b1'

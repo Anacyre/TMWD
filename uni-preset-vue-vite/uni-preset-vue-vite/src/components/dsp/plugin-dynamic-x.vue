@@ -735,6 +735,11 @@ function onXo (event) {
   font-variant-numeric: tabular-nums;
 }
 
+/* iPad card: two band columns so the band readouts keep room to breathe. */
+@media (max-width: 1180px) {
+  .band-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tray { flex-wrap: wrap; justify-content: center; gap: 8px 10px; }
+}
 @media (max-width: 720px) {
   .readout { right: 34px; top: 6px; }
   .ro-val { font-size: 15px; }

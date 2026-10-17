@@ -5,82 +5,89 @@
       <text>{{ rail }}</text>
     </view>
     <view class="board" :class="'board-' + kind">
+      <!-- Reverb: shelf EQ on top, every knob in one wrapping grid. -->
       <template v-if="kind === 'reverb'">
-        <view class="tabs">
-          <text :class="{ on: shelf === 'low' }" @click="shelf = 'low'">Low</text>
-          <text :class="{ on: shelf === 'high' }" @click="shelf = 'high'">High</text>
+        <view class="plot-head">
+          <view class="tabs">
+            <text :class="{ on: shelf === 'low' }" @click="shelf = 'low'">Low shelf</text>
+            <text :class="{ on: shelf === 'high' }" @click="shelf = 'high'">High shelf</text>
+          </view>
         </view>
         <view class="plot vital-plot">
           <vital-graph plugin-id="reverb-lite" :state="state" :band="shelf" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="knob-row">
+        <view class="controls">
+          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
+          <vital-ctrl :spec="specAs('decayTime', 'Time')" :model-value="state.decayTime" @update:model-value="set('decayTime', $event)" />
+          <vital-ctrl :spec="spec('size')" :model-value="state.size" @update:model-value="set('size', $event)" />
+          <vital-ctrl :spec="specAs('delay', 'Pre-Delay')" :model-value="state.delay" @update:model-value="set('delay', $event)" />
+          <vital-ctrl :spec="specAs(shelf === 'low' ? 'lowShelfMidi' : 'highShelfMidi', 'Shelf')" :model-value="shelf === 'low' ? state.lowShelfMidi : state.highShelfMidi" @update:model-value="set(shelf === 'low' ? 'lowShelfMidi' : 'highShelfMidi', $event)" />
+          <vital-ctrl :spec="specAs(shelf === 'low' ? 'lowShelfDb' : 'highShelfDb', 'Shelf Gain')" :model-value="shelf === 'low' ? state.lowShelfDb : state.highShelfDb" @update:model-value="set(shelf === 'low' ? 'lowShelfDb' : 'highShelfDb', $event)" />
           <vital-ctrl :spec="specAs('preLowMidi', 'Low Cut')" :model-value="state.preLowMidi" @update:model-value="set('preLowMidi', $event)" />
           <vital-ctrl :spec="specAs('preHighMidi', 'High Cut')" :model-value="state.preHighMidi" @update:model-value="set('preHighMidi', $event)" />
-          <vital-ctrl :spec="specAs(shelf === 'low' ? 'lowShelfMidi' : 'highShelfMidi', 'Cutoff')" :model-value="shelf === 'low' ? state.lowShelfMidi : state.highShelfMidi" @update:model-value="set(shelf === 'low' ? 'lowShelfMidi' : 'highShelfMidi', $event)" />
-          <vital-ctrl :spec="specAs(shelf === 'low' ? 'lowShelfDb' : 'highShelfDb', 'Gain')" :model-value="shelf === 'low' ? state.lowShelfDb : state.highShelfDb" @update:model-value="set(shelf === 'low' ? 'lowShelfDb' : 'highShelfDb', $event)" />
-        </view>
-        <view class="knob-row">
-          <vital-ctrl :spec="specAs('chorusAmount', 'Chor Amt')" :model-value="state.chorusAmount" @update:model-value="set('chorusAmount', $event)" />
-          <vital-ctrl :spec="specAs('chorusFrequency', 'Chor Freq')" :model-value="state.chorusFrequency" @update:model-value="set('chorusFrequency', $event)" />
-          <vital-ctrl :spec="specAs('delay', 'Delay')" :model-value="state.delay" @update:model-value="set('delay', $event)" />
-          <vital-ctrl :spec="spec('size')" :model-value="state.size" @update:model-value="set('size', $event)" />
-          <vital-ctrl :spec="specAs('decayTime', 'Time')" :model-value="state.decayTime" @update:model-value="set('decayTime', $event)" />
-          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
+          <vital-ctrl :spec="specAs('chorusAmount', 'Chorus')" :model-value="state.chorusAmount" @update:model-value="set('chorusAmount', $event)" />
+          <vital-ctrl :spec="specAs('chorusFrequency', 'Chorus Hz')" :model-value="state.chorusFrequency" @update:model-value="set('chorusFrequency', $event)" />
         </view>
       </template>
 
+      <!-- Equalizer: band tabs double as mode toggles (tap the active tab to flip its mode). -->
       <template v-else-if="kind === 'equalizer'">
-        <view class="modes">
-          <text :class="{ on: band === 'low' }" @click="flip('lowMode', eqLow)">{{ state.lowMode }}</text>
-          <text :class="{ on: band === 'band' }" @click="flip('bandMode', eqBand)">{{ state.bandMode }}</text>
-          <text :class="{ on: band === 'high' }" @click="flip('highMode', eqHigh)">{{ state.highMode }}</text>
-        </view>
-        <view class="tabs tabs-eq">
-          <text :class="{ on: band === 'low' }" @click="pickBand('low')">Low</text>
-          <text :class="{ on: band === 'band' }" @click="pickBand('band')">Band</text>
-          <text :class="{ on: band === 'high' }" @click="pickBand('high')">High</text>
+        <view class="plot-head">
+          <view class="tabs tabs-eq">
+            <text :class="{ on: band === 'low' }" @click="tapBand('low', 'lowMode', eqLow)">Low <text class="mode">{{ state.lowMode }}</text></text>
+            <text :class="{ on: band === 'band' }" @click="tapBand('band', 'bandMode', eqBand)">Band <text class="mode">{{ state.bandMode }}</text></text>
+            <text :class="{ on: band === 'high' }" @click="tapBand('high', 'highMode', eqHigh)">High <text class="mode">{{ state.highMode }}</text></text>
+          </view>
         </view>
         <view class="plot vital-plot">
           <vital-graph plugin-id="equalizer-lite" :state="state" :band="band" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="knob-row">
+        <view class="controls">
+          <vital-ctrl :spec="specAs(band + 'Midi', 'Frequency')" :model-value="state[band + 'Midi']" @update:model-value="set(band + 'Midi', $event)" />
           <vital-ctrl :spec="specAs(band + 'GainDb', 'Gain')" :model-value="state[band + 'GainDb']" :disabled="gainOff" @update:model-value="set(band + 'GainDb', $event)" />
-          <vital-ctrl :spec="specAs(band + 'Midi', 'Cutoff')" :model-value="state[band + 'Midi']" @update:model-value="set(band + 'Midi', $event)" />
           <vital-ctrl :spec="specAs(band + 'Res', 'Resonance')" :model-value="state[band + 'Res']" @update:model-value="set(band + 'Res', $event)" />
         </view>
       </template>
 
+      <!-- Filter: cutoff under the curve, resonance beside it. -->
       <template v-else-if="kind === 'filter'">
-        <view class="filter-head">
-          <text class="chev" @click="cycleSelect('model', -1)">‹</text>
-          <text class="filter-name">{{ modelName }} : {{ state.style }}</text>
-          <text class="chev" @click="cycleSelect('style', 1)">›</text>
+        <view class="plot-head">
+          <view class="tabs">
+            <text v-for="m in filterModels" :key="m" :class="{ on: state.model === m }" @click="set('model', m)">{{ cap(m) }}</text>
+          </view>
+          <view class="tabs tabs-narrow">
+            <text v-for="s in filterStyles" :key="s" :class="{ on: state.style === s }" @click="set('style', s)">{{ s }}</text>
+          </view>
         </view>
         <view class="filter-stage vital-plot">
           <vital-graph class="plot-filter" plugin-id="filter-lite" :state="state" :spectrum="spectrum" @set="set" />
           <vital-ctrl class="res-fader" linear="y" :spec="spec('resonance')" :model-value="state.resonance" @update:model-value="set('resonance', $event)" />
         </view>
         <vital-ctrl class="cut-fader" linear="x" :spec="spec('cutoffMidi')" :model-value="state.cutoffMidi" @update:model-value="set('cutoffMidi', $event)" />
-        <view class="knob-row">
+        <view class="controls">
           <vital-ctrl :spec="spec('drive')" :model-value="state.drive" @update:model-value="set('drive', $event)" />
-          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
           <vital-ctrl :spec="spec('blend')" :model-value="state.blend" @update:model-value="set('blend', $event)" />
+          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
         </view>
       </template>
 
+      <!-- Delay: one plot, Echo | Filter toggle. -->
       <template v-else-if="kind === 'delay'">
+        <view class="plot-head">
+          <view class="tabs">
+            <text v-for="s in delayStyles" :key="s" :class="{ on: state.style === s }" @click="set('style', s)">{{ cap(s) }}</text>
+          </view>
+          <view class="tabs tabs-narrow">
+            <text :class="{ on: view === 'main' }" @click="view = 'main'">Echo</text>
+            <text :class="{ on: view === 'filter' }" @click="view = 'filter'">Filter</text>
+          </view>
+        </view>
         <view class="plot vital-plot">
-          <vital-graph plugin-id="delay-lite" :state="state" :spectrum="spectrum" @set="set" />
+          <vital-graph plugin-id="delay-lite" :mode="view === 'filter' ? 'filter' : 'main'" :state="state" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="plot vital-plot short">
-          <vital-graph plugin-id="delay-lite" mode="filter" :state="state" :spectrum="spectrum" @set="set" />
-        </view>
-        <view class="ctrl-row">
-          <vital-ctrl :spec="specAs('style', 'Mode')" :model-value="state.style" @update:model-value="set('style', $event)" />
-          <vital-ctrl :spec="specAs('frequency', 'Tempo')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
-          <vital-ctrl v-if="state.style !== 'mono'" :spec="spec('auxFrequency')" :model-value="state.auxFrequency" @update:model-value="set('auxFrequency', $event)" />
-        </view>
-        <view class="knob-row">
+        <view class="controls">
+          <vital-ctrl :spec="specAs('frequency', 'Rate')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
+          <vital-ctrl v-if="state.style !== 'mono'" :spec="specAs('auxFrequency', 'Rate R')" :model-value="state.auxFrequency" @update:model-value="set('auxFrequency', $event)" />
           <vital-ctrl :spec="spec('feedback')" :model-value="state.feedback" @update:model-value="set('feedback', $event)" />
           <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
           <vital-ctrl :spec="spec('cutoffMidi')" :model-value="state.cutoffMidi" @update:model-value="set('cutoffMidi', $event)" />
@@ -88,59 +95,68 @@
         </view>
       </template>
 
+      <!-- Distortion: Shape | Filter toggle. -->
       <template v-else-if="kind === 'distortion'">
+        <view class="plot-head">
+          <view class="tabs">
+            <text v-for="t in distortionTypes" :key="t" :class="{ on: state.type === t }" @click="set('type', t)">{{ cap(t) }}</text>
+          </view>
+          <view class="tabs tabs-narrow">
+            <text :class="{ on: view === 'main' }" @click="view = 'main'">Shape</text>
+            <text :class="{ on: view === 'filter' }" @click="view = 'filter'">Filter</text>
+          </view>
+        </view>
         <view class="plot vital-plot">
-          <vital-graph plugin-id="distortion-lite" mode="shape" :state="state" :spectrum="spectrum" @set="set" />
+          <vital-graph plugin-id="distortion-lite" :mode="view === 'filter' ? 'filter' : 'shape'" :state="state" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="plot vital-plot short">
-          <vital-graph plugin-id="distortion-lite" mode="filter" :state="state" :spectrum="spectrum" @set="set" />
-        </view>
-        <view class="ctrl-row">
-          <vital-ctrl :spec="specAs('type', 'Type')" :model-value="state.type" @update:model-value="set('type', $event)" />
-          <vital-ctrl :spec="specAs('filterOrder', 'Filter')" :model-value="state.filterOrder" @update:model-value="set('filterOrder', $event)" />
-        </view>
-        <view class="knob-row">
+        <view class="controls">
           <vital-ctrl :spec="spec('drive')" :model-value="state.drive" @update:model-value="set('drive', $event)" />
           <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
+          <vital-ctrl :spec="specAs('filterOrder', 'Filter')" :model-value="state.filterOrder" @update:model-value="set('filterOrder', $event)" />
           <vital-ctrl :spec="spec('cutoffMidi')" :model-value="state.cutoffMidi" :disabled="filterOff" @update:model-value="set('cutoffMidi', $event)" />
           <vital-ctrl :spec="spec('resonance')" :model-value="state.resonance" :disabled="filterOff" @update:model-value="set('resonance', $event)" />
           <vital-ctrl :spec="spec('blend')" :model-value="state.blend" :disabled="filterOff" @update:model-value="set('blend', $event)" />
         </view>
       </template>
 
+      <!-- Compressor: band columns, thresholds and gains in one grid. -->
       <template v-else-if="kind === 'compressor'">
+        <view class="plot-head">
+          <view class="tabs">
+            <text v-for="b in compressorBands" :key="b" :class="{ on: state.bands === b }" @click="set('bands', b)">{{ cap(b) }}</text>
+          </view>
+        </view>
         <view class="plot vital-plot">
           <vital-graph plugin-id="compressor-lite" :state="state" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="ctrl-row">
-          <vital-ctrl :spec="specAs('bands', 'Mode')" :model-value="state.bands" @update:model-value="set('bands', $event)" />
-          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
-        </view>
-        <view class="knob-row">
-          <vital-ctrl :spec="specAs('lowGainDb', 'Low')" :model-value="state.lowGainDb" :disabled="!bandOn('low')" @update:model-value="set('lowGainDb', $event)" />
-          <vital-ctrl :spec="specAs('bandGainDb', 'Band')" :model-value="state.bandGainDb" :disabled="!bandOn('band')" @update:model-value="set('bandGainDb', $event)" />
-          <vital-ctrl :spec="specAs('highGainDb', 'High')" :model-value="state.highGainDb" :disabled="!bandOn('high')" @update:model-value="set('highGainDb', $event)" />
+        <view class="controls">
           <vital-ctrl :spec="specAs('lowUpperDb', 'Low Thr')" :model-value="state.lowUpperDb" :disabled="!bandOn('low')" @update:model-value="set('lowUpperDb', $event)" />
           <vital-ctrl :spec="specAs('bandUpperDb', 'Band Thr')" :model-value="state.bandUpperDb" :disabled="!bandOn('band')" @update:model-value="set('bandUpperDb', $event)" />
           <vital-ctrl :spec="specAs('highUpperDb', 'High Thr')" :model-value="state.highUpperDb" :disabled="!bandOn('high')" @update:model-value="set('highUpperDb', $event)" />
+          <vital-ctrl :spec="specAs('lowGainDb', 'Low')" :model-value="state.lowGainDb" :disabled="!bandOn('low')" @update:model-value="set('lowGainDb', $event)" />
+          <vital-ctrl :spec="specAs('bandGainDb', 'Band')" :model-value="state.bandGainDb" :disabled="!bandOn('band')" @update:model-value="set('bandGainDb', $event)" />
+          <vital-ctrl :spec="specAs('highGainDb', 'High')" :model-value="state.highGainDb" :disabled="!bandOn('high')" @update:model-value="set('highGainDb', $event)" />
           <vital-ctrl :spec="spec('attack')" :model-value="state.attack" @update:model-value="set('attack', $event)" />
           <vital-ctrl :spec="spec('release')" :model-value="state.release" @update:model-value="set('release', $event)" />
+          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
         </view>
       </template>
 
+      <!-- Chorus: Voices | Filter toggle. -->
       <template v-else-if="kind === 'chorus'">
+        <view class="plot-head">
+          <view class="tabs tabs-narrow">
+            <text :class="{ on: view === 'main' }" @click="view = 'main'">Voices</text>
+            <text :class="{ on: view === 'filter' }" @click="view = 'filter'">Filter</text>
+          </view>
+        </view>
         <view class="plot vital-plot">
-          <vital-graph plugin-id="chorus-lite" :state="state" :spectrum="spectrum" @set="set" />
+          <vital-graph plugin-id="chorus-lite" :mode="view === 'filter' ? 'filter' : 'main'" :state="state" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="plot vital-plot short">
-          <vital-graph plugin-id="chorus-lite" mode="filter" :state="state" :spectrum="spectrum" @set="set" />
-        </view>
-        <view class="ctrl-row">
+        <view class="controls">
           <vital-ctrl :spec="spec('voices')" :model-value="state.voices" @update:model-value="set('voices', $event)" />
-          <vital-ctrl :spec="specAs('frequency', 'Tempo')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
-        </view>
-        <view class="knob-row">
-          <vital-ctrl :spec="spec('modDepth')" :model-value="state.modDepth" @update:model-value="set('modDepth', $event)" />
+          <vital-ctrl :spec="specAs('frequency', 'Rate')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
+          <vital-ctrl :spec="specAs('modDepth', 'Depth')" :model-value="state.modDepth" @update:model-value="set('modDepth', $event)" />
           <vital-ctrl :spec="spec('delay1')" :model-value="state.delay1" @update:model-value="set('delay1', $event)" />
           <vital-ctrl :spec="spec('delay2')" :model-value="state.delay2" @update:model-value="set('delay2', $event)" />
           <vital-ctrl :spec="spec('feedback')" :model-value="state.feedback" @update:model-value="set('feedback', $event)" />
@@ -154,16 +170,14 @@
         <view class="plot vital-plot">
           <vital-graph :plugin-id="pluginId" :state="state" :spectrum="spectrum" @set="set" />
         </view>
-        <view class="ctrl-row">
-          <vital-ctrl :spec="specAs('frequency', 'Tempo')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
-          <vital-ctrl :spec="specAs('phaseOffset', 'Offset')" :model-value="state.phaseOffset" @update:model-value="set('phaseOffset', $event)" />
-        </view>
-        <view class="knob-row">
-          <vital-ctrl :spec="spec('feedback')" :model-value="state.feedback" @update:model-value="set('feedback', $event)" />
-          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
+        <view class="controls">
+          <vital-ctrl :spec="specAs('frequency', 'Rate')" :model-value="state.frequency" @update:model-value="set('frequency', $event)" />
           <vital-ctrl :spec="specAs('centerMidi', 'Center')" :model-value="state.centerMidi" @update:model-value="set('centerMidi', $event)" />
           <vital-ctrl :spec="specAs('modDepth', 'Depth')" :model-value="state.modDepth" @update:model-value="set('modDepth', $event)" />
+          <vital-ctrl :spec="spec('feedback')" :model-value="state.feedback" @update:model-value="set('feedback', $event)" />
+          <vital-ctrl :spec="specAs('phaseOffset', 'Offset')" :model-value="state.phaseOffset" @update:model-value="set('phaseOffset', $event)" />
           <vital-ctrl v-if="kind === 'phaser'" :spec="spec('blend')" :model-value="state.blend" @update:model-value="set('blend', $event)" />
+          <vital-ctrl :spec="spec('mix')" :model-value="state.mix" @update:model-value="set('mix', $event)" />
         </view>
       </template>
     </view>
@@ -174,7 +188,10 @@
 import { computed, ref } from 'vue'
 import VitalCtrl from './vital-ctrl.vue'
 import VitalGraph from './vital-graph.vue'
-import { EQ_LOW_MODES, EQ_BAND_MODES, EQ_HIGH_MODES } from '../../dsp/vital-lite/params.js'
+import {
+  EQ_LOW_MODES, EQ_BAND_MODES, EQ_HIGH_MODES,
+  FILTER_MODELS, FILTER_STYLES, DELAY_STYLES, DISTORTION_TYPES, COMPRESSOR_BANDS
+} from '../../dsp/vital-lite/params.js'
 import { VITAL_LITE_SUBTITLE } from '../../dsp/vital-lite/index.js'
 
 const props = defineProps({
@@ -187,9 +204,16 @@ const emit = defineEmits(['set'])
 
 const shelf = ref('low')
 const band = ref('low')
+/** Which of a plugin's two pictures is showing (echo/shape/voices vs. its feedback filter). */
+const view = ref('main')
 const eqLow = EQ_LOW_MODES
 const eqBand = EQ_BAND_MODES
 const eqHigh = EQ_HIGH_MODES
+const filterModels = FILTER_MODELS
+const filterStyles = FILTER_STYLES
+const delayStyles = DELAY_STYLES
+const distortionTypes = DISTORTION_TYPES
+const compressorBands = COMPRESSOR_BANDS
 
 const ACCENT = {
   chorus: '#6aa2ff',
@@ -205,10 +229,6 @@ const ACCENT = {
 const kind = computed(() => (props.pluginId || '').replace(/-lite$/, ''))
 const rail = computed(() => (VITAL_LITE_SUBTITLE[props.pluginId] || 'Lite').replace(/\s+Lite$/, '').toUpperCase())
 const accentStyle = computed(() => ({ '--vital-accent': ACCENT[kind.value] || '#d5dee6' }))
-const modelName = computed(() => {
-  const raw = String(props.state.model || 'analog')
-  return raw.charAt(0).toUpperCase() + raw.slice(1)
-})
 const lookup = computed(() => {
   const map = {}
   for (const knob of (props.panel && props.panel.knobs) || []) map[knob.key] = knob
@@ -221,6 +241,10 @@ const gainOff = computed(() => {
   return mode === 'highpass' || mode === 'notch' || mode === 'lowpass'
 })
 
+function cap (s) {
+  const raw = String(s || '')
+  return raw.charAt(0).toUpperCase() + raw.slice(1).replace(/-/g, ' ')
+}
 function spec (key) {
   return lookup.value[key] || null
 }
@@ -229,22 +253,15 @@ function specAs (key, label) {
   if (!base || !label) return base
   return { ...base, label }
 }
-function cycleSelect (key, dir) {
-  const item = spec(key)
-  if (!item || !item.options) return
-  const options = item.options
-  const i = options.indexOf(props.state[key])
-  set(key, options[(i + dir + options.length) % options.length])
-}
 function set (key, value) { emit('set', key, value) }
-function pickBand (next) { band.value = next }
-function flip (key, options) {
-  const cur = props.state[key]
-  const next = options.find((item) => item !== cur) || options[0]
-  if (key === 'lowMode') band.value = 'low'
-  else if (key === 'bandMode') band.value = 'band'
-  else if (key === 'highMode') band.value = 'high'
-  set(key, next)
+/** First tap selects the band; a second tap on the selected band flips its mode. */
+function tapBand (next, modeKey, options) {
+  if (band.value !== next) {
+    band.value = next
+    return
+  }
+  const cur = props.state[modeKey]
+  set(modeKey, options.find((item) => item !== cur) || options[0])
 }
 function bandOn (which) {
   const mode = props.state.bands || 'multiband'
@@ -299,20 +316,25 @@ function bandOn (which) {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
+.plot-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.plot-head .tabs { flex: 1 1 auto; }
+.plot-head .tabs-narrow { flex: 0 0 auto; }
 .plot {
   display: flex;
   flex-direction: column;
   min-width: 0;
 }
+/* The picture takes a quarter of the screen at most; the knobs below must stay visible. */
 .vital-plot {
-  height: 168px;
-  flex: 0 0 168px;
-}
-.vital-plot.short {
-  height: 112px;
-  flex-basis: 112px;
+  height: clamp(140px, 24vh, 220px);
+  flex: 0 0 clamp(140px, 24vh, 220px);
 }
 .plot :deep(.well),
 .filter-stage :deep(.well) {
@@ -326,60 +348,46 @@ function bandOn (which) {
   min-width: 0;
 }
 .plot-filter { flex: 1; min-width: 0; height: 100%; }
-.filter-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  background: #243044;
-  border-radius: 8px;
-  padding: 8px 10px;
-  min-height: 40px;
-}
-.filter-name {
-  flex: 1;
-  text-align: center;
-  font-size: 13px;
-  letter-spacing: 0.04em;
-  color: #f2f5f8;
-}
-.chev {
-  color: #9aa6b4;
-  font-size: 18px;
-  padding: 0 8px;
-  min-width: 32px;
-  text-align: center;
-  cursor: pointer;
-}
-.knob-row, .ctrl-row {
+/* One wrapping grid, 72 px cells, two rows at most on an iPad card. */
+.controls {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(76px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
   gap: 8px 6px;
   justify-items: center;
-  align-items: end;
+  align-items: start;
   min-width: 0;
 }
-.tabs, .modes { display: flex; gap: 6px; flex-shrink: 0; }
-.tabs text, .modes text {
+.tabs { display: flex; gap: 6px; flex-shrink: 0; min-width: 0; }
+.tabs text {
   flex: 1;
   text-align: center;
-  padding: 8px 4px 6px;
-  min-height: 32px;
-  border-radius: 6px;
+  padding: 0 10px;
+  min-height: 36px;
+  line-height: 36px;
+  border-radius: 8px;
   background: #243044;
-  border: none;
-  border-bottom: 2px solid transparent;
-  font-size: 10px;
-  letter-spacing: 0.14em;
+  font-size: 11px;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: #8b939e;
   cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.tabs text.on, .modes text.on {
+.tabs-narrow text { flex: 0 0 auto; min-width: 72px; }
+.tabs text.on {
   color: var(--vital-accent);
-  border-bottom-color: var(--vital-accent);
   background: #2a384c;
+  box-shadow: inset 0 -2px 0 var(--vital-accent);
 }
+.tabs-eq text .mode {
+  margin-left: 6px;
+  font-size: 9px;
+  color: #6f7986;
+  letter-spacing: 0.04em;
+}
+.tabs-eq text.on .mode { color: var(--vital-accent); opacity: 0.8; }
 .face :deep(.k.tone-vital) {
   width: 100%;
   max-width: 84px;
@@ -402,8 +410,9 @@ function bandOn (which) {
   min-width: 0;
   width: 100%;
   max-width: 100%;
+  min-height: 56px;
 }
-.face :deep(.txt-val) { color: #f2f5f8; font-size: 16px; font-weight: 500; order: -1; }
+.face :deep(.txt-val) { color: #f2f5f8; font-size: 14px; font-weight: 500; order: -1; }
 .face :deep(.txt-lab) { color: #9aa6b4; }
 .face :deep(.lin-fill) { background: var(--vital-accent); box-shadow: 0 0 8px var(--vital-accent); }
 .face :deep(.well) {
@@ -413,11 +422,16 @@ function bandOn (which) {
   color: var(--vital-accent);
 }
 .filter-stage :deep(.lin.y) {
-  width: 44px;
-  min-width: 44px;
-  max-width: 44px;
+  width: 48px;
+  min-width: 48px;
+  max-width: 48px;
   height: 100%;
   min-height: 0;
 }
 .cut-fader { width: 100%; }
+@media (max-width: 720px) {
+  .face { padding: 6px; gap: 6px; }
+  .rail { display: none; }
+  .vital-plot { height: clamp(120px, 22vh, 180px); flex-basis: clamp(120px, 22vh, 180px); }
+}
 </style>

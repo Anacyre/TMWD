@@ -768,6 +768,10 @@ function onDown (e) {
   cursor: pointer;
 }
 
+/* iPad: a narrower band card keeps four bands visible without a horizontal scroll. */
+@media (max-width: 1100px) {
+  .card { width: 160px; }
+}
 @media (max-width: 720px) {
   /* Single-column stage: the meter moves under the curve so the graph keeps the
      full panel width instead of losing a third of it to a vertical meter. */

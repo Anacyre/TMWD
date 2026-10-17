@@ -37,6 +37,11 @@ import {
 } from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
 import { bounceSessionToWav } from '../audio/bounce.js'
+import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, isAudioClip } from '../audio/audio-clips.js'
+import * as sf2Engine from '../audio/sf2/engine.js'
+import { SF2_PLUGIN_ID } from '../audio/sf2/index.js'
+import * as twinEngine from '../dsp/synth/engine.js'
+import { defaultTwinState, normalizeTwinState } from '../dsp/synth/params.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
@@ -49,7 +54,7 @@ import {
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
-import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes } from '../model/playlist-model.js'
+import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes, reorderTrackList, subtreeIndexes } from '../model/playlist-model.js'
 import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker } from '../model/note-model.js'
 import { parseMidiBlob } from '../lib/midi-import.js'
 import {
@@ -74,7 +79,11 @@ import {
   ORCHESTRA_SAMPLER_PLUGIN_ID,
   TEST_SYNTH_PLUGIN_ID,
   WEB_SAMPLER_PLUGIN_ID,
+  TWIN_PLUGIN_ID as TWIN_ID,
+  SF2_PLUGIN_ID as SF2_ID,
   isMOrchestraTrack,
+  isTwinTrack,
+  isSf2Track,
   insertablePlugins,
   mOrchestraInstrument,
   cloudTechniqueFor
@@ -96,6 +105,8 @@ import {
 function cloudSamplerFor (track) {
   if (isOrchestraVTrack(track)) return orchestraVCloud
   if (isMOrchestraTrack(track)) return mOrchestraCloud
+  if (isTwinTrack(track)) return twinEngine
+  if (isSf2Track(track)) return sf2Engine
   return null
 }
 
@@ -121,7 +132,7 @@ export const TRACK_HEIGHTS = [
 const PALETTE = ['#4a90d9', '#d98b4a', '#6dbf8a', '#c46bb3', '#d4c05a', '#5bb8c4', '#d96a6a']
 const starterDemo = createDemoProject()
 
-const SUPPORT_EXTS = ['.mp3', '.mp4', '.wav', '.aac', '.ogg', '.flac', '.mid', '.midi', '.aif', '.aiff', '.m4a']
+const SUPPORT_EXTS = ['.mp3', '.mp4', '.wav', '.aac', '.ogg', '.flac', '.mid', '.midi', '.aif', '.aiff', '.m4a', '.sf2']
 
 let persistTimer = 0
 
@@ -166,8 +177,10 @@ export function sendCommandSafe (type, payload) {
 
 export const session = reactive({
   projectId: '',
+  cloudId: '',
   projectName: starterDemo.projectName,
   projectManagerOpen: false,
+  restoring: false,
   audioBlocked: false,
   userName: 'xiaofish',
   unsaved: false,
@@ -342,7 +355,12 @@ function mapTrack (track) {
     source: track.source || track.instrumentSource || existing.source || 'empty',
     legato: !!track.legato,
     meterLevel: existing.meterLevel || 0,
-    webSampler: existing.webSampler || createWebSamplerInstrument({ name: track.instrument || 'Web Sampler' })
+    webSampler: existing.webSampler || createWebSamplerInstrument({ name: track.instrument || 'Web Sampler' }),
+    twinState: track.twinState || existing.twinState || null,
+    sf2Id: track.sf2Id || existing.sf2Id || '',
+    sf2Name: track.sf2Name || existing.sf2Name || '',
+    sf2Patch: track.sf2Patch || existing.sf2Patch || null,
+    sf2Hash: track.sf2Hash || existing.sf2Hash || ''
   }
 }
 
@@ -362,6 +380,9 @@ function mapClip (clip) {
     loopLengthBeats: clip.loopLengthBeats || 0,
     sourceId: clip.sourceId || '',
     audioOffsetBeats: clip.audioOffsetBeats || 0,
+    gainDb: clip.gainDb || 0,
+    peaks: clip.peaks || existing.peaks || null,
+    audioDuration: clip.audioDuration || 0,
     notes: (clip.notes || []).map((note) => normalizeNote({
       ...note,
       id: note.noteId != null ? note.noteId : note.id
@@ -388,6 +409,7 @@ function applyProject (project) {
   if (!project) return
   const data = migrateProject(project)
   if (data.id) session.projectId = data.id
+  session.cloudId = project.cloudId || data.cloudId || session.cloudId || ''
   session.projectName = data.name || project.name || session.projectName
   if (project.userName) session.userName = project.userName
   session.bpm = data.tempo || project.bpm || session.bpm
@@ -918,6 +940,7 @@ function loop (now) {
     clockBeats = session.positionBeats
   }
   tickLocalNotes(clockBeats)
+  tickLocalAudio(clockBeats)
   tickExpressionPlayback(now)
   maybeOrchestraLookahead()
   rafId = requestAnimationFrame(loop)
@@ -1384,6 +1407,10 @@ export function insertPlugin (track, pluginId) {
     loadOrchestraV(track, ORCHESTRA_V_DEFAULT_ID)
   } else if (pluginId === M_ORCHESTRA_PLUGIN_ID) {
     loadCloudOrchestra(track, M_ORCHESTRA_DEFAULT_ID)
+  } else if (pluginId === TWIN_ID || pluginId === 'twin') {
+    loadTwin(track)
+  } else if (pluginId === SF2_ID || pluginId === SF2_PLUGIN_ID) {
+    loadSf2Sampler(track)
   } else if (pluginId === TEST_SYNTH_PLUGIN_ID) {
     track.definitionId = TEST_SYNTH_PLUGIN_ID
     track.instrument = 'Test Synth'
@@ -1403,6 +1430,7 @@ export function insertPlugin (track, pluginId) {
   session.workspaceView = 'sampler'
   if (pluginId === ORCHESTRA_V_PLUGIN_ID) session.editorTab = 'orchestra-v'
   else if (pluginId === M_ORCHESTRA_PLUGIN_ID) session.editorTab = 'm-orchestra'
+  else if (pluginId === TWIN_ID || pluginId === SF2_ID) session.editorTab = 'sampler'
   else if (pluginId === TEST_SYNTH_PLUGIN_ID) session.editorTab = 'info'
   else session.editorTab = 'sampler'
 }
@@ -1412,11 +1440,12 @@ export function listInsertablePlugins () {
 }
 
 export async function addTrack (type = 'audio', customName = '') {
-  const name = customName || (type === 'group' ? 'Group' : (type === 'midi' ? 'Instrument ' : type === 'web-sampler' ? 'Web Sampler ' : 'Audio ') + session.tracks.length)
+  const kind = type === 'twin' || type === 'sf2' ? 'midi' : type
+  const name = customName || (type === 'group' ? 'Group' : (type === 'midi' || type === 'twin' || type === 'sf2' ? 'Instrument ' : type === 'web-sampler' ? 'Web Sampler ' : 'Audio ') + session.tracks.length)
   if (isEngineConnected()) {
     const reply = await fire('track.create', {
       name,
-      trackType: type === 'web-sampler' ? 'midi' : type
+      trackType: type === 'web-sampler' || type === 'twin' || type === 'sf2' ? 'midi' : kind
     })
     if (type === 'web-sampler' && reply && reply.trackId != null) {
       const track = session.tracks.find((item) => item.id === reply.trackId)
@@ -1425,6 +1454,14 @@ export async function addTrack (type = 'audio', customName = '') {
     if (isNewLite() && type === 'midi' && reply && reply.index != null && session.tracks[reply.index]) {
       loadOrchestraV(session.tracks[reply.index], ORCHESTRA_V_DEFAULT_ID)
     }
+    if (type === 'twin' && reply && reply.trackId != null) {
+      const track = session.tracks.find((item) => item.id === reply.trackId)
+      if (track) loadTwin(track)
+    }
+    if (type === 'sf2' && reply && reply.trackId != null) {
+      const track = session.tracks.find((item) => item.id === reply.trackId)
+      if (track) loadSf2Sampler(track)
+    }
     return reply && reply.index != null ? reply.index : -1
   }
   const colour = PALETTE[session.colourIndex % PALETTE.length]
@@ -1432,7 +1469,7 @@ export async function addTrack (type = 'audio', customName = '') {
   session.tracks.push({
     id: nextId(session.tracks),
     name,
-    type: type === 'web-sampler' ? 'midi' : type,
+    type: type === 'web-sampler' || type === 'twin' || type === 'sf2' ? 'midi' : kind,
     parentId: 0,
     collapsed: false,
     colour,
@@ -1441,14 +1478,14 @@ export async function addTrack (type = 'audio', customName = '') {
     mute: false,
     solo: false,
     recordArm: false,
-    instrument: type === 'midi' ? 'Test Synth' : (type === 'web-sampler' ? 'Web Sampler' : ''),
-    definitionId: type === 'midi' ? 'test_synth' : (type === 'web-sampler' ? 'web_sampler' : ''),
+    instrument: type === 'twin' ? 'Twin' : (type === 'sf2' ? 'Sampler' : (type === 'midi' ? 'Test Synth' : (type === 'web-sampler' ? 'Web Sampler' : ''))),
+    definitionId: type === 'twin' ? TWIN_ID : (type === 'sf2' ? SF2_ID : (type === 'midi' ? 'test_synth' : (type === 'web-sampler' ? 'web_sampler' : ''))),
     techniqueId: '',
     section: type === 'group' ? name : '',
     controllerValues: {},
     inserts: [],
     sends: defaultSends(),
-    source: type === 'web-sampler' ? 'web-sampler' : 'empty',
+    source: type === 'twin' ? 'twin' : (type === 'sf2' ? 'sf2' : (type === 'web-sampler' ? 'web-sampler' : (type === 'audio' ? 'audio' : 'empty'))),
     legato: false,
     meterLevel: 0
   })
@@ -1459,12 +1496,46 @@ export async function addTrack (type = 'audio', customName = '') {
     if (isNewLite()) loadOrchestraV(created, ORCHESTRA_V_DEFAULT_ID)
     else loadCloudOrchestra(created, M_ORCHESTRA_DEFAULT_ID)
   }
+  if (type === 'twin') loadTwin(created)
+  if (type === 'sf2') loadSf2Sampler(created)
   markDirty()
   return session.tracks.length - 1
 }
 
-/** Lite has one generator. Add the track and open it so the instrument can be chosen. */
-export async function addLiteInstrumentTrack () {
+/** Lite new-track picker: Orchestra V / Twin / Sampler / Audio. */
+export function openLiteNewTrack () {
+  openLiteSheet({ kind: 'new-track' })
+}
+
+export async function addLiteInstrumentTrack (kind = '') {
+  if (!kind) {
+    openLiteNewTrack()
+    return -1
+  }
+  if (kind === 'audio') {
+    const index = await addTrack('audio', 'Audio ' + session.tracks.length)
+    if (index >= 0) {
+      session.selectedTrack = index
+      closeLiteSheet()
+    }
+    return index
+  }
+  if (kind === 'twin') {
+    const index = await addTrack('twin', 'Twin')
+    if (index >= 0) {
+      session.selectedTrack = index
+      openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+    }
+    return index
+  }
+  if (kind === 'sf2' || kind === 'sampler') {
+    const index = await addTrack('sf2', 'Sampler')
+    if (index >= 0) {
+      session.selectedTrack = index
+      openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+    }
+    return index
+  }
   const item = orchestraVInstrument(ORCHESTRA_V_DEFAULT_ID)
   const base = (item && item.name) || 'Orchestra'
   const name = session.tracks.some((track) => track.name === base) ? base + ' ' + session.tracks.length : base
@@ -1535,6 +1606,89 @@ export function moveTrack (index, toIndex) {
   const track = session.tracks[index]
   if (!track || track.type === 'master') return
   fire('track.move', { trackId: track.id, toIndex })
+}
+
+/** Drag-reorder from the arrange view: the track (and its children) land at `toIndex`,
+ * clips follow their tracks, selection stays on the moved track. */
+export function reorderTracks (fromIndex, toIndex) {
+  const result = reorderTrackList(session.tracks, fromIndex, toIndex)
+  if (!result) return false
+  const moving = session.tracks[fromIndex]
+  beginEdit('Move track')
+  const { order, indexMap } = result
+  // Mutate in place so every reactive reference to session.tracks keeps working.
+  order.forEach((track, i) => {
+    const live = session.tracks.find((item) => item.id === track.id)
+    if (live && live.parentId !== track.parentId) live.parentId = track.parentId
+    order[i] = live || track
+  })
+  session.tracks.splice(0, session.tracks.length, ...order)
+  session.clips.forEach((clip) => {
+    const next = indexMap.get(clip.trackIndex)
+    if (next != null) clip.trackIndex = next
+  })
+  session.selectedTrack = session.tracks.indexOf(moving)
+  session.selectedTrackIds = [moving.id]
+  session.activeTrackId = moving.id
+  if (isEngineConnected()) fire('track.move', { trackId: moving.id, toIndex: session.selectedTrack })
+  markDirty()
+  endEdit()
+  return true
+}
+
+/** Add a playable track to an existing group. */
+export function addTrackToGroup (track, group) {
+  if (!track || !group || !isGroupTrack(group) || track.type === 'master' || track.id === group.id) return
+  beginEdit('Add to group')
+  track.parentId = group.id
+  // Children sit under their group header so the fold hides them.
+  const from = session.tracks.indexOf(track)
+  const groupIndex = session.tracks.indexOf(group)
+  const tail = subtreeIndexes(session.tracks, groupIndex)
+  const after = tail[tail.length - 1]
+  if (from >= 0 && after != null && from !== after && !(from === after + 1)) {
+    const result = reorderTrackList(session.tracks, from, after)
+    if (result) {
+      const { order, indexMap } = result
+      order.forEach((item, i) => { order[i] = session.tracks.find((t) => t.id === item.id) || item })
+      session.tracks.splice(0, session.tracks.length, ...order)
+      session.clips.forEach((clip) => {
+        const next = indexMap.get(clip.trackIndex)
+        if (next != null) clip.trackIndex = next
+      })
+    }
+  }
+  track.parentId = group.id
+  session.selectedTrack = session.tracks.indexOf(track)
+  markDirty()
+  endEdit()
+}
+
+/** Group one track together with a chosen set of others; the group takes the first colour. */
+export function groupTracksById (ids) {
+  const unique = Array.from(new Set(ids || [])).filter((id) => {
+    const track = session.tracks.find((item) => item.id === id)
+    return track && isPlayableTrack(track)
+  })
+  if (unique.length < 2) return
+  session.selectedTrackIds = unique
+  groupSelectedTracks()
+}
+
+/** Paint every child of a group with the group's colour. */
+export function applyGroupColourToChildren (group) {
+  if (!group || !isGroupTrack(group) || !group.colour) return
+  beginEdit('Colour group')
+  session.tracks.forEach((track, index) => {
+    if (track.parentId !== group.id) return
+    const old = track.colour
+    track.colour = group.colour
+    session.clips.forEach((clip) => {
+      if (clip.trackIndex === index && (!clip.colour || clip.colour === old)) clip.colour = group.colour
+    })
+  })
+  markDirty()
+  endEdit()
 }
 
 export function addMidiClip (trackIndex, startBeat = session.positionBeats, lengthBeats = 8) {
@@ -1694,6 +1848,12 @@ export async function addClipFromFile (file, trackIndex, startBeat) {
       return
     }
   }
+  const audioFile = !midi && file && /\.(wav|mp3|ogg|flac|aac|aif|aiff|m4a)$/i.test(file.name || '')
+  if (audioFile) {
+    await addAudioClipFromFile(file, trackIndex, startBeat)
+    return
+  }
+
   const lengthBeats = parsed && parsed.notes.length
     ? Math.max(1, Math.ceil(parsed.lengthBeats * 4) / 4)
     : (midi ? 8 : 4)
@@ -1752,6 +1912,45 @@ export async function addClipFromFile (file, trackIndex, startBeat) {
   markDirty()
   const clipIndex = session.clips.indexOf(clip)
   if (clipIndex >= 0) selectClip(clipIndex)
+}
+
+export async function addAudioClipFromFile (file, trackIndex, startBeat) {
+  const graph = ensureGraph()
+  if (!graph) {
+    showToast('Audio needs a running browser engine')
+    return
+  }
+  await graph.context.resume()
+  const buffer = await decodeSampleFile(graph.context, file)
+  const hash = await hashBlob(file)
+  await putAsset(hash, file, { name: file.name || 'audio', bytes: file.size })
+  buffer._previewKey = hash
+  audioBuffers.set(hash, buffer)
+  const preview = buildAudioPreview(buffer, 200)
+  const lengthBeats = Math.max(0.25, buffer.duration * session.bpm / 60)
+  let track = session.tracks[trackIndex]
+  if (trackIndex <= 0 || !track || track.type === 'master' || track.type === 'group' || (track.type !== 'audio' && track.source !== 'audio')) {
+    trackIndex = await addTrack('audio', (file.name || 'Audio').replace(/\.[^.]+$/, ''))
+    track = session.tracks[trackIndex]
+  }
+  const clip = {
+    id: nextId(session.clips),
+    trackIndex,
+    ...createAudioClip({
+      sourceId: hash,
+      name: (file.name || 'Audio').replace(/\.[^.]+$/, ''),
+      startBeat: snapBeat(startBeat),
+      lengthBeats,
+      peaks: Array.from(preview.peaks),
+      audioDuration: buffer.duration
+    }),
+    colour: track && track.colour
+  }
+  session.clips.push(clip)
+  markDirty()
+  const clipIndex = session.clips.indexOf(clip)
+  if (clipIndex >= 0) selectClip(clipIndex)
+  showToast('Imported audio clip')
 }
 
 function importTargetTrackIndex () {
@@ -2030,6 +2229,14 @@ export function loadInstrument (track, definitionId) {
     loadOrchestraV(track, definitionId === ORCHESTRA_V_PLUGIN_ID ? ORCHESTRA_V_DEFAULT_ID : definitionId)
     return
   }
+  if (definitionId === TWIN_ID || definitionId === 'twin') {
+    loadTwin(track)
+    return
+  }
+  if (definitionId === SF2_ID || definitionId === SF2_PLUGIN_ID) {
+    loadSf2Sampler(track)
+    return
+  }
   if (!isEngineConnected()) {
     showToast('BBCSO / Synchron need the DawWeb engine on the PC')
     track.source = 'remote-vst'
@@ -2130,6 +2337,77 @@ export function loadOrchestraV (track, definitionId) {
   })
 }
 
+export function loadTwin (track) {
+  if (!track || track.type === 'master') return
+  track.source = 'twin'
+  track.definitionId = TWIN_ID
+  track.instrument = 'Twin'
+  track.twinState = normalizeTwinState(track.twinState || defaultTwinState())
+  track.loadState = 'Ready'
+  track.loadMessage = 'Twin synth'
+  track.instrumentLoadState = 'ready'
+  track.instrumentLoadMessage = 'Twin'
+  unlockAudio().then((graph) => {
+    if (graph) twinEngine.updateTwinState(graph, track)
+  }).catch(() => {})
+}
+
+export function updateTwinPatch (track) {
+  if (!track) return
+  track.twinState = normalizeTwinState(track.twinState || defaultTwinState())
+  markDirty()
+  const graph = audioGraph
+  if (graph) twinEngine.updateTwinState(graph, track)
+}
+
+export function loadSf2Sampler (track) {
+  if (!track || track.type === 'master') return
+  track.source = 'sf2'
+  track.definitionId = SF2_ID
+  track.instrument = 'Sampler'
+  track.sf2Id = track.sf2Id || ('sf2-' + track.id)
+  track.sf2Patch = track.sf2Patch || { attack: 0.01, decay: 0.2, sustain: 0.7, release: 0.25 }
+  track.loadState = 'Ready'
+  track.loadMessage = track.sf2Name ? track.sf2Name : 'Load an SF2 or WAV'
+  track.instrumentLoadState = 'ready'
+  track.instrumentLoadMessage = track.loadMessage
+}
+
+export async function loadSf2File (track, file) {
+  if (!track || !file) return
+  loadSf2Sampler(track)
+  const buffer = await file.arrayBuffer()
+  const id = 'sf2-' + track.id
+  await sf2Engine.loadSf2Buffer(id, buffer)
+  const hash = await hashBlob(file)
+  await putAsset(hash, file, { name: file.name, bytes: file.size })
+  track.sf2Id = id
+  track.sf2Hash = hash
+  track.sf2Name = file.name || 'SoundFont'
+  track.loadMessage = track.sf2Name
+  markDirty()
+  showToast('Loaded ' + track.sf2Name)
+}
+
+export async function loadSf2Wav (track, file) {
+  if (!track || !file) return
+  loadSf2Sampler(track)
+  const graph = ensureGraph()
+  if (!graph) return
+  const audio = await decodeSampleFile(graph.context, file)
+  const pcm = audio.getChannelData(0)
+  const id = 'sf2-' + track.id
+  sf2Engine.loadPcmZone(id, pcm, { name: file.name, sampleRate: audio.sampleRate, rootKey: 60 })
+  const hash = await hashBlob(file)
+  await putAsset(hash, file, { name: file.name, bytes: file.size })
+  track.sf2Id = id
+  track.sf2Hash = hash
+  track.sf2Name = file.name || 'Sample'
+  track.loadMessage = track.sf2Name
+  markDirty()
+  showToast('Loaded ' + track.sf2Name)
+}
+
 export function loadWebSampler (track, patch = {}) {
   if (!track || track.type === 'master') return
   const next = createWebSamplerInstrument({
@@ -2214,6 +2492,7 @@ export function previewNoteOff (track, pitch) {
   const cloud = cloudSamplerFor(track)
   if (cloud) {
     const previewId = 'preview-' + track.id + '-' + pitch
+    armedNotes.delete(previewId)
     cloud.cancelPending(previewId, track.id)
     cloud.noteOff(previewId, track.id)
     maybeStopBrowserMeters()
@@ -3192,21 +3471,55 @@ async function persistSamplerAssets (project) {
 }
 
 async function restoreSamplerAssets (project) {
+  const graph = ensureGraph()
   for (const track of session.tracks || []) {
     const hash = track.webSampler && track.webSampler.assetHash
-    if (!hash) continue
-    const asset = await getAsset(hash)
-    if (!asset || !asset.blob) continue
+    if (hash) {
+      const asset = await getAsset(hash)
+      if (asset && asset.blob) {
+        try {
+          const url = URL.createObjectURL(asset.blob)
+          track.webSampler.sampleUrl = url
+          if (graph) {
+            const buffer = await decodeSampleFile(graph.context, asset.blob)
+            samplerBuffers.set(track.id, buffer)
+          }
+        } catch (err) {
+          console.warn('[project] sampler asset restore failed', err)
+        }
+      }
+    }
+    if (track.sf2Hash) {
+      const asset = await getAsset(track.sf2Hash)
+      if (asset && asset.blob && graph) {
+        try {
+          const id = track.sf2Id || ('sf2-' + track.id)
+          track.sf2Id = id
+          if (/\.sf2$/i.test(asset.name || '')) await sf2Engine.loadSf2Buffer(id, await asset.blob.arrayBuffer())
+          else {
+            const buffer = await decodeSampleFile(graph.context, asset.blob)
+            sf2Engine.loadPcmZone(id, buffer.getChannelData(0), { name: asset.name, sampleRate: buffer.sampleRate })
+          }
+        } catch (err) {
+          console.warn('[project] sf2 restore failed', err)
+        }
+      }
+    }
+  }
+  for (const clip of session.clips || []) {
+    if (!clip.sourceId) continue
+    if (audioBuffers.has(clip.sourceId)) continue
+    const asset = await getAsset(clip.sourceId)
+    if (!asset || !asset.blob || !graph) continue
     try {
-      const url = URL.createObjectURL(asset.blob)
-      track.webSampler.sampleUrl = url
-      const graph = ensureGraph()
-      if (graph) {
-        const buffer = await decodeSampleFile(graph.context, asset.blob)
-        samplerBuffers.set(track.id, buffer)
+      const buffer = await decodeSampleFile(graph.context, asset.blob)
+      buffer._previewKey = clip.sourceId
+      audioBuffers.set(clip.sourceId, buffer)
+      if (!clip.peaks || !clip.peaks.length) {
+        clip.peaks = Array.from(buildAudioPreview(buffer, 200).peaks)
       }
     } catch (err) {
-      console.warn('[project] sampler asset restore failed', err)
+      console.warn('[project] audio clip restore failed', err)
     }
   }
 }
@@ -3275,7 +3588,7 @@ export async function exportProjectWav () {
   session.saveStatus = 'Exporting…'
   showToast('Bouncing WAV…')
   try {
-    await bounceSessionToWav(session, { samplerBuffers })
+    await bounceSessionToWav(session, { samplerBuffers, audioBuffers })
     session.saveStatus = ''
     showToast('WAV exported')
   } catch (err) {
@@ -3289,13 +3602,13 @@ export async function exportProject () {
   return shareProjectFile()
 }
 
-export async function importProjectJson (json) {
-  if (!json) return
+export async function importProjectJson (json, options = {}) {
+  if (!json) return false
   let data = json
   if (typeof json === 'string') {
     try { data = JSON.parse(json) } catch (err) {
-      showToast('Invalid project file')
-      return
+      if (!options.quiet) showToast('Invalid project file')
+      return false
     }
   }
   const migrated = migrateProject(data)
@@ -3307,7 +3620,55 @@ export async function importProjectJson (json) {
   session.unsaved = false
   rememberRecentProject()
   setActiveProject(session.projectId).catch(() => {})
-  showToast('Project loaded')
+  if (!options.quiet) showToast('Project loaded')
+  return true
+}
+
+/** Bring back whatever the user was working on when the page was last open: the active
+ * stored project first, then the last autosave. Returns false when there is nothing to
+ * restore and the starter demo stays. */
+export async function restoreLastSession () {
+  if (session.restoring) return false
+  session.restoring = true
+  try {
+    const id = await getActiveProjectId()
+    if (id) {
+      const row = await getProject(id)
+      if (row && await importProjectJson(row, { quiet: true })) return true
+    }
+    if (typeof localStorage !== 'undefined') {
+      const json = localStorage.getItem(FALLBACK_KEYS.LS_LAST) || localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE)
+      if (json && await importProjectJson(json, { quiet: true })) return true
+    }
+  } catch (err) {
+    console.warn('[project] restore failed', err)
+  } finally {
+    session.restoring = false
+  }
+  return false
+}
+
+/** Synchronous snapshot for pagehide: IndexedDB may not finish before the tab dies, but
+ * localStorage does. The full save still runs in the background when the page survives. */
+export function flushSessionSnapshot () {
+  if (!session.unsaved) return
+  try {
+    const data = serializeProject()
+    const json = JSON.stringify({ ...data, updatedAt: Date.now() })
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(FALLBACK_KEYS.LS_LAST, json)
+      localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, json)
+    }
+    setActiveProject(data.id).catch(() => {})
+  } catch (err) { /* quota or serialisation failure: the next autosave retries */ }
+  autosaveProject()
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushSessionSnapshot)
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) flushSessionSnapshot()
+  })
 }
 
 export async function openStoredProject (id) {
@@ -3365,7 +3726,12 @@ let pendingClick = null
 let pendingNote = null
 const samplerVoices = new Map()
 const soundingNotes = new Map()
+/** Notes the scheduler has asked for but whose engine voice is still being built.
+ * A note-off that arrives in that window must cancel the upcoming voice, not wait
+ * for it to start and then ring forever. */
+const armedNotes = new Set()
 const samplerBuffers = new Map()
+const audioBuffers = new Map()
 let clickBuffer = null
 let clickLoadPromise = null
 let lastMetroBeat = -1
@@ -3729,6 +4095,7 @@ function tickLocalNotes (nowBeats) {
     if (!track || track.type === 'master' || !isTrackAudible(clip.trackIndex)) return
     const browserOwned = track.source === 'web-sampler' || isCloudSamplerTrack(track)
     if (session.remoteAudioOn && !browserOwned) return
+    if (isAudioClip(clip) || track.type === 'audio') return
     const clipStart = clip.startBeat || 0
     if (nowBeats + lookBeats < clipStart || nowBeats >= clipStart + Math.max(0.25, clip.lengthBeats || 0)) return
     clipPlaybackNotes(clip).forEach((item) => {
@@ -3759,6 +4126,7 @@ function tickLocalNotes (nowBeats) {
     releaseWebSampler(voiceKey)
     const cloud = track && cloudSamplerFor(track)
     if (cloud) {
+      armedNotes.delete(voiceKey)
       cloud.cancelPending(voiceKey, track.id)
       cloud.noteOff(voiceKey, track.id)
     } else {
@@ -3771,27 +4139,61 @@ function tickLocalNotes (nowBeats) {
 
 function allLocalNotesOff () {
   sampleWaits.clear()
+  armedNotes.clear()
   soundingNotes.forEach((voiceKey) => {
     releaseWebSampler(voiceKey)
     mOrchestraCloud.noteOff(voiceKey)
     orchestraVCloud.noteOff(voiceKey)
+    twinEngine.noteOff(voiceKey)
+    sf2Engine.noteOff(voiceKey)
   })
   mOrchestraCloud.allNotesOff()
   orchestraVCloud.allNotesOff()
+  twinEngine.allNotesOff()
+  sf2Engine.allNotesOff()
+  allAudioClipsOff()
   soundingNotes.clear()
+}
+
+function tickLocalAudio (nowBeats) {
+  const graph = audioGraph
+  if (!graph || !graph.context) return
+  tickAudioClips(session, {
+    nowBeats,
+    context: graph.context,
+    buffers: audioBuffers,
+    destFor: (track) => trackInputNode(graph, track && track.id) || graph.context.destination,
+    isAudible: isTrackAudible
+  })
 }
 
 function previewCloudSampler (track, pitch, velocity, id, when) {
   const logicalId = id || ('preview-' + track.id + '-' + pitch)
   const cloud = cloudSamplerFor(track)
   if (!cloud) return logicalId
+  armedNotes.add(logicalId)
   ensureMixerAttached().then(async (graph) => {
-    if (!graph) return
+    if (!graph) {
+      armedNotes.delete(logicalId)
+      return
+    }
     await graph.context.resume()
     const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when)
+    const stillArmed = armedNotes.has(logicalId)
+    armedNotes.delete(logicalId)
+    if (!stillArmed) {
+      if (engineKey) {
+        cloud.cancelPending(engineKey, track.id)
+        cloud.noteOff(engineKey, track.id)
+      }
+      soundingNotes.delete(logicalId)
+      return
+    }
+    if (engineKey) soundingNotes.set(logicalId, engineKey)
     if (!engineKey && soundingNotes.get(logicalId) === logicalId) soundingNotes.delete(logicalId)
     if (engineKey && !graph.mixerNodes) refreshMixerGraph()
   }).catch((err) => {
+    armedNotes.delete(logicalId)
     if (soundingNotes.get(logicalId) === logicalId) soundingNotes.delete(logicalId)
     console.warn('[cloud-sampler] preview failed:', err)
   })

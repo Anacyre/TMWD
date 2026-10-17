@@ -10,7 +10,18 @@ export const SUPABASE_URL = url
 export const WEB_ASSET_BUCKET = 'daw-web'
 export const M_ORCHESTRA_BUCKET = 'm-orchestra'
 
-export const supabase = createClient(url, anonKey)
+export const PROJECTS_BUCKET = 'projects'
+export const SOUNDFONT_BUCKET = 'soundfonts'
+
+/* Sessions persist in localStorage so an account survives a refresh or a closed tab. */
+export const supabase = createClient(url, anonKey, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true,
+    storageKey: 'dawweb.auth'
+  }
+})
 
 export function publicAssetUrl (path, bucket = WEB_ASSET_BUCKET) {
   const { data } = supabase.storage.from(bucket).getPublicUrl(path)

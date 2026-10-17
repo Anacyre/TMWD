@@ -6,7 +6,49 @@
     :flush="kind === 'instrument'"
     @close="closeLiteSheet"
   >
-    <view v-if="kind === 'track-menu' && track" class="menu">
+    <view v-if="kind === 'track-menu' && track && pick === 'group-with'" class="menu">
+      <text class="lt-cap">Choose the tracks to group with {{ track.name }}</text>
+      <view class="group">
+        <view
+          v-for="item in groupCandidates"
+          :key="item.id"
+          class="lt-row"
+          @click.stop="toggleCandidate(item.id)"
+        >
+          <view class="pick-dot" :style="{ background: item.colour || '#6aa8ff' }" />
+          <text class="grow">{{ item.name }}</text>
+          <view class="check" :class="{ on: picked.includes(item.id) }">
+            <daw-icon v-if="picked.includes(item.id)" name="check" :size="14" color="currentColor" />
+          </view>
+        </view>
+        <text v-if="!groupCandidates.length" class="empty">No other tracks yet</text>
+      </view>
+      <view class="cta-row">
+        <view class="lt-btn ghost" @click.stop="pick = ''">Back</view>
+        <view class="lt-btn" :class="{ off: !picked.length }" @click.stop="createGroup">Create group</view>
+      </view>
+    </view>
+
+    <view v-else-if="kind === 'track-menu' && track && pick === 'add-to'" class="menu">
+      <text class="lt-cap">Move {{ track.name }} into</text>
+      <view class="group">
+        <view
+          v-for="item in groupOptions"
+          :key="item.id"
+          class="lt-row"
+          @click.stop="addTo(item)"
+        >
+          <view class="pick-dot" :style="{ background: item.colour || '#6aa8ff' }" />
+          <text class="grow">{{ item.name }}</text>
+          <daw-icon name="chevron" :size="16" color="currentColor" />
+        </view>
+      </view>
+      <view class="cta-row">
+        <view class="lt-btn ghost" @click.stop="pick = ''">Back</view>
+      </view>
+    </view>
+
+    <view v-else-if="kind === 'track-menu' && track" class="menu">
       <view class="name-field">
         <view class="name-dot" :style="{ background: track.colour || '#6aa8ff' }" />
         <input
@@ -43,6 +85,39 @@
       </view>
 
       <view class="group">
+        <template v-if="isGroup">
+          <view class="lt-row" @click.stop="fold">
+            <view class="row-ico"><daw-icon :name="track.collapsed ? 'chevron-right' : 'chevron'" :size="18" color="currentColor" /></view>
+            <text class="grow">{{ track.collapsed ? 'Unfold' : 'Fold' }}</text>
+            <text class="sub">{{ childLabel }}</text>
+          </view>
+          <view class="lt-row" @click.stop="paintChildren">
+            <view class="row-ico"><view class="pick-dot" :style="{ background: track.colour || '#6aa8ff' }" /></view>
+            <text class="grow">Colour all tracks in group</text>
+          </view>
+          <view class="lt-row" @click.stop="ungroup">
+            <view class="row-ico"><daw-icon name="close" :size="18" color="currentColor" /></view>
+            <text class="grow">Ungroup</text>
+          </view>
+        </template>
+        <template v-else>
+          <view class="lt-row" @click.stop="pick = 'group-with'">
+            <view class="row-ico"><daw-icon name="plus" :size="18" color="currentColor" /></view>
+            <text class="grow">Group with…</text>
+          </view>
+          <view v-if="groupOptions.length" class="lt-row" @click.stop="pick = 'add-to'">
+            <view class="row-ico"><daw-icon name="chevron-right" :size="18" color="currentColor" /></view>
+            <text class="grow">Move to group</text>
+            <text v-if="parentGroup" class="sub">{{ parentGroup.name }}</text>
+          </view>
+          <view v-if="parentGroup" class="lt-row" @click.stop="leaveGroup">
+            <view class="row-ico"><daw-icon name="close" :size="18" color="currentColor" /></view>
+            <text class="grow">Remove from {{ parentGroup.name }}</text>
+          </view>
+        </template>
+      </view>
+
+      <view class="group">
         <view v-if="!isGroup" class="lt-row" @click.stop="duplicate">
           <view class="row-ico"><daw-icon name="copy" :size="18" color="currentColor" /></view>
           <text class="grow">Duplicate</text>
@@ -54,8 +129,36 @@
       </view>
     </view>
 
+    <view v-else-if="kind === 'new-track'" class="menu">
+      <text class="lt-cap">New track</text>
+      <view class="group">
+        <view class="lt-row" @click.stop="createKind('orchestra')">
+          <view class="row-ico"><daw-icon name="piano" :size="18" color="currentColor" /></view>
+          <text class="grow">Orchestra V</text>
+          <text class="sub">Sampled orchestra</text>
+        </view>
+        <view class="lt-row" @click.stop="createKind('twin')">
+          <view class="row-ico"><daw-icon name="wave" :size="18" color="currentColor" /></view>
+          <text class="grow">Twin</text>
+          <text class="sub">3-osc synth</text>
+        </view>
+        <view class="lt-row" @click.stop="createKind('sf2')">
+          <view class="row-ico"><daw-icon name="note" :size="18" color="currentColor" /></view>
+          <text class="grow">Sampler</text>
+          <text class="sub">SoundFont or WAV</text>
+        </view>
+        <view class="lt-row" @click.stop="createKind('audio')">
+          <view class="row-ico"><daw-icon name="wave" :size="18" color="currentColor" /></view>
+          <text class="grow">Audio</text>
+          <text class="sub">WAV · MP3 · OGG</text>
+        </view>
+      </view>
+    </view>
+
     <view v-else-if="kind === 'instrument' && track" class="inst">
-      <daw-orchestra-v v-if="orchestraV" lite />
+      <plugin-twin v-if="twin" :track="track" />
+      <daw-sf2 v-else-if="sf2" :track="track" />
+      <daw-orchestra-v v-else-if="orchestraV" lite />
       <daw-m-orchestra-lite v-else-if="mOrchestra" />
       <daw-orchestra-sampler v-else />
     </view>
@@ -82,7 +185,7 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent } from 'vue'
+import { computed, defineAsyncComponent, ref, watch } from 'vue'
 import LiteSheet from './lite-sheet.vue'
 import DawIcon from '../daw-icon.vue'
 import {
@@ -96,16 +199,25 @@ import {
   onTrackInstrumentClick,
   addInsert,
   replaceInsert,
-  listPlugins
+  listPlugins,
+  setTrackCollapsed,
+  ungroupSelectedTracks,
+  ungroupTrack,
+  addTrackToGroup,
+  groupTracksById,
+  applyGroupColourToChildren,
+  addLiteInstrumentTrack
 } from '../../store/session.js'
-import { isGroupTrack } from '../../model/playlist-model.js'
+import { isGroupTrack, isPlayableTrack } from '../../model/playlist-model.js'
 import { createTapGuard } from '../../lib/tap-guard.js'
-import { isMOrchestraTrack } from '../../model/m-orchestra-ui.js'
+import { isMOrchestraTrack, isTwinTrack, isSf2Track } from '../../model/m-orchestra-ui.js'
 import { isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
 
 const DawOrchestraV = defineAsyncComponent(() => import('../daw-orchestra-v.vue'))
 const DawMOrchestraLite = defineAsyncComponent(() => import('./lite-m-orchestra.vue'))
 const DawOrchestraSampler = defineAsyncComponent(() => import('../daw-orchestra-sampler.vue'))
+const PluginTwin = defineAsyncComponent(() => import('../dsp/plugin-twin.vue'))
+const DawSf2 = defineAsyncComponent(() => import('../daw-sf2.vue'))
 
 const COLOURS = ['#6aa8ff', '#5bc4c9', '#4cc38a', '#b7cf5a', '#e0b341', '#f08a4b', '#ef6a6a', '#e46aa8', '#a77df0', '#8b8e96']
 
@@ -115,6 +227,7 @@ const kind = computed(() => {
   if (!s) return ''
   if (s.kind === 'track-menu') return 'track-menu'
   if (s.kind === 'fx') return 'fx'
+  if (s.kind === 'new-track') return 'new-track'
   if (s.kind === 'track' && s.tab === 'sampler') return 'instrument'
   return ''
 })
@@ -128,11 +241,80 @@ const trackIndex = computed(() => session.tracks.indexOf(track.value))
 const isGroup = computed(() => isGroupTrack(track.value))
 const orchestraV = computed(() => isOrchestraVTrack(track.value))
 const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
+const twin = computed(() => isTwinTrack(track.value))
+const sf2 = computed(() => isSf2Track(track.value))
 const title = computed(() => {
   if (kind.value === 'fx') return 'Add effect'
+  if (kind.value === 'new-track') return 'New track'
   if (kind.value === 'instrument') return (track.value && track.value.name) || 'Instrument'
-  return 'Track'
+  if (pick.value === 'group-with') return 'Group tracks'
+  if (pick.value === 'add-to') return 'Move to group'
+  return isGroup.value ? 'Group' : 'Track'
 })
+
+/* ── grouping ─────────────────────────────────────────────────────── */
+const pick = ref('')
+const picked = ref([])
+watch(open, (isOpen) => { if (!isOpen) { pick.value = ''; picked.value = [] } })
+watch(track, () => { pick.value = ''; picked.value = [] })
+
+const parentGroup = computed(() => {
+  const t = track.value
+  if (!t || !t.parentId) return null
+  const parent = session.tracks.find((item) => item.id === t.parentId)
+  return parent && isGroupTrack(parent) ? parent : null
+})
+const groupOptions = computed(() => session.tracks.filter((item) => isGroupTrack(item) && (!track.value || item.id !== track.value.parentId)))
+const groupCandidates = computed(() => session.tracks.filter((item) => isPlayableTrack(item) && (!track.value || item.id !== track.value.id)))
+const childLabel = computed(() => {
+  const n = track.value ? session.tracks.filter((item) => item.parentId === track.value.id).length : 0
+  return n + (n === 1 ? ' track' : ' tracks')
+})
+
+function toggleCandidate (id) {
+  const list = picked.value.slice()
+  const at = list.indexOf(id)
+  if (at >= 0) list.splice(at, 1)
+  else list.push(id)
+  picked.value = list
+}
+function createGroup () {
+  if (!track.value || !picked.value.length) return
+  const ids = [track.value.id].concat(picked.value)
+  closeLiteSheet()
+  groupTracksById(ids)
+}
+function addTo (group) {
+  const t = track.value
+  closeLiteSheet()
+  if (t && group) addTrackToGroup(t, group)
+}
+function leaveGroup () {
+  const t = track.value
+  closeLiteSheet()
+  if (t) ungroupTrack(t)
+}
+function fold () {
+  const t = track.value
+  if (t) setTrackCollapsed(t, !t.collapsed)
+}
+function paintChildren () {
+  const t = track.value
+  closeLiteSheet()
+  if (t) applyGroupColourToChildren(t)
+}
+function ungroup () {
+  const t = track.value
+  closeLiteSheet()
+  if (!t) return
+  session.selectedTrackIds = [t.id]
+  session.selectedTrack = session.tracks.indexOf(t)
+  ungroupSelectedTracks()
+}
+
+function createKind (kind) {
+  addLiteInstrumentTrack(kind)
+}
 
 const GROUPS = [
   {
@@ -302,9 +484,42 @@ function choose (pluginId) {
   background: var(--lt-s2);
   overflow: hidden;
 }
+.group + .group { margin-top: 10px; }
 .group .lt-row { padding: 0; min-width: 0; }
-.row-ico { width: 18px; height: 18px; flex: none; display: flex; }
+.row-ico { width: 18px; height: 18px; flex: none; display: flex; align-items: center; justify-content: center; }
 .row-ico :deep(.icon) { width: 18px; height: 18px; }
+.pick-dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.check {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-sizing: border-box;
+  border: 1.5px solid var(--lt-line-2, var(--lt-line));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.check.on { background: var(--lt-accent); border-color: var(--lt-accent); }
+.empty { display: block; padding: 14px 0; font-size: var(--lt-fs-s); color: var(--lt-ink-2); }
+.cta-row { display: flex; gap: 10px; margin-top: 16px; }
+.lt-btn {
+  flex: 1;
+  height: 48px;
+  border-radius: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  font-weight: 600;
+  background: var(--lt-accent);
+  color: #fff;
+  cursor: pointer;
+}
+.lt-btn:active { opacity: 0.85; }
+.lt-btn.off { opacity: 0.4; pointer-events: none; }
+.lt-btn.ghost { background: var(--lt-s2); color: var(--lt-ink); }
 :deep(.lt-sheet.wide) {
   height: min(880px, calc(100dvh - 32px));
 }

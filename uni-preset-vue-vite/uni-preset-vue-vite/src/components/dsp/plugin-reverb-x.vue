@@ -513,6 +513,10 @@ function dragTime (event) {
   flex-shrink: 0;
 }
 .wrap { flex-wrap: wrap; }
+/* iPad card width: the knob tray wraps instead of squeezing the knobs. */
+@media (max-width: 1180px) {
+  .tray { flex-wrap: wrap; justify-content: center; gap: 8px 10px; }
+}
 .venue-sel { margin-left: auto; min-width: 120px; }
 .venue-menu { right: 2px; bottom: 34px; }
 .wet-btn { min-width: 88px; }

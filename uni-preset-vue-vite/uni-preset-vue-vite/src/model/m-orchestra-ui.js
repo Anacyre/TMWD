@@ -8,6 +8,8 @@ export const M_ORCHESTRA_DEFAULT_ID = 'm_orch_violin_1'
 export const ORCHESTRA_SAMPLER_PLUGIN_ID = 'orchestra_sampler'
 export const TEST_SYNTH_PLUGIN_ID = 'test_synth'
 export const WEB_SAMPLER_PLUGIN_ID = 'web_sampler'
+export const TWIN_PLUGIN_ID = 'twin'
+export const SF2_PLUGIN_ID = 'sf2_sampler'
 
 export const FAMILIES = [
   { id: 'strings', label: 'Strings', icon: 'family-strings' },
@@ -153,10 +155,22 @@ export function insertablePlugins (options = {}) {
       available: engine,
       requiresEngine: true
     },
-    { id: TEST_SYNTH_PLUGIN_ID, displayName: 'Test Synth', detail: 'Built-in', available: true }
+    { id: TEST_SYNTH_PLUGIN_ID, displayName: 'Test Synth', detail: 'Built-in', available: true },
+    { id: TWIN_PLUGIN_ID, displayName: 'Twin', detail: '3-osc synth, filters, modulation', available: true },
+    { id: SF2_PLUGIN_ID, displayName: 'Sampler', detail: 'SoundFont and dropped samples', available: true }
   ]
   if (options.includeWebSampler !== false) {
     list.push({ id: WEB_SAMPLER_PLUGIN_ID, displayName: 'Web Sampler', detail: 'Browser WAV sampler', available: true })
   }
   return list
+}
+
+export function isTwinTrack (track) {
+  if (!track) return false
+  return track.source === 'twin' || track.definitionId === TWIN_PLUGIN_ID
+}
+
+export function isSf2Track (track) {
+  if (!track) return false
+  return track.source === 'sf2' || track.definitionId === SF2_PLUGIN_ID
 }

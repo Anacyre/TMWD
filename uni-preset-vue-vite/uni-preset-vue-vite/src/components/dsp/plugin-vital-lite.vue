@@ -86,7 +86,7 @@ const props = defineProps({
 const emit = defineEmits(['change'])
 const state = computed(() => props.insert.state || {})
 const pluginId = computed(() => props.insert.pluginId)
-const title = computed(() => (VITAL_LITE_PLUGINS[pluginId.value] && VITAL_LITE_PLUGINS[pluginId.value].name) || 'VitalLite')
+const title = computed(() => (VITAL_LITE_PLUGINS[pluginId.value] && VITAL_LITE_PLUGINS[pluginId.value].name) || 'Lite')
 const subtitle = computed(() => VITAL_LITE_SUBTITLE[pluginId.value] || 'Lite')
 const panel = computed(() => VITAL_LITE_PANELS[pluginId.value] || { knobs: [] })
 const knobs = computed(() => panel.value.knobs || [])

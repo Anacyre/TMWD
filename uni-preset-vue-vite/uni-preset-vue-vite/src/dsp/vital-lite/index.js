@@ -87,15 +87,15 @@ function entry (id, name, category, defaultPreset, createState, normalize, prese
 }
 
 export const VITAL_LITE_PLUGINS = {
-  'reverb-lite': entry('reverb-lite', 'VitalLite Reverb', 'space', 'default', defaultReverbLiteState, normalizeReverbLiteState, REVERB_LITE_FACTORY_PRESETS, REVERB_LITE_PARAMETERS),
-  'chorus-lite': entry('chorus-lite', 'VitalLite Chorus', 'modulation', 'default', defaultChorusLiteState, normalizeChorusLiteState, CHORUS_LITE_FACTORY_PRESETS, CHORUS_LITE_PARAMETERS),
-  'flanger-lite': entry('flanger-lite', 'VitalLite Flanger', 'modulation', 'default', defaultFlangerLiteState, normalizeFlangerLiteState, FLANGER_LITE_FACTORY_PRESETS, FLANGER_LITE_PARAMETERS),
-  'phaser-lite': entry('phaser-lite', 'VitalLite Phaser', 'modulation', 'default', defaultPhaserLiteState, normalizePhaserLiteState, PHASER_LITE_FACTORY_PRESETS, PHASER_LITE_PARAMETERS),
-  'delay-lite': entry('delay-lite', 'VitalLite Delay', 'space', 'default', defaultDelayLiteState, normalizeDelayLiteState, DELAY_LITE_FACTORY_PRESETS, DELAY_LITE_PARAMETERS),
-  'distortion-lite': entry('distortion-lite', 'VitalLite Distortion', 'color', 'default', defaultDistortionLiteState, normalizeDistortionLiteState, DISTORTION_LITE_FACTORY_PRESETS, DISTORTION_LITE_PARAMETERS),
-  'compressor-lite': entry('compressor-lite', 'VitalLite Compressor', 'dynamics', 'default', defaultCompressorLiteState, normalizeCompressorLiteState, COMPRESSOR_LITE_FACTORY_PRESETS, COMPRESSOR_LITE_PARAMETERS),
-  'equalizer-lite': entry('equalizer-lite', 'VitalLite Equalizer', 'eq', 'default', defaultEqualizerLiteState, normalizeEqualizerLiteState, EQUALIZER_LITE_FACTORY_PRESETS, EQUALIZER_LITE_PARAMETERS),
-  'filter-lite': entry('filter-lite', 'VitalLite Filter', 'filter', 'default', defaultFilterLiteState, normalizeFilterLiteState, FILTER_LITE_FACTORY_PRESETS, FILTER_LITE_PARAMETERS)
+  'reverb-lite': entry('reverb-lite', 'Reverb Lite', 'space', 'default', defaultReverbLiteState, normalizeReverbLiteState, REVERB_LITE_FACTORY_PRESETS, REVERB_LITE_PARAMETERS),
+  'chorus-lite': entry('chorus-lite', 'Chorus Lite', 'modulation', 'default', defaultChorusLiteState, normalizeChorusLiteState, CHORUS_LITE_FACTORY_PRESETS, CHORUS_LITE_PARAMETERS),
+  'flanger-lite': entry('flanger-lite', 'Flanger Lite', 'modulation', 'default', defaultFlangerLiteState, normalizeFlangerLiteState, FLANGER_LITE_FACTORY_PRESETS, FLANGER_LITE_PARAMETERS),
+  'phaser-lite': entry('phaser-lite', 'Phaser Lite', 'modulation', 'default', defaultPhaserLiteState, normalizePhaserLiteState, PHASER_LITE_FACTORY_PRESETS, PHASER_LITE_PARAMETERS),
+  'delay-lite': entry('delay-lite', 'Delay Lite', 'space', 'default', defaultDelayLiteState, normalizeDelayLiteState, DELAY_LITE_FACTORY_PRESETS, DELAY_LITE_PARAMETERS),
+  'distortion-lite': entry('distortion-lite', 'Distortion Lite', 'color', 'default', defaultDistortionLiteState, normalizeDistortionLiteState, DISTORTION_LITE_FACTORY_PRESETS, DISTORTION_LITE_PARAMETERS),
+  'compressor-lite': entry('compressor-lite', 'Compressor Lite', 'dynamics', 'default', defaultCompressorLiteState, normalizeCompressorLiteState, COMPRESSOR_LITE_FACTORY_PRESETS, COMPRESSOR_LITE_PARAMETERS),
+  'equalizer-lite': entry('equalizer-lite', 'Equalizer Lite', 'eq', 'default', defaultEqualizerLiteState, normalizeEqualizerLiteState, EQUALIZER_LITE_FACTORY_PRESETS, EQUALIZER_LITE_PARAMETERS),
+  'filter-lite': entry('filter-lite', 'Filter Lite', 'filter', 'default', defaultFilterLiteState, normalizeFilterLiteState, FILTER_LITE_FACTORY_PRESETS, FILTER_LITE_PARAMETERS)
 }
 
 const midiKnob = (key, label, d) => ({ key, label, min: 8, max: 136, defaultValue: d, format: 'midi' })

@@ -37,6 +37,9 @@ function inferSource (track) {
   const def = track.definitionId || track.instrumentId || ''
   if (String(def).startsWith('m_orch_')) return 'm-orchestra'
   if (String(def).startsWith('ov_')) return 'orchestra-v'
+  if (def === 'twin' || track.source === 'twin') return 'twin'
+  if (def === 'sf2_sampler' || track.source === 'sf2') return 'sf2'
+  if (track.type === 'audio') return 'audio'
   if (track.webSampler && (track.webSampler.sampleName || track.webSampler.assetHash)) return 'web-sampler'
   if (def) return 'remote-vst'
   return 'empty'
@@ -126,7 +129,10 @@ function migrateClip (clip) {
     loopCount: clip.loopCount || 1,
     loopLengthBeats: clip.loopLengthBeats || 0,
     sourceId: clip.sourceId || '',
-    audioOffsetBeats: clip.audioOffsetBeats || 0
+    audioOffsetBeats: clip.audioOffsetBeats || 0,
+    gainDb: Number(clip.gainDb) || 0,
+    peaks: Array.isArray(clip.peaks) ? clip.peaks.slice(0, 512) : null,
+    audioDuration: Number(clip.audioDuration) || 0
   }
 }
 
@@ -145,6 +151,7 @@ export function migrateProject (raw) {
     projectVersion: SCHEMA_VERSION,
     migratedFrom: schemaVersion,
     id: src.id || src.projectId || '',
+    cloudId: src.cloudId || '',
     name: src.name || src.projectName || 'Untitled',
     tempo,
     bpm: tempo,
@@ -181,6 +188,7 @@ export function serializeSession (session) {
   const master = (session.tracks || []).find((track) => track.type === 'master')
   return clonePlain(migrateProject({
     id: session.projectId || uid(),
+    cloudId: session.cloudId || '',
     name: session.projectName,
     tempo: session.bpm,
     bpm: session.bpm,
@@ -213,8 +221,11 @@ export function collectAssetRefs (project) {
   const refs = []
   ;(project.tracks || []).forEach((track) => {
     const sampler = track.webSampler
-    if (!sampler) return
-    if (sampler.assetHash) refs.push({ trackId: track.id, hash: sampler.assetHash, name: sampler.sampleName || '' })
+    if (sampler && sampler.assetHash) refs.push({ trackId: track.id, hash: sampler.assetHash, name: sampler.sampleName || '' })
+    if (track.sf2Hash) refs.push({ trackId: track.id, hash: track.sf2Hash, name: track.sf2Name || '' })
+  })
+  ;(project.clips || []).forEach((clip) => {
+    if (clip && clip.sourceId) refs.push({ clipId: clip.id, hash: clip.sourceId, name: clip.name || '' })
   })
   return refs
 }

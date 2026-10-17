@@ -58,7 +58,7 @@
         >
           <daw-icon name="pencil" :size="16" color="currentColor" />
         </view>
-        <text class="lane-hint">{{ laneHint }}</text>
+        <text v-if="laneHint" class="lane-hint">{{ laneHint }}</text>
       </view>
       <view ref="laneHost" class="lane-host" />
     </template>
@@ -175,6 +175,9 @@ const lanes = [
   { id: 'pedal', label: 'Pedal', cc: 64 }
 ]
 const MOVE_SLOP = 6
+/** Curve points sit on an eighth-note grid: dense enough to shape a phrase, sparse enough to edit by finger. */
+const EIGHTH = 0.5
+/** Pedal blocks keep a finer grid so a release can land right on a chord change. */
 const SIXTEENTH = 0.25
 const LONG_PRESS_MS = 480
 const keyNames = KEY_NAMES
@@ -198,17 +201,8 @@ const snapLabel = computed(() => {
   const hit = SNAP_STEPS.find((item) => item.beats && Math.abs(item.beats - session.snapGridBeats) < 1e-6)
   return hit ? hit.label : 'Bar'
 })
-const laneHint = computed(() => {
-  if (laneReadout.value) return laneReadout.value
-  if (lane.value === 'velocity') return 'Drag across notes to set how hard they play'
-  if (lane.value === 'pedal') return 'Double-tap to add a pedal · drag its edge to change the length · double-tap a pedal to remove it'
-  if (lane.value === 'dynamics' || lane.value === 'expression') {
-    return laneDraw.value
-    ? 'Pen on · drag to draw on 16th notes · drag a point to move it'
-    : 'Pen off · drag a point to move it · double-tap to remove'
-  }
-  return 'Drag to draw · double-tap a point to remove it'
-})
+/* Only the live value readout is shown; the lane gestures are learnable without a caption. */
+const laneHint = computed(() => laneReadout.value || '')
 
 const view = defaultView({
   pixelsPerBeat: 72,
@@ -272,6 +266,7 @@ function mount (tries = 0) {
   rollCanvas.addEventListener('pointermove', onRollMove)
   rollCanvas.addEventListener('pointerup', onRollUp)
   rollCanvas.addEventListener('pointercancel', onRollUp)
+  rollCanvas.addEventListener('lostpointercapture', onRollLost)
   rollCanvas.addEventListener('wheel', onWheel, { passive: false })
   laneCanvas = makeCanvas(laneParent)
   laneCanvas.addEventListener('pointerdown', onLaneDown)
@@ -432,16 +427,20 @@ function capture (ids) {
 
 function onRollDown (e) {
   if (!clip.value) return
+  // The first finger of a new touch sequence invalidates any pointer we never saw lift,
+  // otherwise one stale entry turns every later one-finger drag into a pinch.
+  if (e.isPrimary) pointers.clear()
   capturePointer(rollCanvas, e.pointerId)
-  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   markDirty()
-  if (pointers.size === 2) {
-    cancelSingle()
-    gesture = { type: 'pinch', start: pinchStart() }
+  const p = local(e, rollCanvas)
+  if (pointers.size >= 1 && p.x >= layout.gridX && p.y >= layout.gridY) {
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
+    if (pointers.size === 2) {
+      cancelSingle()
+      gesture = { type: 'pinch', start: pinchStart() }
+    }
     return
   }
-  if (pointers.size > 2) return
-  const p = local(e, rollCanvas)
   if (p.y < layout.gridY) {
     gesture = { type: 'seek' }
     seekTo(p.x)
@@ -452,6 +451,7 @@ function onRollDown (e) {
     startPreview(yToPitch(p.y - layout.gridY, view))
     return
   }
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   const g = { x: p.x - layout.gridX, y: p.y - layout.gridY }
   const hit = hitNote(notes.value, g.x, g.y, view, e.pointerType === 'touch' ? 22 : 10)
   gesture = { type: 'pending', origin: p, hit, started: false }
@@ -618,15 +618,26 @@ function onRollMove (e) {
   }
 }
 
+function onRollLost (e) {
+  if (!pointers.has(e.pointerId)) return
+  // Capture was taken away (system gesture, tab switch): treat it as a lift.
+  onRollUp(e)
+}
+
 function onRollUp (e) {
   pointers.delete(e.pointerId)
   markDirty()
   clearRollHold()
   if (!gesture) return
   if (gesture.type === 'pinch') {
-    if (!pointers.size) gesture = null
+    // Lifting one finger ends the pinch; the remaining finger starts fresh on its next move.
+    if (pointers.size < 2) {
+      pointers.clear()
+      gesture = null
+    }
     return
   }
+  if (gesture.type === 'rubber') tool.value = 'draw'
   if (gesture.type === 'pending') tapAt(gesture)
   if (gesture.started && (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create')) {
     flushNotePatches()
@@ -658,6 +669,7 @@ function tapAt (g) {
   lastNoteTap = { at: 0, id: 0 }
   if (selectedIds.size || tool.value === 'select') {
     selectedIds.clear()
+    tool.value = 'draw'
     return
   }
   const gx = g.origin.x - layout.gridX
@@ -886,17 +898,21 @@ function paintPedal (ctx, height, colour) {
   })
 }
 
+function snapEighth (beat) {
+  return Math.max(0, Math.round((Number(beat) || 0) / EIGHTH) * EIGHTH)
+}
+
 function snapSixteenth (beat) {
   return Math.max(0, Math.round((Number(beat) || 0) / SIXTEENTH) * SIXTEENTH)
 }
 
-function drawSixteenths (cc, fromBeat, toBeat, fromValue, toValue) {
-  const a = snapSixteenth(fromBeat)
-  const b = snapSixteenth(toBeat)
+function drawEighths (cc, fromBeat, toBeat, fromValue, toValue) {
+  const a = snapEighth(fromBeat)
+  const b = snapEighth(toBeat)
   const dir = b >= a ? 1 : -1
-  const count = Math.round(Math.abs(b - a) / SIXTEENTH)
+  const count = Math.round(Math.abs(b - a) / EIGHTH)
   for (let i = 0; i <= count; i++) {
-    const t = a + dir * i * SIXTEENTH
+    const t = a + dir * i * EIGHTH
     const u = count === 0 ? 1 : i / count
     paintClipExpression(clip.value, cc, t, fromValue + (toValue - fromValue) * u)
   }
@@ -985,10 +1001,10 @@ function onLaneDown (e) {
   }
   lastPointTap = { at: now, index: -1 }
   if (!laneDraw.value) return
-  const snapped = snapSixteenth(beat)
+  const snapped = snapEighth(beat)
   beginEdit('Draw ' + active.label)
   laneGesture = { type: 'curve', cc: active.cc, lastBeat: snapped, lastValue: value }
-  drawSixteenths(active.cc, snapped, snapped, value, value)
+  drawEighths(active.cc, snapped, snapped, value, value)
   setReadout(active.label, value)
 }
 
@@ -1025,11 +1041,11 @@ function onLaneMove (e) {
     return
   }
   if (laneGesture.type === 'move-point') {
-    const beat = snapSixteenth(laneGesture.originBeat + (laneXToBeat(p.x) - laneGesture.grabBeat))
+    const beat = snapEighth(laneGesture.originBeat + (laneXToBeat(p.x) - laneGesture.grabBeat))
     const nextValue = Math.max(0, Math.min(127, laneGesture.originValue + (value - laneGesture.grabValue)))
     const points = ensureExpression(clip.value)[laneKey(laneGesture.cc)] || []
     const index = points.findIndex((point) => Math.abs(point.t - laneGesture.liveT) < 1e-4)
-    const blocked = points.some((point, i) => i !== index && Math.abs(point.t - beat) < SIXTEENTH * 0.5)
+    const blocked = points.some((point, i) => i !== index && Math.abs(point.t - beat) < EIGHTH * 0.5)
     if (index >= 0 && !blocked) {
       moveClipExpressionPoint(clip.value, laneGesture.cc, index, beat, nextValue)
       laneGesture.liveT = beat
@@ -1037,8 +1053,8 @@ function onLaneMove (e) {
     setReadout(currentLane().label, nextValue)
     return
   }
-  const beat = snapSixteenth(laneXToBeat(p.x))
-  drawSixteenths(laneGesture.cc, laneGesture.lastBeat, beat, laneGesture.lastValue, value)
+  const beat = snapEighth(laneXToBeat(p.x))
+  drawEighths(laneGesture.cc, laneGesture.lastBeat, beat, laneGesture.lastValue, value)
   laneGesture.lastBeat = beat
   laneGesture.lastValue = value
   setReadout(currentLane().label, value)

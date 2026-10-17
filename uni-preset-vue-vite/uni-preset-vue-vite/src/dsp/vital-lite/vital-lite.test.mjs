@@ -65,7 +65,8 @@ const makers = {
   for (const id of VITAL_LITE_IDS) {
     assert(plugins[id], id + ' is registered')
     assert(isVitalLiteId(id), id + ' flagged as VitalLite')
-    assert(VITAL_LITE_PLUGINS[id].name.startsWith('VitalLite '), id + ' full name')
+    assert(VITAL_LITE_PLUGINS[id].name.endsWith(' Lite'), id + ' display name ends with Lite')
+    assert(!/VitalLite/.test(VITAL_LITE_PLUGINS[id].name), id + ' display name has no VitalLite prefix')
     const insert = createInsert(id, plugins)
     assert(insert.pluginId === id, id + ' createInsert')
     assert(insert.state && typeof insert.state.mix === 'number' || insert.state.drive != null || insert.state.lowMidi != null,

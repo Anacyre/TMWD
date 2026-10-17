@@ -33,6 +33,8 @@ const TECHNIQUE_ARTIC = {
 
 const DECODE_TAG = '|ov-v2'
 const PITCH_BEND_SEMITONES = 2
+/** Longest a sustain pedal may hold a released voice. */
+const HOLD_LIMIT_MS = 60000
 
 /** Equal-power pair for the body/release crossfade, so the two halves of one recording sum
  * to constant power even though their phases are unrelated. */
@@ -580,6 +582,36 @@ function resolveVoiceKeys (pitchOrKey, trackId) {
   return Array.from(keys)
 }
 
+/* A note-off can arrive before its note-on has even registered: the UI releases a key
+ * while the audio context is still unlocking, or the transport ends a note while its
+ * voice is awaiting a decode. Those offs are remembered briefly so the late note-on
+ * starts already released instead of ringing forever. */
+const orphanOffs = new Map()
+const EARLY_OFF_MS = 6000
+
+function noteTag (pitchOrKey, trackId) {
+  return typeof pitchOrKey === 'string' ? pitchOrKey : String(trackId || 0) + ':' + pitchOrKey
+}
+
+/** A note-off that found no voice and no pending entry: its note-on is still on the way.
+ * Entries expire so a stray off from a stopped transport cannot mute a note played later. */
+function rememberOrphanOff (pitchOrKey, trackId) {
+  const now = Date.now()
+  orphanOffs.set(noteTag(pitchOrKey, trackId), now)
+  if (orphanOffs.size > 256) {
+    orphanOffs.forEach((at, key) => { if (now - at > EARLY_OFF_MS) orphanOffs.delete(key) })
+  }
+}
+
+/** Called when a note-on is registered. Returns true if its off already happened. */
+function consumeOrphanOff (trackId, pitch, id) {
+  const tag = id != null ? String(id) : String(trackId || 0) + ':' + pitch
+  const at = orphanOffs.get(tag)
+  if (at == null) return false
+  orphanOffs.delete(tag)
+  return Date.now() - at <= EARLY_OFF_MS
+}
+
 export function cancelPending (pitchOrKey, trackId) {
   resolveVoiceKeys(pitchOrKey, trackId).forEach((key) => {
     const entry = pending.get(key)
@@ -675,11 +707,20 @@ function releaseVoice (key, options = {}) {
   if (plan.action === 'none') return
   if (plan.action === 'hold') {
     voice.pedalHeld = true
+    // A pedal that is never lifted (controller lane ends high, panel closed) must not
+    // keep a voice alive for the rest of the session.
+    if (!voice.holdExpiry) {
+      voice.holdExpiry = setTimeout(() => {
+        voice.holdExpiry = 0
+        if (voices.get(key) === voice) releaseVoice(key, { force: true })
+      }, HOLD_LIMIT_MS)
+    }
     return
   }
 
   voices.delete(key)
   voice.releasing = true
+  if (voice.holdExpiry) { clearTimeout(voice.holdExpiry); voice.holdExpiry = 0 }
 
   if (plan.action === 'free') return
   if (voice.expiry) { clearTimeout(voice.expiry); voice.expiry = 0 }
@@ -696,7 +737,16 @@ function releaseVoice (key, options = {}) {
 }
 
 export function noteOff (pitchOrKey, trackId) {
-  resolveVoiceKeys(pitchOrKey, trackId).forEach((key) => releaseVoice(key))
+  const keys = resolveVoiceKeys(pitchOrKey, trackId)
+  if (!keys.length) {
+    rememberOrphanOff(pitchOrKey, trackId)
+    return
+  }
+  keys.forEach((key) => {
+    const entry = pending.get(key)
+    if (entry) entry.cancelled = true
+    releaseVoice(key)
+  })
 }
 
 /** Damp everything the pedal was holding for one track. */
@@ -712,6 +762,7 @@ export function allNotesOff () {
   noteEpoch += 1
   pending.forEach((entry) => { entry.cancelled = true })
   pending.clear()
+  orphanOffs.clear()
   pedalDown.clear()
   Array.from(voices.keys()).forEach((key) => releaseVoice(key, { force: true }))
 }
@@ -766,13 +817,15 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
 export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
   if (!graph || !track) return null
   profile.noteCount += 1
+  // Register synchronously, before the first await: a note-off that lands while the
+  // context is resuming must find this entry, or the voice would start and never stop.
+  const key = voiceKey(track.id, pitch, id)
+  const epoch = noteEpoch
+  pending.set(key, { cancelled: consumeOrphanOff(track.id, pitch, id), epoch })
+
   if (graph.context.state === 'suspended') {
     try { await graph.context.resume() } catch (err) { /* autoplay policy */ }
   }
-
-  const key = voiceKey(track.id, pitch, id)
-  const epoch = noteEpoch
-  pending.set(key, { cancelled: false, epoch })
 
   const def = findDefinition(track.definitionId)
   const map = def ? await loadInstrument(def.id) : null

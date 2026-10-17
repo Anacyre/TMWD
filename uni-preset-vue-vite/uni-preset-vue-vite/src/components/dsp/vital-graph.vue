@@ -61,7 +61,7 @@ function scene (ph) {
     const pic = splitFilterResponse(s)
     return { ...pic, guides: true, spectrum: true, handles: pic.handle ? [pic.handle] : [] }
   }
-  if (id === 'delay-lite') return { bars: delayBars(s), meter: true }
+  if (id === 'delay-lite') return { bars: delayBars(s), meter: true, zero: true }
   if (id === 'chorus-lite') return { bars: chorusBars(s, ph), meter: true, animate: true }
   if (id === 'flanger-lite') return { ...flangerResponse(s, ph), guides: true, spectrum: true, animate: true }
   if (id === 'phaser-lite') return { ...phaserNotches(s, ph), guides: true, spectrum: true, animate: true }

@@ -1,7 +1,7 @@
 <template>
-  <view v-if="session.openPlugin" class="host" :class="{ lite: lite && !full, full }" @click.self="onHostClick">
-      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite && !full, 'viz-off': !vizOn, 'compact-plugin': !full && (lite || narrow), 'full-plugin': full }]" @click.stop>
-        <view v-if="full" class="full-head">
+  <view v-if="session.openPlugin" class="host" :class="{ lite: lite && !tablet, full, card }" @click.self="onHostClick">
+      <view class="sheet" :class="[skinClass, { 'lite-plugin-surface': lite && !tablet, 'viz-off': !vizOn, 'compact-plugin': !tablet && (lite || narrow), 'full-plugin': full, 'card-plugin': card }]" @click.stop>
+        <view v-if="tablet" class="full-head">
           <view
             class="full-btn power"
             :class="{ off: insert && insert.enabled === false }"
@@ -147,7 +147,8 @@ import './dsp-theme.css'
 import './lite-plugin-surface.css'
 
 const lite = computed(() => isLite())
-const full = computed(() => isNewLite())
+/** Tablet shell: one header style for every effect. */
+const tablet = computed(() => isNewLite())
 const narrow = ref(false)
 const vizOn = ref(true)
 
@@ -160,6 +161,9 @@ const liveMeters = ref({})
 const liveState = ref('')
 const insert = computed(() => resolveOpenInsert(session.webMixer, session.openPlugin, session.tracks))
 const isVitalLite = computed(() => isVitalLiteId(insert.value && insert.value.pluginId))
+/** Only EQ X earns the whole screen; everything else is a card no taller than 3/4 of it. */
+const full = computed(() => tablet.value && !!insert.value && insert.value.pluginId === 'equalizer-x')
+const card = computed(() => tablet.value && !full.value)
 const pluginTitle = computed(() => {
   const id = insert.value && insert.value.pluginId
   return (id && plugins[id] && plugins[id].name) || 'Effect'
@@ -257,7 +261,7 @@ function onHostClick () {
 function remove () {
   const open = session.openPlugin
   if (!open) return
-  if (full.value) removeInsertWithUndo(laneFromOpen(open), open.index)
+  if (tablet.value) removeInsertWithUndo(laneFromOpen(open), open.index)
   else removeInsert(laneFromOpen(open), open.index)
   closePlugin()
 }
@@ -269,7 +273,7 @@ function changePlugin () {
   const open = session.openPlugin
   if (!open) return
   const lane = laneFromOpen(open)
-  if (full.value) {
+  if (tablet.value) {
     closePlugin()
     openLiteSheet({ kind: 'fx', lane: { type: lane.type, id: lane.id }, slot: open.index, replace: true })
     return
@@ -380,6 +384,32 @@ function onChange () { persistWebMixer() }
   padding: 0 max(12px, env(safe-area-inset-right, 0px)) max(12px, env(safe-area-inset-bottom, 0px)) max(12px, env(safe-area-inset-left, 0px));
   box-shadow: none;
 }
+/* Centred card: 86.6vw wide, never taller than three quarters of the screen. */
+.host.card {
+  padding: max(16px, env(safe-area-inset-top, 0px)) 16px max(16px, env(safe-area-inset-bottom, 0px));
+  background: rgba(8, 9, 11, 0.6);
+}
+.host.card .sheet {
+  width: min(86.6vw, 980px);
+  height: auto;
+  max-height: 75vh;
+  max-height: 75dvh;
+  border-radius: 16px;
+  padding: 0 8px 12px;
+}
+.host.card .sheet > :deep(.x-plug),
+.host.card .sheet > :deep(.plug) {
+  flex: 0 1 auto;
+  height: auto;
+  min-height: 0;
+  max-height: calc(75dvh - 72px);
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+}
+.host.card .full-head { height: 56px; }
 .full-head {
   height: 60px;
   flex-shrink: 0;

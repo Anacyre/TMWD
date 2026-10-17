@@ -56,6 +56,22 @@ function paint () {
   if (!ctx) return
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
   ctx.clearRect(0, 0, width, height)
+  const clip = props.clip
+  if (clip && (clip.kind === 'audio' || clip.midi === false) && clip.peaks && clip.peaks.length) {
+    const peaks = clip.peaks
+    const mid = height / 2
+    ctx.fillStyle = 'rgba(255,255,255,0.82)'
+    const offset = Math.max(0, Number(clip.audioOffsetBeats) || 0)
+    const startFrac = clip.audioDuration ? offset / Math.max(0.01, (clip.lengthBeats || 1) + offset) : 0
+    for (let i = 0; i < width; i++) {
+      const t = startFrac + (i / width) * (1 - startFrac)
+      const idx = Math.min(peaks.length - 1, Math.floor(t * peaks.length))
+      const amp = Math.max(0.04, Number(peaks[idx]) || 0)
+      const h = amp * (height - 2)
+      ctx.fillRect(i, mid - h / 2, 1, h)
+    }
+    return
+  }
   const model = buildClipPreview(props.clip)
   if (!model.bars.length) return
   const rows = model.hi - model.lo + 1
@@ -78,7 +94,9 @@ watch(() => [
   props.revision,
   props.clip && props.clip.lengthBeats,
   props.clip && props.clip.loopLengthBeats,
-  props.clip && props.clip.notes && props.clip.notes.length
+  props.clip && props.clip.notes && props.clip.notes.length,
+  props.clip && props.clip.sourceId,
+  props.clip && props.clip.peaks && props.clip.peaks.length
 ], () => {
   nextTick(paint)
 })

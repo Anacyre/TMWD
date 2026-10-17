@@ -32,6 +32,12 @@
   --dsp-glow: transparent;
   --dsp-glow-2: transparent;
 
+  /* Shared knob footprints; the tablet card and full-screen layouts read these. */
+  --dsp-knob: 84px;
+  --dsp-knob-sm: 72px;
+  --dsp-knob-lg: 108px;
+  --dsp-knob-xl: 160px;
+
   color: var(--x-ink);
   font-family: Inter, "Segoe UI", "Helvetica Neue", -apple-system, BlinkMacSystemFont, sans-serif;
   background:
@@ -476,36 +482,61 @@ uni-view.x-knobs {
   flex: 0 0 auto !important;
 }
 
-/* Full-screen panel in the tablet Lite shell: desktop layout with a large graph
-   and finger-sized controls. */
-.full-plugin .x-plug { padding: 0 6px 6px; }
+/* Tablet Lite shell. Only EQ X goes full-screen (its curve wants the whole width); every
+   other effect is a centred card, so the finger-sized controls below are shared. */
+.full-plugin .x-plug,
+.card-plugin .x-plug { padding: 0 6px 6px; }
 .full-plugin .x-viz { min-height: clamp(220px, 45vh, 420px); }
 .full-plugin .x-plug .dsp-canvas,
-.full-plugin .x-plug .scope,
-.full-plugin .x-plug .vital-plot {
+.full-plugin .x-plug .scope {
   min-height: clamp(220px, 45vh, 420px);
 }
-.full-plugin .x-chip { min-height: 36px; min-width: 52px; font-size: 11px; padding: 0 12px; }
-.full-plugin .x-dot { width: 32px; height: 32px; }
-.full-plugin .x-sel { height: 36px; font-size: 12px; }
-.full-plugin .dsp-hit { min-height: 40px; min-width: 44px; font-size: 10px; }
-.full-plugin .dsp-lab { font-size: 10px; }
-.full-plugin .dsp-val { font-size: 14px; }
-.full-plugin .x-plug .k { width: 84px; min-height: 44px; }
-.full-plugin .x-plug .k.sz-sm { width: 72px; }
-.full-plugin .x-plug .k.sz-lg { width: 108px; }
+.card-plugin .x-viz,
+.card-plugin .x-plug .dsp-canvas,
+.card-plugin .x-plug .scope {
+  min-height: clamp(140px, 24vh, 220px);
+}
+.full-plugin .x-chip,
+.card-plugin .x-chip { min-height: 36px; min-width: 52px; font-size: 11px; padding: 0 12px; }
+.full-plugin .x-dot,
+.card-plugin .x-dot { width: 32px; height: 32px; }
+.full-plugin .x-sel,
+.card-plugin .x-sel { height: 36px; font-size: 12px; }
+.full-plugin .dsp-hit,
+.card-plugin .dsp-hit { min-height: 40px; min-width: 44px; font-size: 10px; }
+.full-plugin .dsp-lab,
+.card-plugin .dsp-lab { font-size: 10px; }
+.full-plugin .dsp-val,
+.card-plugin .dsp-val { font-size: 14px; }
+.full-plugin .x-plug .k,
+.card-plugin .x-plug .k { width: var(--dsp-knob, 84px); min-height: 44px; }
+.full-plugin .x-plug .k.sz-sm,
+.card-plugin .x-plug .k.sz-sm { width: var(--dsp-knob-sm, 72px); }
+.full-plugin .x-plug .k.sz-lg,
+.card-plugin .x-plug .k.sz-lg { width: var(--dsp-knob-lg, 108px); }
 .full-plugin .x-plug .k.sz-xl { width: 200px; }
-.full-plugin .x-footer { min-height: 48px; font-size: 10px; }
-.full-plugin .x-plug .shell .power { display: none; }
+.card-plugin .x-plug .k.sz-xl { width: var(--dsp-knob-xl, 160px); }
+.full-plugin .x-footer,
+.card-plugin .x-footer { min-height: 48px; font-size: 10px; }
+.full-plugin .x-plug .shell .power,
+.card-plugin .x-plug .shell .power { display: none; }
 
+@media (max-width: 900px) {
+  .dsp-skin {
+    --dsp-knob: 76px;
+    --dsp-knob-sm: 64px;
+    --dsp-knob-lg: 96px;
+    --dsp-knob-xl: 140px;
+  }
+}
 @media (max-width: 720px) {
   .full-plugin .x-plug .dsp-canvas,
   .full-plugin .x-plug .scope,
-  .full-plugin .x-plug .vital-plot,
-  .full-plugin .x-plug .vital-plot.short {
+  .card-plugin .x-plug .dsp-canvas,
+  .card-plugin .x-plug .scope {
     min-height: 0 !important;
     max-height: none !important;
-    height: clamp(180px, 34vh, 320px) !important;
+    height: clamp(160px, 30vh, 280px) !important;
   }
 }
 

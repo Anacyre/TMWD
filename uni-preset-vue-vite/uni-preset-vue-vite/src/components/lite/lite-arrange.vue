@@ -26,14 +26,15 @@
     </view>
 
     <view ref="bodyRef" class="body">
-      <view class="heads" :style="{ width: headW + 'px' }">
+      <view ref="headsRef" class="heads" :class="{ reordering: !!lift }" :style="{ width: headW + 'px' }">
         <view class="heads-inner" :style="{ transform: 'translateY(' + (-scrollY) + 'px)' }">
           <view
-            v-for="row in rows"
+            v-for="(row, visual) in rows"
             :key="row.track.id"
             class="head"
-            :class="{ sel: row.index === session.selectedTrack, group: isGroup(row.track), muted: !isTrackAudible(row.index) }"
-            :style="{ height: rowH + 'px', paddingLeft: 14 + row.depth * 12 + 'px' }"
+            :class="{ sel: row.index === session.selectedTrack, group: isGroup(row.track), muted: !isTrackAudible(row.index), lift: lift && lift.visual === visual }"
+            :style="headStyle(row, visual)"
+            :data-row="visual"
           >
             <view class="swatch" :style="{ background: row.track.colour || '#6aa8ff' }" />
             <view class="head-text">
@@ -53,6 +54,7 @@
               <view class="flag solo" :class="{ on: row.track.solo }" aria-label="Solo" @click.stop="toggleFlag(row.index, 'solo')">S</view>
             </view>
           </view>
+          <view v-if="lift && lift.dropAt != null" class="drop-line" :style="{ top: lift.dropAt * rowH + 'px' }" />
         </view>
       </view>
 
@@ -87,7 +89,7 @@
 
     <view v-if="selection.length" class="actions">
       <text class="count">{{ selection.length === 1 ? (selection[0].name || 'Pattern') : selection.length + ' clips' }}</text>
-      <view class="act" @click.stop="openSelected">Edit notes</view>
+      <view v-if="!audioSelection" class="act" @click.stop="openSelected">Edit notes</view>
       <view class="act" @click.stop="duplicateSelection">Duplicate</view>
       <view class="act" @click.stop="loopSelection">Loop</view>
       <view class="act" @click.stop="muteSelection">{{ allMuted ? 'Unmute' : 'Mute' }}</view>
@@ -135,9 +137,14 @@ import {
   addLiteInstrumentTrack,
   isTouchInput,
   onTrackInstrumentClick,
-  openLiteSheet
+  openLiteSheet,
+  reorderTracks,
+  addClipFromFile,
+  loadSf2File,
+  loadSf2Wav
 } from '../../store/session.js'
 import { visibleTrackRows, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../../model/playlist-model.js'
+import { bindFileDropZone } from '../../lib/file-drop.js'
 import { applyClipDrag, clipEdgeAt, clipsInBand, pinchView, snapTo, RULER_SNAP_BEATS } from '../../model/arrange-gestures.js'
 import { interpolateBeats } from '../../model/timeline.js'
 
@@ -145,8 +152,13 @@ const ROW_H = 76
 const DOUBLE_TAP_MS = 320
 const DRAG_SLOP = 8
 const TAP_SLOP = 22
+/** Hold a track head this long to lift it for reordering. */
+const LIFT_MS = 480
 
 const bodyRef = ref(null)
+const headsRef = ref(null)
+/** Live reorder gesture: which visual row is lifted, how far it has moved, where it will drop. */
+const lift = ref(null)
 const lanesRef = ref(null)
 const rulerRef = ref(null)
 const playheadRef = ref(null)
@@ -227,6 +239,7 @@ const visibleClips = computed(() => {
 
 const selection = computed(() => session.clips.filter((clip) => session.selectedClipIds.includes(clip.id)))
 const allMuted = computed(() => selection.value.length > 0 && selection.value.every((clip) => clip.muted))
+const audioSelection = computed(() => selection.value.some((clip) => clip.kind === 'audio' || clip.midi === false))
 const bandStyle = computed(() => {
   const b = band.value
   if (!b) return {}
@@ -241,6 +254,7 @@ const bandStyle = computed(() => {
 function isGroup (track) { return isGroupTrack(track) }
 function childCount (group) { return session.tracks.filter((track) => track.parentId === group.id).length }
 function instrumentLabel (track) {
+  if (track.type === 'audio' || track.source === 'audio') return 'Audio'
   if (!track.definitionId && !track.instrument) return 'Choose instrument'
   return track.instrument || 'Instrument'
 }
@@ -268,16 +282,111 @@ function clipStyle (clip) {
   }
 }
 
+function headStyle (row, visual) {
+  const style = { height: rowH + 'px', paddingLeft: 14 + row.depth * 12 + 'px' }
+  if (lift.value && lift.value.visual === visual) style.transform = 'translateY(' + lift.value.dy + 'px)'
+  return style
+}
+
+/* ── track head: long-press lifts the row, drag to reorder ───────── */
+
+let headPress = null
+
+function onHeadDown (e) {
+  if (!Number.isFinite(e.clientY) || (e.button != null && e.button !== 0)) return
+  const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
+  const head = target && target.closest && target.closest('.head')
+  if (!head) return
+  const visual = Number(head.getAttribute('data-row'))
+  if (!Number.isFinite(visual) || !rows.value[visual]) return
+  cancelHeadPress()
+  headPress = {
+    pointerId: e.pointerId,
+    visual,
+    x0: e.clientX,
+    y0: e.clientY,
+    timer: setTimeout(() => {
+      if (!headPress) return
+      headPress.timer = 0
+      beginLift(headPress)
+    }, LIFT_MS)
+  }
+}
+
+function cancelHeadPress () {
+  if (headPress && headPress.timer) clearTimeout(headPress.timer)
+  headPress = null
+}
+
+function beginLift (press) {
+  const el = dom(headsRef)
+  if (el && el.setPointerCapture) {
+    try { el.setPointerCapture(press.pointerId) } catch (err) { /* pointer already gone */ }
+  }
+  const row = rows.value[press.visual]
+  if (row) selectTrack(row.index)
+  lift.value = { visual: press.visual, dy: 0, dropAt: null, pointerId: press.pointerId }
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    try { navigator.vibrate(12) } catch (err) { /* not allowed */ }
+  }
+}
+
+function onHeadMove (e) {
+  if (headPress && !lift.value) {
+    // Moving before the hold completes is a scroll, not a lift.
+    if (Math.hypot(e.clientX - headPress.x0, e.clientY - headPress.y0) > DRAG_SLOP) cancelHeadPress()
+    return
+  }
+  const live = lift.value
+  if (!live || e.pointerId !== live.pointerId || !headPress) return
+  if (e.cancelable) e.preventDefault()
+  const dy = e.clientY - headPress.y0
+  const count = rows.value.length
+  // The gap the lifted row would fall into, measured from its own centre.
+  const centre = live.visual * ROW_H + ROW_H / 2 + dy
+  let slot = Math.round(centre / ROW_H)
+  slot = Math.max(0, Math.min(count, slot))
+  lift.value = { ...live, dy, dropAt: slot }
+}
+
+function onHeadUp (e) {
+  const live = lift.value
+  if (live && e.pointerId === live.pointerId) {
+    const from = rows.value[live.visual]
+    const slot = live.dropAt
+    lift.value = null
+    cancelHeadPress()
+    liftedUntil = Date.now() + 500
+    if (from && slot != null && slot !== live.visual && slot !== live.visual + 1) {
+      // Dropping into the gap above row `slot`: that row's index when moving up, the row
+      // just above the gap when moving down.
+      const targetRow = slot > live.visual ? rows.value[slot - 1] : rows.value[slot]
+      if (targetRow) reorderTracks(from.index, targetRow.index)
+    }
+    return
+  }
+  cancelHeadPress()
+}
+
 function toggleFlag (index, parameter) {
   const track = session.tracks[index]
   if (track) setTrackParameter(track, parameter, !track[parameter])
 }
-function toggleFold (track) { setTrackCollapsed(track, !track.collapsed) }
+/** A finished lift must not also count as the tap that opens a menu. */
+let liftedUntil = 0
+function justLifted () { return Date.now() < liftedUntil }
+
+function toggleFold (track) {
+  if (justLifted()) return
+  setTrackCollapsed(track, !track.collapsed)
+}
 function openTrackMenu (row) {
+  if (justLifted()) return
   selectTrack(row.index)
   openLiteSheet({ kind: 'track-menu', trackIndex: row.index })
 }
 function openInstrument (row) {
+  if (justLifted()) return
   selectTrack(row.index)
   onTrackInstrumentClick(row.index)
 }
@@ -289,6 +398,8 @@ function openClip (clip) {
     selectClip(session.clips.findIndex((item) => item.id === clip.id), true)
     session.selectedClipIds = [clip.id]
   }
+  const track = session.tracks[clip.trackIndex]
+  if (clip.kind === 'audio' || clip.midi === false || (track && (track.type === 'audio' || track.source === 'audio'))) return
   setEditorTab('piano')
   setWorkspaceView('piano')
 }
@@ -372,6 +483,16 @@ function cancelGesture () {
 }
 
 function onDown (e) {
+  const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
+  const inLanes = target && target.closest && target.closest('.lanes')
+  // Only fingers on the timeline count. A thumb resting on a track head must not turn a
+  // one-finger drag into a pinch.
+  if (!inLanes || !Number.isFinite(e.clientX)) return
+  if (e.isPrimary) {
+    // First finger of a new sequence: forget any pointer whose lift we never saw.
+    pointers.clear()
+    pinch = null
+  }
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   if (pointers.size === 2) {
     cancelGesture()
@@ -380,9 +501,6 @@ function onDown (e) {
     return
   }
   if (pointers.size > 2) return
-  const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
-  const inLanes = target && target.closest && target.closest('.lanes')
-  if (!inLanes) return
   capture(e)
   const clipEl = target.closest('[data-clip]')
   const point = contentPoint(e.clientX, e.clientY)
@@ -508,10 +626,17 @@ function onMove (e) {
   }
 }
 
+function onLost (e) {
+  if (pointers.has(e.pointerId)) onUp(e)
+}
+
 function onUp (e) {
   pointers.delete(e.pointerId)
   if (pinch) {
-    if (pointers.size < 2) pinch = null
+    if (pointers.size < 2) {
+      pinch = null
+      pointers.clear()
+    }
     return
   }
   if (!gesture) return
@@ -640,21 +765,45 @@ function measure () {
   clampScroll()
 }
 
-const listeners = { body: null, ruler: null, lanes: null }
+const listeners = { body: null, ruler: null, lanes: null, heads: null }
+let unbindDrop = () => {}
 onMounted(() => {
   const body = dom(bodyRef)
   const ruler = dom(rulerRef)
   const lanes = dom(lanesRef)
+  const heads = dom(headsRef)
+  if (heads) {
+    heads.addEventListener('pointerdown', onHeadDown)
+    heads.addEventListener('pointermove', onHeadMove)
+    heads.addEventListener('pointerup', onHeadUp)
+    heads.addEventListener('pointercancel', onHeadUp)
+    heads.addEventListener('contextmenu', (ev) => { if (lift.value) ev.preventDefault() })
+    listeners.heads = heads
+  }
   if (body) {
     body.addEventListener('pointerdown', onDown)
     body.addEventListener('pointermove', onMove)
     body.addEventListener('pointerup', onUp)
     body.addEventListener('pointercancel', onUp)
+    body.addEventListener('lostpointercapture', onLost)
     listeners.body = body
   }
   if (lanes) {
     lanes.addEventListener('wheel', onWheel, { passive: false })
     listeners.lanes = lanes
+    unbindDrop = bindFileDropZone(lanes, {
+      onDrop: async (e, files) => {
+        const point = contentPoint(e.clientX, e.clientY)
+        const trackIndex = rows.value[point.row] ? rows.value[point.row].index : session.selectedTrack
+        const track = session.tracks[trackIndex]
+        for (const file of files || []) {
+          const name = file.name || ''
+          if (/\.sf2$/i.test(name) && track) await loadSf2File(track, file)
+          else if (/\.(wav|mp3|ogg)$/i.test(name) && track && (track.source === 'sf2' || track.definitionId === 'sf2_sampler')) await loadSf2Wav(track, file)
+          else await addClipFromFile(file, trackIndex, point.beat)
+        }
+      }
+    })
   }
   if (ruler) {
     ruler.addEventListener('pointerdown', onRulerDown)
@@ -669,17 +818,26 @@ onMounted(() => {
   kickPlayhead()
 })
 onUnmounted(() => {
-  const { body, ruler, lanes } = listeners
+  const { body, ruler, lanes, heads } = listeners
+  cancelHeadPress()
+  if (heads) {
+    heads.removeEventListener('pointerdown', onHeadDown)
+    heads.removeEventListener('pointermove', onHeadMove)
+    heads.removeEventListener('pointerup', onHeadUp)
+    heads.removeEventListener('pointercancel', onHeadUp)
+  }
   if (body) {
     body.removeEventListener('pointerdown', onDown)
     body.removeEventListener('pointermove', onMove)
     body.removeEventListener('pointerup', onUp)
     body.removeEventListener('pointercancel', onUp)
+    body.removeEventListener('lostpointercapture', onLost)
   }
   if (lanes) lanes.removeEventListener('wheel', onWheel)
   if (ruler) ruler.removeEventListener('pointerdown', onRulerDown)
   if (resizeObserver) resizeObserver.disconnect()
   if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
+  unbindDrop()
   if (raf) cancelAnimationFrame(raf)
   raf = 0
 })
@@ -784,6 +942,29 @@ onUnmounted(() => {
 }
 .head.sel { background: var(--lt-s1); }
 .head.muted .head-text { opacity: 0.45; }
+/* Lifted row rides above its neighbours while it is being dragged. */
+.head.lift {
+  z-index: 3;
+  background: var(--lt-s2);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), inset 0 -1px 0 var(--lt-line);
+  transition: box-shadow 160ms ease;
+}
+.heads.reordering .head:not(.lift) { transition: transform 160ms ease; }
+.drop-line {
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: var(--lt-accent);
+  box-shadow: 0 0 8px var(--lt-accent);
+  pointer-events: none;
+  z-index: 4;
+}
+@media (prefers-reduced-motion: reduce) {
+  .head.lift, .heads.reordering .head:not(.lift) { transition: none; }
+}
 .swatch {
   position: absolute;
   left: 0;

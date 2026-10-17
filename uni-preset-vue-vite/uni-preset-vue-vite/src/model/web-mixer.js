@@ -320,9 +320,9 @@ export function laneFromOpen (open) {
 /** True when the browser generates this track's audio and therefore owns its strip. */
 export function isBrowserOwnedTrack (track, options = {}) {
   if (!track || track.type === 'master' || track.type === 'group') return false
-  if (track.source === 'web-sampler' || track.source === 'm-orchestra' || track.source === 'orchestra-v') return true
+  if (track.source === 'web-sampler' || track.source === 'm-orchestra' || track.source === 'orchestra-v' || track.source === 'twin' || track.source === 'sf2' || track.source === 'audio' || track.type === 'audio') return true
   const def = String(track.definitionId || '')
-  if (def.startsWith('m_orch_') || def.startsWith('ov_')) return true
+  if (def.startsWith('m_orch_') || def.startsWith('ov_') || def === 'twin' || def === 'sf2_sampler') return true
   return !!options.localPlayback && track.source !== 'remote-vst'
 }
 

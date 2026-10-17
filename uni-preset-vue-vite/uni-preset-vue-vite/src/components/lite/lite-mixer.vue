@@ -587,3 +587,19 @@ onMounted(() => {
   .insert, .insert-name, .power { height: 26px; line-height: 26px; }
 }
 </style>
+
+<style>
+/* uni-app forces overflow:hidden on every view; the strip rack must scroll sideways. A
+ * vertical fader only owns vertical travel, so a sideways swipe over it scrolls the rack. */
+uni-view.lite-mixer uni-view.rack {
+  display: flex !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  touch-action: pan-x;
+  -webkit-overflow-scrolling: touch;
+}
+uni-view.lite-mixer uni-view.rack .fader.vertical { touch-action: pan-x; }
+uni-view.lite-mixer uni-view.rack .send,
+uni-view.lite-mixer uni-view.rack .pan { touch-action: none; }
+uni-view.lite-mixer uni-view.rack .pan.ghost { touch-action: pan-x; }
+</style>

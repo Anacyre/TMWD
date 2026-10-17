@@ -7,6 +7,10 @@
           <daw-icon name="close" :size="18" />
         </view>
       </view>
+      <view class="tabs">
+        <view class="tab" :class="{ on: cloudAuth.tab === 'local' }" @click="cloudAuth.tab = 'local'">Local</view>
+        <view class="tab" :class="{ on: cloudAuth.tab === 'cloud' }" @click="openCloud">Cloud</view>
+      </view>
       <view class="actions">
         <view class="btn" @click="onNew">New</view>
         <view class="btn" @click="onOpenFile">Open file</view>
@@ -15,7 +19,23 @@
         <view class="btn" @click="onSaveAs">Save as</view>
         <view class="btn" @click="onExport">Export WAV</view>
         <view class="btn" @click="onShare">Share project</view>
+        <view v-if="cloudAuth.tab === 'cloud' && cloudAuth.user" class="btn" @click="onUpload">Upload current</view>
       </view>
+      <template v-if="cloudAuth.tab === 'cloud'">
+        <view v-if="!cloudAuth.user" class="empty">Sign in from Settings to use cloud projects.</view>
+        <view v-else-if="!cloudRows.length" class="empty">No cloud projects yet. Upload current saves this one there.</view>
+        <view v-for="row in cloudRows" :key="row.cloudId" class="row">
+          <view class="meta" @click="onOpenCloud(row)">
+            <text class="name">{{ row.name || 'Untitled' }}</text>
+            <text class="when">{{ when(row.updatedAt) }} · {{ formatBytes(row.sizeBytes) }}{{ conflictLabel(row) }}</text>
+          </view>
+          <view class="row-actions">
+            <view class="mini" @click.stop="onOpenCloud(row)">Open</view>
+            <view class="mini danger" @click.stop="onDeleteCloud(row)">Delete</view>
+          </view>
+        </view>
+      </template>
+      <template v-else>
       <view v-if="!rows.length" class="empty">No local projects yet. Save creates one here.</view>
       <view v-for="row in rows" :key="row.id" class="row" :class="{ on: row.id === session.projectId }">
         <view class="meta" @click="onOpen(row)">
@@ -28,6 +48,7 @@
           <view class="mini danger" title="Delete" @click.stop="onDelete(row)">Delete</view>
         </view>
       </view>
+      </template>
     </view>
   </view>
 </template>
@@ -51,13 +72,85 @@ import {
   deleteStoredProject,
   duplicateStoredProject,
   renameStoredProject,
+  serializeProject,
   showToast
 } from '../store/session.js'
+import { cloudAuth, watchCloudAuth, refreshCloudAuth } from '../store/cloud-auth.js'
+import {
+  listCloudProjects,
+  uploadProject,
+  downloadProject,
+  deleteCloudProject,
+  formatBytes,
+  compareCopies,
+  cloudErrorMessage,
+  fitsQuota
+} from '../lib/cloud-projects.js'
 
 const rows = ref([])
+const cloudRows = ref([])
 
 async function refresh () {
   rows.value = await listStoredProjects()
+  if (cloudAuth.user) {
+    try { cloudRows.value = await listCloudProjects() } catch (err) {
+      showToast(cloudErrorMessage(err))
+    }
+  } else cloudRows.value = []
+}
+
+async function openCloud () {
+  cloudAuth.tab = 'cloud'
+  await refreshCloudAuth()
+  await refresh()
+}
+
+function conflictLabel (row) {
+  const hint = compareCopies(session.updatedAt || session.savedAt, row.updatedAt)
+  if (hint === 'local-newer') return ' · local is newer'
+  if (hint === 'cloud-newer') return ' · cloud is newer'
+  return ''
+}
+
+async function onUpload () {
+  try {
+    const project = serializeProject()
+    const bytes = new Blob([JSON.stringify(project)]).size
+    if (!fitsQuota(cloudAuth.usage, bytes)) {
+      showToast('Cloud storage is full. Delete a cloud project or free up space.')
+      return
+    }
+    const result = await uploadProject(project, { name: session.projectName, localId: session.projectId, cloudId: session.cloudId })
+    session.cloudId = result.cloudId
+    await refreshCloudAuth()
+    await refresh()
+    showToast('Uploaded to cloud')
+  } catch (err) {
+    showToast(cloudErrorMessage(err, 'Upload failed'))
+  }
+}
+
+async function onOpenCloud (row) {
+  try {
+    const data = await downloadProject(row.cloudId)
+    await importProjectJson(data)
+    session.cloudId = row.cloudId
+    close()
+  } catch (err) {
+    showToast(cloudErrorMessage(err, 'Download failed'))
+  }
+}
+
+async function onDeleteCloud (row) {
+  const ok = typeof window === 'undefined' || window.confirm('Delete cloud copy “' + (row.name || 'Untitled') + '”?')
+  if (!ok) return
+  try {
+    await deleteCloudProject(row.cloudId)
+    await refreshCloudAuth()
+    await refresh()
+  } catch (err) {
+    showToast(cloudErrorMessage(err))
+  }
 }
 
 function close () {
@@ -150,6 +243,7 @@ watch(() => session.projectManagerOpen, (open) => {
 })
 
 onMounted(() => {
+  watchCloudAuth()
   if (session.projectManagerOpen) refresh()
 })
 </script>
@@ -186,6 +280,18 @@ onMounted(() => {
   margin-bottom: 12px;
 }
 .title { font-size: 16px; font-weight: 600; }
+.tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+.tab {
+  flex: 1;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: #161616;
+  cursor: pointer;
+}
+.tab.on { background: #2b2b2b; }
 .hit {
   width: 32px;
   height: 32px;

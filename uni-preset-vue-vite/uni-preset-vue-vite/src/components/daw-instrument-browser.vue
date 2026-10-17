@@ -80,6 +80,7 @@ import {
   showToast
 } from '../store/session.js'
 import { ORCHESTRA_V_PLUGIN_ID } from '../model/orchestra-v-ui.js'
+import { TWIN_PLUGIN_ID, SF2_PLUGIN_ID } from '../model/m-orchestra-ui.js'
 
 const query = ref('')
 const category = ref(0)
@@ -103,7 +104,7 @@ const isPlugin = computed(() => session.instrumentPickerMode !== 'orchestra-patc
 const pluginItems = computed(() => {
   const q = query.value.trim().toLowerCase()
   return listInsertablePlugins().filter((item) => {
-    if (isNewLite() && item.id !== ORCHESTRA_V_PLUGIN_ID) return false
+    if (isNewLite() && item.id !== ORCHESTRA_V_PLUGIN_ID && item.id !== TWIN_PLUGIN_ID && item.id !== SF2_PLUGIN_ID) return false
     return !q
       || (item.displayName || '').toLowerCase().includes(q)
       || (item.id || '').includes(q)

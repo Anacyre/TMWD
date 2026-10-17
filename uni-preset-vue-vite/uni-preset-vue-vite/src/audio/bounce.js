@@ -6,6 +6,7 @@ import { TICKS_PER_BEAT } from '../model/timeline.js'
 import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
 import { isOrchestraVTrack } from '../model/orchestra-v-ui.js'
 import { createWebSamplerInstrument } from './web-sampler.js'
+import { collectAudioEvents, scheduleAudioClip, isAudioClip, AUDIO_CLIP_KIND } from './audio-clips.js'
 
 function beatsToSec (beats, bpm) {
   return (beats || 0) * 60 / Math.max(1, bpm || 120)
@@ -27,7 +28,9 @@ export function collectBounceEvents (session) {
     const orchestraV = isOrchestraVTrack(track)
     const orch = !orchestraV && isMOrchestraTrack(track)
     const sampler = track.source === 'web-sampler'
-    if (!orchestraV && !orch && !sampler) return
+    const twin = track.source === 'twin' || track.definitionId === 'twin'
+    const sf2 = track.source === 'sf2' || track.definitionId === 'sf2_sampler'
+    if (!orchestraV && !orch && !sampler && !twin && !sf2) return
     ;(clip.notes || []).forEach((note) => {
       if (!note || note.muted) return
       expandRepeats(note).forEach((slice) => {
@@ -35,7 +38,7 @@ export function collectBounceEvents (session) {
         const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
         endBeat = Math.max(endBeat, start + duration)
         events.push({
-          kind: orchestraV ? 'orchestra-v' : (orch ? 'm-orchestra' : 'web-sampler'),
+          kind: orchestraV ? 'orchestra-v' : (orch ? 'm-orchestra' : (twin ? 'twin' : (sf2 ? 'sf2' : 'web-sampler'))),
           track,
           pitch: slice.pitch,
           velocity: noteVelocity(slice),
@@ -44,6 +47,11 @@ export function collectBounceEvents (session) {
         })
       })
     })
+  })
+  const audio = collectAudioEvents(session)
+  audio.events.forEach((event) => {
+    events.push(event)
+    endBeat = Math.max(endBeat, event.startBeat + event.durationBeats)
   })
   return { events, endBeat }
 }
@@ -128,7 +136,7 @@ function scheduleSampler (context, dest, event, startSec, buffer) {
 export async function bounceSessionToWav (session, options = {}) {
   const { events, endBeat } = collectBounceEvents(session)
   if (!events.length) {
-    throw new Error('Nothing to export — add Orchestra V, M Orchestra or Web Sampler notes')
+    throw new Error('Nothing to export — add notes or audio clips first')
   }
   const bpm = session.bpm || 120
   const Offline = options.OfflineAudioContext || (typeof OfflineAudioContext !== 'undefined' ? OfflineAudioContext : null)
@@ -142,6 +150,7 @@ export async function bounceSessionToWav (session, options = {}) {
   master.gain.value = session.masterGain != null ? session.masterGain : 0.8
   master.connect(context.destination)
   const samplerBuffers = options.samplerBuffers || new Map()
+  const audioBuffers = options.audioBuffers || new Map()
 
   // Only pull in the sampler engines the project actually uses.
   const renderers = {}
@@ -151,10 +160,21 @@ export async function bounceSessionToWav (session, options = {}) {
   if (events.some((event) => event.kind === 'orchestra-v')) {
     renderers['orchestra-v'] = (await import('./orchestra-v/engine.js')).renderNoteAt
   }
+  if (events.some((event) => event.kind === 'twin')) {
+    renderers.twin = (await import('../dsp/synth/engine.js')).renderNoteAt
+  }
+  if (events.some((event) => event.kind === 'sf2')) {
+    renderers.sf2 = (await import('./sf2/engine.js')).renderNoteAt
+  }
 
   for (const event of events) {
     const startSec = beatsToSec(event.startBeat, bpm)
     const durationSecNote = beatsToSec(event.durationBeats, bpm)
+    if (event.kind === AUDIO_CLIP_KIND || isAudioClip(event.clip)) {
+      const buffer = audioBuffers.get(event.sourceId)
+      if (buffer) scheduleAudioClip(context, master, buffer, event.clip, startSec, bpm)
+      continue
+    }
     const render = renderers[event.kind]
     if (render) {
       await render(context, master, event.track, event.pitch, event.velocity, startSec, durationSecNote)

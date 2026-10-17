@@ -84,7 +84,7 @@
         <text class="cap">Keyboard</text>
         <text class="range">{{ rangeLabel }}</text>
       </view>
-      <view class="keys" data-keys @pointerdown.stop.prevent="onKeys">
+      <view class="keys" data-keys @pointerdown.stop.prevent="onKeys" @pointerup="silence" @pointercancel="silence" @lostpointercapture="silence">
         <view class="bed" data-bed :style="{ width: model.width + 'px' }">
           <view
             v-for="key in model.whites"
@@ -303,12 +303,29 @@ function revealRange () {
   el.scrollLeft = Math.max(0, target)
 }
 
+watch(() => [props.keyLow, props.keyHigh, props.keyboard], () => nextTick(silence))
 watch(() => [props.keyLow, props.keyHigh, props.keyboard], () => nextTick(revealRange))
+
+/* A finger that leaves with the tab (app switch, notification shade) never sends
+ * pointerup; the key must still stop sounding. */
+function onHidden () {
+  if (typeof document !== 'undefined' && document.hidden) silence()
+}
 onMounted(() => {
   nextTick(revealRange)
   setTimeout(revealRange, 80)
+  if (typeof window !== 'undefined') {
+    window.addEventListener('blur', silence)
+    document.addEventListener('visibilitychange', onHidden)
+  }
 })
-onUnmounted(silence)
+onUnmounted(() => {
+  silence()
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('blur', silence)
+    document.removeEventListener('visibilitychange', onHidden)
+  }
+})
 
 function sliderEl (id) {
   const r = root.value
