@@ -749,8 +749,9 @@ class ReverbXProcessor {
       const g = amountZ
       const wL = wetL[i] * g
       const wR = wetR[i] * g
-      l[i] = wetOnly ? wL : (l[i] + wL)
-      r[i] = wetOnly ? wR : (r[i] + wR)
+      const dry = wetOnly ? 0 : (1 - g)
+      l[i] = l[i] * dry + wL
+      r[i] = r[i] * dry + wR
     }
     this.amountZ = amountZ
   }

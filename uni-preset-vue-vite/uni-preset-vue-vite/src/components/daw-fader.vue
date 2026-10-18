@@ -10,7 +10,7 @@
     :aria-disabled="disabled ? 'true' : 'false'"
     role="slider"
     :tabindex="disabled ? -1 : 0"
-    @pointerdown.stop.prevent="onPointerDown"
+    @pointerdown.stop="onPointerDown"
     @keydown="onKeyDown"
     @wheel.prevent="onWheel"
   >
@@ -32,7 +32,9 @@ const props = defineProps({
   orientation: { type: String, default: 'horizontal' },
   step: { type: Number, default: 0 },
   disabled: { type: Boolean, default: false },
-  label: { type: String, default: 'Level' }
+  label: { type: String, default: 'Level' },
+  /** 'x' or 'y': a swipe on that axis scrolls the parent instead of moving the cap. */
+  scrollAxis: { type: String, default: '' }
 })
 const emit = defineEmits(['update:modelValue', 'drag-start', 'drag-end'])
 
@@ -50,8 +52,8 @@ const fillStyle = computed(() => (
 
 const capStyle = computed(() => (
   props.orientation === 'vertical'
-    ? { bottom: `calc(${percent.value}% - 7px)` }
-    : { left: `calc(${percent.value}% - 7px)` }
+    ? { bottom: `calc(${percent.value}% - var(--fader-cap-half, 7px))` }
+    : { left: `calc(${percent.value}% - var(--fader-cap-half, 7px))` }
 ))
 
 function commit (value) {
@@ -68,12 +70,18 @@ function nudge (steps) {
 
 function onPointerDown (event) {
   if (props.disabled) return
+  if (!props.scrollAxis) event.preventDefault()
   const startValue = props.modelValue
   const vertical = props.orientation === 'vertical'
   let start = pointerCoord(event)
-  emit('drag-start')
+  let started = false
   beginPointerDrag(event, {
+    allowScroll: props.scrollAxis,
     onMove: (ev) => {
+      if (!started) {
+        started = true
+        emit('drag-start')
+      }
       const now = pointerCoord(ev)
       if (!now) return
       if (!start) {
@@ -85,7 +93,7 @@ function onPointerDown (event) {
       if (!Number.isFinite(delta)) return
       commit(relativeFromDelta(startValue, delta, span.value, RELATIVE_TRAVEL_PX, vertical))
     },
-    onEnd: () => emit('drag-end')
+    onEnd: () => { if (started) emit('drag-end') }
   })
 }
 
@@ -111,11 +119,14 @@ function onWheel (event) {
 
 <style scoped>
 .fader {
-  height: 22px;
+  height: 36px;
+  min-height: 36px;
   display: flex;
   align-items: center;
   cursor: pointer;
-  flex: 1;
+  /* flex-basis 0 (from `flex: 1`) let a column parent collapse this to the
+     8px track, which a finger cannot grab. */
+  flex: 1 1 auto;
   min-width: 40px;
   position: relative;
   touch-action: none;
@@ -176,10 +187,10 @@ function onWheel (event) {
 }
 .vertical .cap {
   left: 50%;
-  transform: translateX(-50%);
+  margin-left: calc(var(--fader-cap-w, 14px) / -2);
 }
 .fader:not(.vertical) .cap {
   top: 50%;
-  transform: translateY(-50%);
+  margin-top: calc(var(--fader-cap-h, 14px) / -2);
 }
 </style>

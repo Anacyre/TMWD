@@ -28,6 +28,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { pointerCoord } from '../../lib/pointer-drag.js'
 
 const props = defineProps({
   modelValue: { type: Number, default: 0 },
@@ -84,8 +85,9 @@ function set (next) {
 
 function begin (e) {
   if (props.disabled) return
-  const start = e.touches ? e.touches[0] : e
-  const startPos = props.horizontal ? start.clientX : start.clientY
+  const start = pointerCoord(e)
+  if (!start) return
+  const startPos = props.horizontal ? start.x : start.y
   const startT = t.value
   const span = props.horizontal ? 180 : 140
   const move = (ev) => {

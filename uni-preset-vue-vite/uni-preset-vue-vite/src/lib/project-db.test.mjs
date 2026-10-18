@@ -1,4 +1,4 @@
-import { resetMemoryDb, putProject, getProject, listProjects, deleteProject, duplicateProject, renameProject, rememberRecent, readRecent, putAsset, getAsset, hashBlob } from './project-db.js'
+import { resetMemoryDb, putProject, putAutosave, getProject, listProjects, listAutosaves, isAutosaveRecord, deleteProject, duplicateProject, renameProject, rememberRecent, readRecent, putAsset, getAsset, hashBlob } from './project-db.js'
 
 function assert (ok, message) {
   if (!ok) throw new Error(message)
@@ -40,6 +40,24 @@ resetMemoryDb()
   const list = readRecent()
   assert(list[0].id === 'b' && list.some((item) => item.id === 'a'), 'recent list is openable by id')
   assert(recent.length >= 1, 'rememberRecent returns the list')
+}
+
+{
+  const before = await getProject('a')
+  const hidden = await putAutosave({ id: 'a', name: 'Alpha', tracks: [{ name: 'edited' }] })
+  assert(isAutosaveRecord(hidden) && hidden.sourceId === 'a', 'autosave keeps a separate id')
+  const manual = await getProject('a')
+  assert(manual.name === 'Alpha' && Array.isArray(manual.tracks) && manual.tracks.length === 0, 'autosave does not overwrite the manual project')
+  assert(manual.updatedAt === before.updatedAt, 'autosave does not restamp the manual project')
+  const listed = await listProjects()
+  assert(!listed.some((row) => isAutosaveRecord(row)), 'autosaves stay out of the project list')
+  const autos = await listAutosaves()
+  assert(autos.some((row) => row.id === hidden.id), 'autosave menu can see the hidden copy')
+  await putAutosave({ id: 'a', name: 'Alpha', tracks: [] })
+  await putAutosave({ id: 'a', name: 'Alpha', tracks: [] })
+  await putAutosave({ id: 'a', name: 'Alpha', tracks: [] })
+  const capped = await listAutosaves()
+  assert(capped.filter((row) => row.sourceId === 'a').length === 3, 'one project keeps three autosaves')
 }
 
 console.log('project-db ok')

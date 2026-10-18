@@ -283,9 +283,8 @@ function impulseResponse (state, seconds) {
     wetState: {}
   })
   const killed = drive(pKill, Math.floor(SR * 0.12))
-  let maxd = 0
-  for (let i = 0; i < killed.outL.length; i++) maxd = Math.max(maxd, Math.abs(killed.outL[i] - killed.inL[i]))
-
+  let killPeak = 0
+  for (let i = 0; i < killed.outL.length; i++) killPeak = Math.max(killPeak, Math.abs(killed.outL[i]))
   const pMix = new ReverbXProcessor(SR, null, 'wet-off')
   pMix.setState({
     amount: 1,
@@ -298,7 +297,7 @@ function impulseResponse (state, seconds) {
   const mixed = drive(pMix, Math.floor(SR * 0.12))
   let mixDiff = 0
   for (let i = 0; i < mixed.outL.length; i++) mixDiff = Math.max(mixDiff, Math.abs(mixed.outL[i] - mixed.inL[i]))
-  assert('10. Wet Process affects only wet path', maxd < 1e-5 && mixDiff > 1e-4, 'dry delta=' + maxd.toExponential(2) + ' mixed delta=' + mixDiff.toExponential(2))
+  assert('10. Mix at 100% drops the dry signal', killPeak < 1e-4 && mixDiff > 1e-4, 'wet-killed peak=' + killPeak.toExponential(2) + ' mixed delta=' + mixDiff.toExponential(2))
 }
 
 // 11. CPU

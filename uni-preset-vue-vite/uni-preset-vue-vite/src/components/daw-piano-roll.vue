@@ -128,7 +128,8 @@ import {
   normalizeNote,
   ticksToBeats,
   snapTick,
-  snapPitchToScale
+  snapPitchToScale,
+  groupMoveDelta
 } from '../model/note-model.js'
 import {
   defaultView,
@@ -654,9 +655,13 @@ function onPointerMove (e) {
           startTick: orig.startTick
         })
       } else {
+        const delta = groupMoveDelta(gesture.originals, dTick, dPitch, {
+          gridTicks: gridTicksForView(view),
+          free: gesture.free
+        })
         setNote(clip.value, live, {
-          startTick: snapTick(orig.startTick + dTick, gridTicksForView(view), gesture.free),
-          pitch: snapP(orig.pitch + dPitch)
+          startTick: Math.max(0, Math.round(orig.startTick + delta.dTick)),
+          pitch: snapP(orig.pitch + delta.dPitch)
         })
         startPreview(live.pitch, live.velocity / 127)
       }

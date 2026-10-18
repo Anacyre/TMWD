@@ -27,9 +27,10 @@
           <text>{{ session.scaleKey }} {{ scaleLabel(session.scaleName) }}</text>
         </view>
       </view>
-      <view class="selection" :class="{ show: selectedCount > 0 }">
+      <view class="selection" :class="{ show: selectedCount > 0 || canPaste }">
         <text class="count">{{ selectedCount }} selected</text>
-        <view class="lt-hit" @click="duplicateSelected"><daw-icon name="copy" :size="20" color="currentColor" /></view>
+        <view class="lt-hit" title="Copy" @click="copySelection"><daw-icon name="copy" :size="20" color="currentColor" /></view>
+        <view v-if="canPaste" class="lt-hit paste" title="Paste at playhead" @click="pasteSelection">Paste</view>
         <view class="lt-hit" @click="deleteSelected"><daw-icon name="trash" :size="20" color="currentColor" /></view>
       </view>
     </view>
@@ -126,6 +127,8 @@ import {
   addClipSustain,
   moveClipSustain,
   deleteClipSustain,
+  addClipExpressionPoint,
+  growClipToContent,
   isTouchInput
 } from '../../store/session.js'
 import {
@@ -138,7 +141,8 @@ import {
   duplicateNotes,
   quantizeNotes,
   snapTick,
-  snapPitchToScale
+  snapPitchToScale,
+  groupMoveDelta
 } from '../../model/note-model.js'
 import {
   defaultView,
@@ -159,7 +163,7 @@ import {
 import { drawPianoRoll, resizeCanvas, LITE_THEME, shade } from '../../model/piano-roll-render.js'
 import { interpolateBeats } from '../../model/timeline.js'
 import { RULER_SNAP_BEATS, snapTo } from '../../model/arrange-gestures.js'
-import { ensureExpression, laneKey, hitLanePoint, hitSustainBlock, sortSustain } from '../../model/expression-lane.js'
+import { collapseLane, ensureExpression, laneKey, hitLanePoint, hitSustainBlock, sortSustain } from '../../model/expression-lane.js'
 
 const SNAP_STEPS = [
   { beats: 0, label: 'Off' },
@@ -195,7 +199,21 @@ const laneReadout = ref('')
 const clip = computed(() => getSelectedClip())
 const track = computed(() => getSelectedTrack())
 const notes = computed(() => ((clip.value && clip.value.notes) || []).map((note) => normalizeNote(note)))
-const selectedCount = computed(() => notes.value.filter((note) => selectedIds.has(note.id)).length)
+const editClipboard = ref(null)
+const selectedCount = computed(() => {
+  if (lane.value !== 'notes' && lane.value !== 'velocity') return laneSelection.value.keys.length
+  return notes.value.filter((note) => selectedIds.has(note.id)).length
+})
+const canPaste = computed(() => {
+  const board = editClipboard.value
+  if (!board) return false
+  if (board.kind === 'notes') return lane.value === 'notes' || lane.value === 'velocity'
+  if (board.kind === 'pedal') return lane.value === 'pedal'
+  if (board.kind === 'points') {
+    return (lane.value === 'dynamics' && board.cc === 1) || (lane.value === 'expression' && board.cc === 11)
+  }
+  return false
+})
 const snapLabel = computed(() => {
   if (!session.snap) return 'Off'
   const hit = SNAP_STEPS.find((item) => item.beats && Math.abs(item.beats - session.snapGridBeats) < 1e-6)
@@ -222,6 +240,7 @@ let previewPitch = -1
 let rubber = null
 let gesture = null
 let laneGesture = null
+const laneSelection = ref({ kind: '', cc: 0, keys: [] })
 let lastNoteTap = { at: 0, id: 0 }
 let lastPointTap = { at: 0, index: -1 }
 let lastPedalTap = { at: 0 }
@@ -605,9 +624,10 @@ function onRollMove (e) {
         const end = snapTick(orig.startTick + orig.durationTick + dTick, grid, grid <= 0)
         setNote(clip.value, live, { durationTick: Math.max(grid || MIN_DURATION_TICKS, end - orig.startTick) })
       } else {
+        const delta = groupMoveDelta(gesture.originals, dTick, dPitch, { gridTicks: grid })
         setNote(clip.value, live, {
-          startTick: snapTick(Math.max(0, orig.startTick + dTick), grid, grid <= 0),
-          pitch: Math.min(127, Math.max(0, snapPitch(orig.pitch + dPitch)))
+          startTick: Math.max(0, Math.round(orig.startTick + delta.dTick)),
+          pitch: Math.min(127, Math.max(0, snapPitch(orig.pitch + delta.dPitch)))
         })
       }
     })
@@ -725,6 +745,7 @@ function cycleSnap () {
 }
 
 function quantize () {
+  if (lane.value !== 'notes' && lane.value !== 'velocity') return
   const list = selectedCount.value ? notes.value.filter((note) => selectedIds.has(note.id)) : notes.value
   if (!list.length) return
   const grid = gridTicks() || PPQ / 4
@@ -739,7 +760,105 @@ function quantize () {
   markDirty()
 }
 
+function pasteBeat () {
+  const start = (clip.value && clip.value.startBeat) || 0
+  return Math.max(0, (session.positionBeats || 0) - start)
+}
+
+function togglePointSelection (cc, key) {
+  const sel = laneSelection.value
+  const on = sel.kind === 'point' && sel.cc === cc && sel.keys.some((t) => Math.abs(t - key) < 1e-4)
+  if (on) {
+    const keys = sel.keys.filter((t) => Math.abs(t - key) >= 1e-4)
+    laneSelection.value = keys.length ? { kind: 'point', cc, keys } : { kind: '', cc: 0, keys: [] }
+    return
+  }
+  laneSelection.value = { kind: 'point', cc, keys: [key] }
+}
+
+function togglePedalSelection (key) {
+  const sel = laneSelection.value
+  const on = sel.kind === 'pedal' && sel.keys.indexOf(key) >= 0
+  if (on) {
+    const keys = sel.keys.filter((item) => item !== key)
+    laneSelection.value = keys.length ? { kind: 'pedal', cc: 64, keys } : { kind: '', cc: 0, keys: [] }
+    return
+  }
+  laneSelection.value = { kind: 'pedal', cc: 64, keys: [key] }
+}
+
+function copySelection () {
+  const live = clip.value
+  if (!live) return
+  if (lane.value === 'notes' || lane.value === 'velocity') {
+    const list = notes.value.filter((note) => selectedIds.has(note.id))
+    if (!list.length) return
+    editClipboard.value = { kind: 'notes', notes: JSON.parse(JSON.stringify(list)) }
+    return
+  }
+  const sel = laneSelection.value
+  if (!sel.keys.length) return
+  if (sel.kind === 'pedal') {
+    const blocks = sortSustain(ensureExpression(live).cc64)
+      .filter((block) => sel.keys.indexOf(block.startTick) >= 0)
+    if (!blocks.length) return
+    editClipboard.value = { kind: 'pedal', blocks: blocks.map((block) => ({ startTick: block.startTick, endTick: block.endTick })) }
+    return
+  }
+  const points = (ensureExpression(live)[laneKey(sel.cc)] || [])
+    .filter((point) => sel.keys.some((t) => Math.abs(t - point.t) < 1e-4))
+  if (!points.length) return
+  editClipboard.value = { kind: 'points', cc: sel.cc, points: points.map((point) => ({ t: point.t, v: point.v })) }
+}
+
+function pasteSelection () {
+  const live = clip.value
+  const board = editClipboard.value
+  if (!live || !board) return
+  const at = pasteBeat()
+  if (board.kind === 'notes') {
+    const min = Math.min(...board.notes.map((note) => note.startTick || 0))
+    const shift = Math.round(at * PPQ) - min
+    beginEdit('Paste notes')
+    const created = createNotes(live, duplicateNotes(board.notes, shift))
+    endEdit()
+    selectedIds.clear()
+    ;(created || []).forEach((note) => selectedIds.add(note.id))
+    markDirty()
+    return
+  }
+  if (board.kind === 'pedal') {
+    const min = Math.min(...board.blocks.map((block) => block.startTick))
+    const shift = Math.round(snapSixteenth(at) * PPQ) - min
+    beginEdit('Paste pedal')
+    const keys = board.blocks.map((block) => {
+      const start = Math.max(0, block.startTick + shift)
+      const end = Math.max(start + 1, block.endTick + shift)
+      addClipSustain(live, start, end)
+      return start
+    })
+    endEdit()
+    laneSelection.value = { kind: 'pedal', cc: 64, keys }
+    markDirty()
+    return
+  }
+  const min = Math.min(...board.points.map((point) => point.t))
+  const shift = snapEighth(at) - min
+  const placed = board.points.map((point) => ({ t: Math.max(0, point.t + shift), v: point.v }))
+  beginEdit('Paste curve')
+  const expr = ensureExpression(live)
+  const key = laneKey(board.cc)
+  expr[key] = collapseLane((expr[key] || []).concat(placed), 1e-4)
+  endEdit()
+  laneSelection.value = { kind: 'point', cc: board.cc, keys: placed.map((point) => point.t) }
+  markDirty()
+}
+
 function duplicateSelected () {
+  if (lane.value !== 'notes' && lane.value !== 'velocity') {
+    duplicateLaneSelection()
+    return
+  }
   const list = notes.value.filter((note) => selectedIds.has(note.id))
   if (!list.length) return
   beginEdit('Duplicate notes')
@@ -751,12 +870,69 @@ function duplicateSelected () {
 }
 
 function deleteSelected () {
+  if (lane.value !== 'notes' && lane.value !== 'velocity') {
+    deleteLaneSelection()
+    return
+  }
   const list = notes.value.filter((note) => selectedIds.has(note.id))
   if (!list.length) return
   beginEdit('Delete notes')
   deleteNotes(clip.value, list)
   endEdit()
   selectedIds.clear()
+  markDirty()
+}
+
+function duplicateLaneSelection () {
+  const live = clip.value
+  const sel = laneSelection.value
+  if (!live || !sel.keys.length) return
+  if (sel.kind === 'pedal') {
+    const blocks = sortSustain(ensureExpression(live).cc64).filter((block) => sel.keys.indexOf(block.startTick) >= 0)
+    if (!blocks.length) return
+    const min = Math.min(...blocks.map((block) => block.startTick))
+    const max = Math.max(...blocks.map((block) => block.endTick))
+    const shift = Math.max(PPQ / 4, max - min)
+    beginEdit('Duplicate pedal')
+    blocks.forEach((block) => addClipSustain(live, block.startTick + shift, block.endTick + shift))
+    endEdit()
+    laneSelection.value = { kind: 'pedal', cc: 64, keys: blocks.map((block) => block.startTick + shift) }
+  } else {
+    const points = (ensureExpression(live)[laneKey(sel.cc)] || []).filter((point) => sel.keys.some((t) => Math.abs(t - point.t) < 1e-4))
+    if (!points.length) return
+    const min = Math.min(...points.map((point) => point.t))
+    const max = Math.max(...points.map((point) => point.t))
+    const shift = Math.max(session.snapGridBeats || 0.5, (max - min) || 0.5)
+    beginEdit('Duplicate curve')
+    points.forEach((point) => addClipExpressionPoint(live, sel.cc, point.t + shift, point.v))
+    endEdit()
+    laneSelection.value = { kind: 'point', cc: sel.cc, keys: points.map((point) => point.t + shift) }
+  }
+  markDirty()
+}
+
+function deleteLaneSelection () {
+  const live = clip.value
+  const sel = laneSelection.value
+  if (!live || !sel.keys.length) return
+  beginEdit(sel.kind === 'pedal' ? 'Delete pedal' : 'Delete curve')
+  if (sel.kind === 'pedal') {
+    const blocks = sortSustain(ensureExpression(live).cc64)
+    const indexes = []
+    blocks.forEach((block, index) => {
+      if (sel.keys.indexOf(block.startTick) >= 0) indexes.push(index)
+    })
+    indexes.sort((a, b) => b - a).forEach((index) => deleteClipSustain(live, index))
+  } else {
+    const points = ensureExpression(live)[laneKey(sel.cc)] || []
+    const indexes = []
+    points.forEach((point, index) => {
+      if (sel.keys.some((t) => Math.abs(t - point.t) < 1e-4)) indexes.push(index)
+    })
+    indexes.sort((a, b) => b - a).forEach((index) => deleteClipExpressionPoint(live, sel.cc, index))
+  }
+  endEdit()
+  laneSelection.value = { kind: '', cc: 0, keys: [] }
   markDirty()
 }
 
@@ -872,12 +1048,15 @@ function paintCurve (ctx, width, height, cc) {
   ctx.lineWidth = 1.5
   ctx.stroke()
   ctx.fillStyle = accent
+  const selected = laneSelection.value.kind === 'point' && laneSelection.value.cc === cc ? laneSelection.value.keys : []
   let lastDot = -Infinity
   xs.forEach((x, i) => {
-    if (x - lastDot < 18 && i !== xs.length - 1) return
+    const on = selected.some((t) => Math.abs(t - points[i].t) < 1e-4)
+    if (!on && x - lastDot < 18 && i !== xs.length - 1) return
     lastDot = x
     ctx.beginPath()
-    ctx.arc(x, ys[i], 3, 0, Math.PI * 2)
+    ctx.arc(x, ys[i], on ? 6 : 3, 0, Math.PI * 2)
+    ctx.fillStyle = on ? '#ffffff' : accent
     ctx.fill()
   })
 }
@@ -889,11 +1068,12 @@ function paintPedal (ctx, height, colour) {
   blocks.forEach((block) => {
     const x0 = beatToLaneX(block.startTick / PPQ)
     const x1 = beatToLaneX(block.endTick / PPQ)
-    ctx.fillStyle = shade(colour, 0.55)
-    ctx.globalAlpha = 0.55
+    const on = laneSelection.value.kind === 'pedal' && laneSelection.value.keys.indexOf(block.startTick) >= 0
+    ctx.fillStyle = on ? '#ffffff' : shade(colour, 0.55)
+    ctx.globalAlpha = on ? 0.72 : 0.55
     ctx.fillRect(x0, y, Math.max(2, x1 - x0), h)
     ctx.globalAlpha = 1
-    ctx.fillStyle = shade(colour, 1.1)
+    ctx.fillStyle = on ? '#ffffff' : shade(colour, 1.1)
     ctx.fillRect(x0, y, Math.max(2, x1 - x0), 2)
   })
 }
@@ -945,6 +1125,7 @@ function onLaneDown (e) {
       deleteClipSustain(clip.value, hit.index)
       endEdit()
       lastPedalTap = { at: 0, index: -1 }
+      laneSelection.value = { kind: '', cc: 0, keys: [] }
       return
     }
     if (!hit && now - lastPedalTap.at < 360) {
@@ -957,20 +1138,19 @@ function onLaneDown (e) {
       return
     }
     lastPedalTap = { at: now, index: hit ? hit.index : -1 }
-    if (!hit) return
-    const block = blocks[hit.index]
-    beginEdit('Pedal')
-    laneGesture = {
-      type: 'pedal',
-      edge: hit.edge,
-      originBeat: snapSixteenth(beat),
-      startTick: block.startTick,
-      endTick: block.endTick,
-      liveStart: block.startTick,
-      liveEnd: block.endTick,
-      originX: p.x,
-      dragged: false
-    }
+    const block = hit ? blocks[hit.index] : null
+    armLanePending({
+      x: p.x,
+      y: p.y,
+      beat,
+      value,
+      cc: 64,
+      laneId: 'pedal',
+      hitKind: hit ? 'pedal' : '',
+      index: hit ? hit.index : -1,
+      edge: hit ? hit.edge : '',
+      block
+    })
     return
   }
   const points = ensureExpression(clip.value)[laneKey(active.cc)] || []
@@ -981,31 +1161,101 @@ function onLaneDown (e) {
     deleteClipExpressionPoint(clip.value, active.cc, index)
     endEdit()
     lastPointTap = { at: 0, index: -1 }
+    laneSelection.value = { kind: '', cc: 0, keys: [] }
     return
   }
-  if (index >= 0) {
-    lastPointTap = { at: now, index }
-    const point = points[index]
+  lastPointTap = { at: now, index }
+  armLanePending({
+    x: p.x,
+    y: p.y,
+    beat,
+    value,
+    cc: active.cc,
+    laneId: active.id,
+    hitKind: index >= 0 ? 'point' : '',
+    index,
+    point: index >= 0 ? points[index] : null
+  })
+}
+
+function clearLaneHold () {
+  if (laneGesture && laneGesture.hold) {
+    clearTimeout(laneGesture.hold)
+    laneGesture.hold = 0
+  }
+}
+
+function armLanePending (pending) {
+  clearLaneHold()
+  laneGesture = { type: 'lane-pending', ...pending, hold: 0 }
+  const token = laneGesture
+  token.hold = setTimeout(() => {
+    if (laneGesture !== token) return
+    if (token.hitKind === 'point' && token.point) {
+      const key = token.point.t
+      const same = laneSelection.value.kind === 'point' && laneSelection.value.cc === token.cc && laneSelection.value.keys.some((t) => Math.abs(t - key) < 1e-4)
+      if (!same) laneSelection.value = { kind: 'point', cc: token.cc, keys: [key] }
+    } else if (token.hitKind === 'pedal' && token.block) {
+      const key = token.block.startTick
+      const same = laneSelection.value.kind === 'pedal' && laneSelection.value.keys.indexOf(key) >= 0
+      if (!same) laneSelection.value = { kind: 'pedal', cc: 64, keys: [key] }
+    } else {
+      laneSelection.value = { kind: token.laneId === 'pedal' ? 'pedal' : 'point', cc: token.cc, keys: [] }
+      laneGesture = { type: 'lane-rubber', x0: token.x, beat0: token.beat, y0: token.y, cc: token.cc, laneId: token.laneId }
+      markDirty()
+      return
+    }
+    laneGesture = null
+    markDirty()
+  }, LONG_PRESS_MS)
+}
+
+function startLaneDrag (pending) {
+  if (pending.hitKind === 'pedal' && pending.block) {
+    const key = pending.block.startTick
+    const selected = laneSelection.value.kind === 'pedal' && laneSelection.value.keys.length
+      ? laneSelection.value.keys.slice()
+      : [key]
+    if (selected.indexOf(key) < 0) {
+      laneSelection.value = { kind: 'pedal', cc: 64, keys: [key] }
+    }
+    const blocks = sortSustain(ensureExpression(clip.value).cc64)
+    beginEdit('Pedal')
+    laneGesture = {
+      type: 'pedal-group',
+      originBeat: snapSixteenth(pending.beat),
+      edge: pending.edge,
+      blocks: blocks.filter((block) => (laneSelection.value.keys.length ? laneSelection.value.keys : [key]).indexOf(block.startTick) >= 0)
+        .map((block) => ({ startTick: block.startTick, endTick: block.endTick, liveStart: block.startTick, liveEnd: block.endTick }))
+    }
+    return
+  }
+  if (pending.hitKind === 'point' && pending.point) {
+    const key = pending.point.t
+    if (!(laneSelection.value.kind === 'point' && laneSelection.value.cc === pending.cc && laneSelection.value.keys.some((t) => Math.abs(t - key) < 1e-4))) {
+      laneSelection.value = { kind: 'point', cc: pending.cc, keys: [key] }
+    }
+    const points = ensureExpression(clip.value)[laneKey(pending.cc)] || []
     beginEdit('Move point')
     laneGesture = {
-      type: 'move-point',
-      cc: active.cc,
-      liveT: point.t,
-      originBeat: point.t,
-      originValue: point.v,
-      grabBeat: beat,
-      grabValue: value
+      type: 'move-points',
+      cc: pending.cc,
+      grabBeat: pending.beat,
+      grabValue: pending.value,
+      originals: points.filter((point) => laneSelection.value.keys.some((t) => Math.abs(t - point.t) < 1e-4))
+        .map((point) => ({ t: point.t, v: point.v }))
     }
-    setReadout(active.label, point.v)
     return
   }
-  lastPointTap = { at: now, index: -1 }
-  if (!laneDraw.value) return
-  const snapped = snapEighth(beat)
-  beginEdit('Draw ' + active.label)
-  laneGesture = { type: 'curve', cc: active.cc, lastBeat: snapped, lastValue: value }
-  drawEighths(active.cc, snapped, snapped, value, value)
-  setReadout(active.label, value)
+  if (pending.laneId !== 'pedal' && laneDraw.value) {
+    const snapped = snapEighth(pending.beat)
+    beginEdit('Draw ' + (currentLane().label || 'curve'))
+    laneGesture = { type: 'curve', cc: pending.cc, lastBeat: snapped, lastValue: pending.value }
+    drawEighths(pending.cc, snapped, snapped, pending.value, pending.value)
+    setReadout(currentLane().label, pending.value)
+  } else {
+    laneGesture = null
+  }
 }
 
 function onLaneMove (e) {
@@ -1013,7 +1263,93 @@ function onLaneMove (e) {
   const p = local(e, laneCanvas)
   const { height } = laneSize()
   const value = yToValue(p.y, height)
+  if (laneGesture.type === 'lane-pending') {
+    if (Math.hypot(p.x - laneGesture.x, p.y - laneGesture.y) < MOVE_SLOP) return
+    const pending = laneGesture
+    clearLaneHold()
+    startLaneDrag(pending)
+    if (!laneGesture || laneGesture.type === 'lane-pending') return
+  }
   markDirty()
+  if (laneGesture.type === 'lane-rubber') {
+    const beat = laneXToBeat(p.x)
+    const a = Math.min(laneGesture.beat0, beat)
+    const b = Math.max(laneGesture.beat0, beat)
+    if (laneGesture.laneId === 'pedal') {
+      const blocks = sortSustain(ensureExpression(clip.value).cc64)
+      laneSelection.value = {
+        kind: 'pedal',
+        cc: 64,
+        keys: blocks.filter((block) => block.endTick / PPQ >= a && block.startTick / PPQ <= b).map((block) => block.startTick)
+      }
+    } else {
+      const points = ensureExpression(clip.value)[laneKey(laneGesture.cc)] || []
+      laneSelection.value = {
+        kind: 'point',
+        cc: laneGesture.cc,
+        keys: points.filter((point) => point.t >= a && point.t <= b).map((point) => point.t)
+      }
+    }
+    return
+  }
+  if (laneGesture.type === 'move-points') {
+    const dBeat = laneXToBeat(p.x) - laneGesture.grabBeat
+    const dVal = value - laneGesture.grabValue
+    let earliest = Infinity
+    let lowest = Infinity
+    let highest = -Infinity
+    laneGesture.originals.forEach((point) => {
+      if (point.t < earliest) earliest = point.t
+      if (point.v < lowest) lowest = point.v
+      if (point.v > highest) highest = point.v
+    })
+    let delta = snapEighth(earliest + dBeat) - earliest
+    if (earliest + delta < 0) delta = -earliest
+    let vShift = dVal
+    if (lowest + vShift < 0) vShift = -lowest
+    if (highest + vShift > 127) vShift = 127 - highest
+    const expr = ensureExpression(clip.value)
+    const key = laneKey(laneGesture.cc)
+    const originals = laneGesture.originals
+    const keep = (expr[key] || []).filter((point) => !originals.some((orig) => Math.abs(orig.t - point.t) < 1e-4))
+    const moved = originals.map((point) => ({
+      t: Math.max(0, point.t + delta),
+      v: point.v + vShift
+    }))
+    expr[key] = collapseLane(keep.concat(moved), 1e-4)
+    laneSelection.value = { kind: 'point', cc: laneGesture.cc, keys: moved.map((point) => point.t) }
+    setReadout(currentLane().label, moved.length ? moved[0].v : value)
+    growClipToContent(clip.value)
+    return
+  }
+  if (laneGesture.type === 'pedal-group') {
+    const beat = snapSixteenth(laneXToBeat(p.x))
+    const delta = Math.round((beat - laneGesture.originBeat) * PPQ)
+    let shift = delta
+    let earliest = Infinity
+    laneGesture.blocks.forEach((block) => { if (block.startTick < earliest) earliest = block.startTick })
+    if (laneGesture.edge !== 'end' && earliest + shift < 0) shift = -earliest
+    const expr = ensureExpression(clip.value)
+    const live = sortSustain(expr.cc64)
+    laneGesture.blocks.forEach((orig) => {
+      const index = live.findIndex((block) => block.startTick === orig.liveStart && block.endTick === orig.liveEnd)
+      if (index < 0) return
+      let start = orig.startTick
+      let end = orig.endTick
+      if (laneGesture.edge === 'end' && laneGesture.blocks.length === 1) end = Math.max(start + PPQ / 4, orig.endTick + delta)
+      else if (laneGesture.edge === 'start' && laneGesture.blocks.length === 1) start = Math.max(0, Math.min(end - PPQ / 4, orig.startTick + shift))
+      else {
+        const length = Math.max(PPQ / 4, orig.endTick - orig.startTick)
+        start = orig.startTick + shift
+        end = start + length
+      }
+      moveClipSustain(clip.value, index, start, end)
+      orig.liveStart = start
+      orig.liveEnd = end
+    })
+    laneSelection.value = { kind: 'pedal', cc: 64, keys: laneGesture.blocks.map((block) => block.liveStart) }
+    return
+  }
   if (laneGesture.type === 'velocity') {
     paintVelocityAt(laneGesture.lastX, p.x, value)
     laneGesture.lastX = p.x
@@ -1066,7 +1402,19 @@ function onLaneUp () {
     return
   }
   const g = laneGesture
+  clearLaneHold()
   laneGesture = null
+  if (g.type === 'lane-rubber') {
+    markDirty()
+    return
+  }
+  if (g.type === 'lane-pending') {
+    if (g.hitKind === 'point' && g.point) togglePointSelection(g.cc, g.point.t)
+    else if (g.hitKind === 'pedal' && g.block) togglePedalSelection(g.block.startTick)
+    else laneSelection.value = { kind: '', cc: 0, keys: [] }
+    markDirty()
+    return
+  }
   if (g.type === 'velocity') {
     flushNotePatches()
     setPianoDragActive(0)
@@ -1077,6 +1425,7 @@ function onLaneUp () {
     endEdit()
   }
   laneReadout.value = ''
+  if (clip.value) growClipToContent(clip.value)
   markDirty()
 }
 
@@ -1109,7 +1458,10 @@ watch(() => clip.value && clip.value.id, () => {
   fitted = false
   nextTick(() => mount())
 })
-watch(lane, () => markDirty())
+watch(lane, () => {
+  laneSelection.value = { kind: '', cc: 0, keys: [] }
+  markDirty()
+})
 watch(() => [session.playing, session.looping, session.positionBeats, session.snap, session.snapGridBeats, session.scaleGuide, session.scaleKey, session.scaleName], () => markDirty())
 watch(() => clip.value && clip.value.notes, () => markDirty(), { deep: true })
 watch(() => clip.value && clip.value.expression, () => markDirty(), { deep: true })
@@ -1206,6 +1558,12 @@ onUnmounted(() => {
   transition: opacity 0.15s;
 }
 .selection.show { opacity: 1; pointer-events: auto; }
+.paste {
+  width: auto;
+  padding: 0 10px;
+  font-size: 13px;
+  font-weight: 600;
+}
 .count {
   font-size: var(--lt-fs-s);
   color: var(--lt-ink-2);

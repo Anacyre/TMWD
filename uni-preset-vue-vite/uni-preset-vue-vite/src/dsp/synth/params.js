@@ -1,9 +1,11 @@
 export const TWIN_PLUGIN_ID = 'twin'
 export const WAVES = ['saw', 'square', 'tri', 'sine', 'noise', 'wt0', 'wt1', 'wt2', 'wt3', 'wt4', 'wt5', 'wt6', 'wt7']
-export const FILTER_TYPES = ['lowpass', 'highpass', 'bandpass']
+// lowpass/highpass/bandpass are 24/12 dB cascades; low12/high12 notch shelf are extras (Surge-style).
+export const FILTER_TYPES = ['lowpass', 'low12', 'highpass', 'high12', 'bandpass', 'notch', 'shelf']
 export const FILTER_ROUTES = ['serial', 'parallel']
 export const MOD_SOURCES = ['env1', 'env2', 'lfo1', 'lfo2', 'vel']
-export const MOD_DESTS = ['cutoff', 'res', 'osc1Level', 'osc2Level', 'osc3Level', 'osc1Detune', 'pan', 'amp']
+export const MOD_DESTS = ['cutoff', 'res', 'osc1Level', 'osc2Level', 'osc3Level', 'osc1Detune', 'pan', 'amp', 'f1Drive', 'f2Drive']
+export const LFO_SHAPES = ['sine', 'tri', 'square', 'saw', 'sah']
 
 const WT_RECIPES = [
   [[1, 1]],
@@ -42,7 +44,8 @@ function osc (wave, extra = {}) {
     phase: extra.phase || 0,
     level: extra.level == null ? 0.7 : extra.level,
     pan: extra.pan || 0,
-    wt: extra.wt || 0
+    wt: extra.wt || 0,
+    wtPos: extra.wtPos == null ? 0 : extra.wtPos
   }
 }
 
@@ -92,7 +95,8 @@ function normOsc (src, fallback) {
     phase: clamp(s.phase, 0, 1, fallback.phase),
     level: clamp(s.level, 0, 1, fallback.level),
     pan: clamp(s.pan, -1, 1, fallback.pan),
-    wt: clamp(s.wt, 0, 7, fallback.wt) | 0
+    wt: clamp(s.wt, 0, 7, fallback.wt) | 0,
+    wtPos: clamp(s.wtPos, 0, 1, fallback.wtPos)
   }
 }
 
@@ -122,7 +126,7 @@ function normLfo (src, fallback) {
     rate: clamp(s.rate, 0.02, 32, fallback.rate),
     amount: clamp(s.amount, 0, 1, fallback.amount),
     sync: !!s.sync,
-    shape: s.shape === 'square' || s.shape === 'saw' ? s.shape : 'sine'
+    shape: ['sine', 'tri', 'square', 'saw', 'sah'].includes(s.shape) ? s.shape : 'sine'
   }
 }
 

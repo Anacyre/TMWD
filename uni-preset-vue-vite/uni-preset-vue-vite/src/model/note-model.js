@@ -292,10 +292,39 @@ export function duplicateNotes (notes, offsetTick) {
   return (notes || []).map((note) => cloneNote(note, { id: 0, startTick: Math.max(0, (note.startTick || 0) + shift) }))
 }
 
+/**
+ * One delta for a whole selection. The first note that would cross beat 0 or
+ * the pitch range stops every note, so the rhythm stays intact.
+ */
+export function groupMoveDelta (notes, dTick, dPitch, { minPitch = MIN_PITCH, maxPitch = MAX_PITCH, gridTicks = 0, free = false } = {}) {
+  const list = notes || []
+  if (!list.length) return { dTick: 0, dPitch: 0 }
+  let earliest = Infinity
+  let lowest = Infinity
+  let highest = -Infinity
+  list.forEach((note) => {
+    const start = note.startTick || 0
+    if (start < earliest) earliest = start
+    const pitch = note.pitch == null ? 60 : note.pitch
+    if (pitch < lowest) lowest = pitch
+    if (pitch > highest) highest = pitch
+  })
+  const grid = !free && gridTicks > 0 ? gridTicks : 0
+  let tick = Math.round(Number(dTick) || 0)
+  if (grid) tick = Math.round(tick / grid) * grid
+  if (earliest + tick < 0) tick = -earliest
+  let pitch = Math.round(Number(dPitch) || 0)
+  const low = minPitch - lowest
+  const high = maxPitch - highest
+  pitch = low <= high ? Math.min(high, Math.max(low, pitch)) : 0
+  return { dTick: tick, dPitch: pitch }
+}
+
 export function moveNotes (notes, dTick, dPitch, { gridTicks = 0, free = false, minPitch = MIN_PITCH, maxPitch = MAX_PITCH } = {}) {
+  const delta = groupMoveDelta(notes, dTick, dPitch, { minPitch, maxPitch, gridTicks, free })
   return (notes || []).map((note) => {
-    const startTick = snapTick(Math.max(0, (note.startTick || 0) + dTick), gridTicks, free)
-    const pitch = clampInt((note.pitch || 60) + dPitch, minPitch, maxPitch, note.pitch)
+    const startTick = Math.max(0, Math.round((note.startTick || 0) + delta.dTick))
+    const pitch = clampInt((note.pitch || 60) + delta.dPitch, minPitch, maxPitch, note.pitch)
     return cloneNote(note, { startTick, pitch })
   })
 }

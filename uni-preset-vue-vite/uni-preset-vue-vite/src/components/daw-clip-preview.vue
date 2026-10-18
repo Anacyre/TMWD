@@ -5,6 +5,8 @@
 <script setup>
 import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { buildClipPreview } from '../model/playlist-model.js'
+import { audioFileBeats, audioSourceBeats } from '../audio/audio-clips.js'
+import { session } from '../store/session.js'
 
 const props = defineProps({
   clip: { type: Object, default: null },
@@ -62,10 +64,12 @@ function paint () {
     const mid = height / 2
     ctx.fillStyle = 'rgba(255,255,255,0.82)'
     const offset = Math.max(0, Number(clip.audioOffsetBeats) || 0)
-    const startFrac = clip.audioDuration ? offset / Math.max(0.01, (clip.lengthBeats || 1) + offset) : 0
+    const source = audioSourceBeats(clip)
+    const file = Math.max(0.05, audioFileBeats(clip, session.bpm))
     for (let i = 0; i < width; i++) {
-      const t = startFrac + (i / width) * (1 - startFrac)
-      const idx = Math.min(peaks.length - 1, Math.floor(t * peaks.length))
+      const frac = (offset + (i / Math.max(1, width)) * source) / file
+      if (frac < 0 || frac >= 1) continue
+      const idx = Math.min(peaks.length - 1, Math.floor(frac * peaks.length))
       const amp = Math.max(0.04, Number(peaks[idx]) || 0)
       const h = amp * (height - 2)
       ctx.fillRect(i, mid - h / 2, 1, h)
@@ -96,6 +100,8 @@ watch(() => [
   props.clip && props.clip.loopLengthBeats,
   props.clip && props.clip.notes && props.clip.notes.length,
   props.clip && props.clip.sourceId,
+  props.clip && props.clip.audioOffsetBeats,
+  props.clip && props.clip.audioSourceBeats,
   props.clip && props.clip.peaks && props.clip.peaks.length
 ], () => {
   nextTick(paint)

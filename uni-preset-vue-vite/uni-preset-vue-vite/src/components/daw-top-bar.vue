@@ -287,7 +287,7 @@ async function run (action) {
   closeMenus()
   const map = {
     manager: openProjectManager,
-    new: async () => { await newProject(); await addTrack('midi', 'Instrument 1') },
+    new: async () => { await newProject(); await addTrack('midi') },
     open: openProject,
     save: saveCurrentProject,
     saveAs: async () => {

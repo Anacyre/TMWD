@@ -73,11 +73,7 @@ function cloneForStore (project) {
   }
 }
 
-export async function putProject (project) {
-  const record = {
-    ...cloneForStore(project),
-    updatedAt: Date.now()
-  }
+async function writeProjectRecord (record) {
   if (hasIndexedDb()) {
     const db = await openDb()
     const tx = db.transaction(STORE_PROJECTS, 'readwrite')
@@ -86,7 +82,56 @@ export async function putProject (project) {
   } else {
     memoryDb().projects.set(record.id, record)
   }
+}
+
+export async function putProject (project) {
+  const record = {
+    ...cloneForStore(project),
+    updatedAt: Date.now()
+  }
+  delete record.kind
+  delete record.sourceId
+  delete record.sourceName
+  await writeProjectRecord(record)
   writeFallback(record)
+  return record
+}
+
+const AUTOSAVE_PER_PROJECT = 3
+const AUTOSAVE_TOTAL = 20
+
+function staleAutosaves (rows) {
+  const bySource = new Map()
+  for (const row of rows) {
+    const key = row.sourceId || ''
+    const group = bySource.get(key)
+    if (group) group.push(row)
+    else bySource.set(key, [row])
+  }
+  const drop = []
+  const kept = []
+  for (const group of bySource.values()) {
+    kept.push(...group.slice(0, AUTOSAVE_PER_PROJECT))
+    drop.push(...group.slice(AUTOSAVE_PER_PROJECT))
+  }
+  kept.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  drop.push(...kept.slice(AUTOSAVE_TOTAL))
+  return drop
+}
+
+export async function putAutosave (project) {
+  const sourceId = project && project.id ? project.id : ''
+  const record = {
+    ...cloneForStore(project),
+    id: 'as_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+    kind: 'autosave',
+    sourceId,
+    sourceName: (project && project.name) || 'Untitled',
+    updatedAt: Date.now()
+  }
+  await writeProjectRecord(record)
+  const autos = (await listProjectRows()).filter(isAutosaveRecord)
+  for (const row of staleAutosaves(autos)) await deleteProject(row.id)
   return record
 }
 
@@ -104,14 +149,24 @@ export async function getProject (id) {
   return readFallbackById(id)
 }
 
-export async function listProjects () {
+async function listProjectRows () {
+  let rows = []
   if (hasIndexedDb()) {
     const db = await openDb()
     const tx = db.transaction(STORE_PROJECTS, 'readonly')
-    const rows = await requestToPromise(tx.objectStore(STORE_PROJECTS).getAll())
-    return (rows || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+    rows = await requestToPromise(tx.objectStore(STORE_PROJECTS).getAll())
+  } else {
+    rows = Array.from(memoryDb().projects.values())
   }
-  return Array.from(memoryDb().projects.values()).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  return (rows || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+}
+
+export async function listProjects () {
+  return (await listProjectRows()).filter((row) => !isAutosaveRecord(row))
+}
+
+export async function listAutosaves () {
+  return (await listProjectRows()).filter(isAutosaveRecord)
 }
 
 export async function deleteProject (id) {
@@ -261,13 +316,16 @@ export function rememberRecent (entry) {
   return next
 }
 
+export function isAutosaveRecord (row) {
+  if (!row) return false
+  return row.kind === 'autosave' || String(row.id || '').indexOf('as_') === 0
+}
+
 function writeFallback (record) {
-  if (typeof localStorage === 'undefined') return
+  if (typeof localStorage === 'undefined' || isAutosaveRecord(record)) return
   try {
     const slim = { ...record, webMixer: record.webMixer }
-    const json = JSON.stringify(slim)
-    localStorage.setItem(LS_LAST, json)
-    localStorage.setItem(LS_AUTOSAVE, json)
+    localStorage.setItem(LS_LAST, JSON.stringify(slim))
   } catch (err) { /* quota */ }
 }
 

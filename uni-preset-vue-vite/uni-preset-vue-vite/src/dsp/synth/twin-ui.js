@@ -47,10 +47,11 @@ export function filterDb (hz, filt) {
   const cutoff = Math.max(F_MIN, Number(filt.cutoff) || 1000)
   const res = clamp(Number(filt.res) || 0, 0, 0.95)
   const ratio = Math.max(0.0001, hz / cutoff)
-  const peak = res * 16 * Math.exp(-Math.pow(Math.log(ratio), 2) / 0.045)
+  const peak = (filt.type === 'notch' ? -1 : 1) * res * 16 * Math.exp(-Math.pow(Math.log(ratio), 2) / 0.045)
   let slope = 0
-  if (filt.type === 'highpass') slope = ratio >= 1 ? 0 : -18 * Math.log2(1 / ratio)
+  if (filt.type === 'highpass' || filt.type === 'high12') slope = ratio >= 1 ? 0 : -18 * Math.log2(1 / ratio)
   else if (filt.type === 'bandpass') slope = -14 * Math.abs(Math.log2(ratio))
+  else if (filt.type === 'notch') slope = -14 * Math.abs(Math.log2(ratio))
   else slope = ratio <= 1 ? 0 : -18 * Math.log2(ratio)
   return Math.max(DB_LO, Math.min(DB_HI, slope + peak))
 }
@@ -113,7 +114,12 @@ export function lfoPath (shape) {
     let y = 0.5
     if (shape === 'square') y = t < 0.5 ? 0.22 : 0.78
     else if (shape === 'saw') y = 0.22 + t * 0.56
-    else y = 0.5 - Math.sin(t * Math.PI * 2) * 0.28
+    else if (shape === 'tri') y = 0.5 - (1 - 4 * Math.abs(Math.round(t) - t)) * 0.28
+    else if (shape === 'sah') {
+      const step = Math.floor(t * 4)
+      const r = Math.sin(step * 12.9898) * 43758.5453
+      y = 0.5 - ((r - Math.floor(r)) * 2 - 1) * 0.28
+    } else y = 0.5 - Math.sin(t * Math.PI * 2) * 0.28
     pts.push({ x: 4 + t * 92, y: y * 36 })
   }
   return toPath(pts)

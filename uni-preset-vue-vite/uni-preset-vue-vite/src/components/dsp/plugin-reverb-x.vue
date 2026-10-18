@@ -25,7 +25,7 @@
     <view class="stage">
       <view class="graph x-panel">
         <text class="graph-lab">Decay</text>
-        <dsp-canvas ref="canvas" fill :height="230" @pointerdown="dragTime" />
+        <dsp-canvas ref="canvas" fill :height="230" @ready="onCanvasReady" @pointerdown="dragTime" />
         <view class="pods">
           <view class="pod x-card">
             <dsp-knob
@@ -434,10 +434,14 @@ function onVisibility () {
   if (document.hidden) stop()
   else kick()
 }
-onMounted(() => {
+function onCanvasReady () {
   snapDisplay()
   draw()
+  if (stopResize) stopResize()
   stopResize = observeCanvasResize(canvas, draw)
+}
+onMounted(() => {
+  snapDisplay()
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
 })
 onUnmounted(() => {
@@ -470,7 +474,7 @@ function dragTime (event) {
 .graph {
   flex: 1;
   min-width: 0;
-  min-height: 0;
+  min-height: 180px;
   position: relative;
   display: flex;
   overflow: hidden;

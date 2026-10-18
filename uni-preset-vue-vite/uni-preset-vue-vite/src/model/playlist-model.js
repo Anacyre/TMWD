@@ -37,6 +37,14 @@ export function clipSourceLength (clip) {
   return Math.max(0.25, clip.lengthBeats || 1)
 }
 
+/** Next pattern length, in whole bars, that still contains `end`. Never shrinks. */
+export function nextBarLength (current, end, bar) {
+  const step = Math.max(1, Number(bar) || 4)
+  const length = Math.max(0, Number(current) || 0)
+  if (!(end > length + 0.001)) return length
+  return Math.max(step, Math.ceil((end - 1e-6) / step) * step)
+}
+
 export function clipRepeatCount (clip) {
   const source = clipSourceLength(clip)
   const arranged = Math.max(source, clip.lengthBeats || source)
@@ -232,6 +240,62 @@ export function buildCollapsedGroupClip (tracks, clips, groupId) {
  * and everything cropped at the source and clip edges. Playback and the arrange
  * preview both read this so the picture never disagrees with what you hear.
  */
+/**
+ * Combine MIDI patterns on one track into a single pattern.
+ * Notes, expression and pedal are shifted onto the earliest clip.
+ * Returns null when the selection cannot be merged.
+ */
+export function mergeClipPlan (clips) {
+  const list = (clips || []).filter((clip) => clip && !clip.virtual && clip.kind !== 'audio' && clip.midi !== false)
+  if (list.length < 2) return null
+  const trackIndex = list[0].trackIndex
+  if (list.some((clip) => clip.trackIndex !== trackIndex)) return null
+  const ordered = list.slice().sort((a, b) => (Number(a.startBeat) || 0) - (Number(b.startBeat) || 0))
+  const start = Number(ordered[0].startBeat) || 0
+  let end = start
+  ordered.forEach((clip) => {
+    end = Math.max(end, (Number(clip.startBeat) || 0) + Math.max(0.25, Number(clip.lengthBeats) || 0))
+  })
+  const notes = []
+  const expression = { cc1: [], cc11: [], cc64: [] }
+  ordered.forEach((clip) => {
+    const shift = (Number(clip.startBeat) || 0) - start
+    clipPlaybackNotes(clip).forEach((item) => {
+      const src = item.note || {}
+      notes.push({
+        pitch: item.pitch,
+        start: item.start + shift,
+        duration: item.duration,
+        velocity: src.velocity != null ? src.velocity : item.velocity
+      })
+    })
+    const exp = clip.expression || {}
+    ;['cc1', 'cc11'].forEach((key) => {
+      ;(exp[key] || []).forEach((point) => {
+        expression[key].push({ t: (Number(point.t) || 0) + shift, v: point.v })
+      })
+    })
+    ;(exp.cc64 || []).forEach((block) => {
+      const ticks = Math.round(shift * TICKS_PER_BEAT)
+      expression.cc64.push({
+        startTick: (Number(block.startTick) || 0) + ticks,
+        endTick: (Number(block.endTick) || 0) + ticks
+      })
+    })
+  })
+  expression.cc1.sort((a, b) => a.t - b.t)
+  expression.cc11.sort((a, b) => a.t - b.t)
+  expression.cc64.sort((a, b) => a.startTick - b.startTick)
+  return {
+    hostId: ordered[0].id,
+    removeIds: ordered.slice(1).map((clip) => clip.id),
+    startBeat: start,
+    lengthBeats: Math.max(0.25, end - start),
+    notes,
+    expression
+  }
+}
+
 export function clipPlaybackNotes (clip) {
   const notes = (clip && clip.notes) || []
   if (!notes.length) return []

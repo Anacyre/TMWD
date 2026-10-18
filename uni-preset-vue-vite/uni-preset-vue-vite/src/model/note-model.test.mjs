@@ -14,6 +14,7 @@ import {
   createStressNotes,
   midiVelocity,
   snapTick,
+  groupMoveDelta,
   ticksPerBar,
   timeSignatureAtTick,
   isScalePitch,
@@ -99,5 +100,28 @@ const ticks = viewportTicks(400, view)
 assert(ticks.endTick > ticks.startTick, 'viewport ticks')
 assert(xToTick(0, { ...view, scrollX: 0 }, { snap: false }) === 0, 'x 0 is tick 0')
 assert(MIN_DURATION_TICKS === 15, '1/64 at PPQ 960')
+
+const chord = [{ startTick: 200, pitch: 60 }, { startTick: 680, pitch: 64 }, { startTick: 1160, pitch: 67 }]
+const stopped = groupMoveDelta(chord, -500, 0)
+assert(stopped.dTick === -200, 'a note on the boundary stops the whole chord')
+const shifted = groupMoveDelta(chord, -100, 2)
+assert(shifted.dTick === -100 && shifted.dPitch === 2, 'free move keeps the requested delta')
+const pitched = groupMoveDelta([{ startTick: 0, pitch: 60 }, { startTick: 480, pitch: 127 }], 0, 5)
+assert(pitched.dPitch === 0, 'the highest note stops the chord from leaving the keyboard')
+
+const docked = groupMoveDelta(
+  [{ id: 1, startTick: 100, pitch: 60 }, { id: 2, startTick: 200, pitch: 64 }, { id: 3, startTick: 300, pitch: 67 }],
+  -80,
+  -70,
+  { gridTicks: 120 }
+)
+assert(docked.dTick === -100 && docked.dPitch === -60, 'a group stops together at beat 0 and pitch 0')
+const parked = groupMoveDelta(
+  [{ startTick: 0, pitch: 60 }, { startTick: 120, pitch: 64 }],
+  -40,
+  0,
+  { gridTicks: 120 }
+)
+assert(parked.dTick === 0, 'a note already on the bar keeps the whole chord still')
 
 console.log('note-model tests passed')

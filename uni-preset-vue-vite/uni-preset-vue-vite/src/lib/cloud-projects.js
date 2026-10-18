@@ -60,11 +60,19 @@ export async function signInWithPassword (email, password) {
 }
 
 export async function signUpWithPassword (email, password, displayName) {
+  const redirect = typeof location !== 'undefined' ? location.origin + location.pathname : undefined
   const data = unwrap(await client.auth.signUp({
     email: String(email || '').trim(),
     password,
-    options: { data: { display_name: displayName || '' } }
+    options: {
+      data: { display_name: displayName || '' },
+      emailRedirectTo: redirect
+    }
   }), 'Sign-up failed')
+  const user = data && data.user
+  if (user && Array.isArray(user.identities) && user.identities.length === 0) {
+    throw new Error('An account with this email already exists. Sign in instead.')
+  }
   return data
 }
 

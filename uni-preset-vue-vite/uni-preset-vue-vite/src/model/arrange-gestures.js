@@ -35,25 +35,40 @@ export function applyClipDrag (originals, {
   rowCount = 1,
   canDrop = () => true
 } = {}) {
-  return originals.map((orig) => {
-    if (edge === 'right') {
+  if (edge === 'right') {
+    return originals.map((orig) => {
       const end = snap(orig.start + orig.length + deltaBeats)
       return { ...orig, length: Math.max(MIN_CLIP_BEATS, end - orig.start) }
-    }
-    if (edge === 'left') {
-      const end = orig.start + orig.length
-      const start = Math.max(0, snap(orig.start + deltaBeats))
-      if (end - start < MIN_CLIP_BEATS) return { ...orig }
-      return { ...orig, start, length: end - start }
-    }
-    const start = Math.max(0, snap(orig.start + deltaBeats))
-    let row = orig.row
+    })
+  }
+  let minStart = Infinity
+  let minRow = Infinity
+  let maxRow = -Infinity
+  let maxPush = Infinity
+  originals.forEach((orig) => {
+    if (orig.start < minStart) minStart = orig.start
+    if (edge === 'left') maxPush = Math.min(maxPush, orig.length - MIN_CLIP_BEATS)
     if (orig.row != null) {
-      const next = Math.min(rowCount - 1, Math.max(0, orig.row + deltaRows))
-      if (canDrop(next)) row = next
+      if (orig.row < minRow) minRow = orig.row
+      if (orig.row > maxRow) maxRow = orig.row
     }
-    return { ...orig, start, row }
   })
+  let delta = snap(minStart + deltaBeats) - minStart
+  if (edge === 'left' && delta > maxPush) delta = maxPush
+  if (minStart + delta < 0) delta = -minStart
+  let rowDelta = 0
+  if (edge === 'move' && minRow !== Infinity && deltaRows) {
+    rowDelta = deltaRows
+    if (minRow + rowDelta < 0) rowDelta = -minRow
+    if (maxRow + rowDelta > rowCount - 1) rowDelta = (rowCount - 1) - maxRow
+    if (originals.some((orig) => orig.row != null && !canDrop(orig.row + rowDelta))) rowDelta = 0
+  }
+  return originals.map((orig) => ({
+    ...orig,
+    start: orig.start + delta,
+    length: edge === 'left' ? orig.length - delta : orig.length,
+    row: orig.row == null || edge !== 'move' ? orig.row : orig.row + rowDelta
+  }))
 }
 
 /** Clip ids inside a rubber band given in content pixels. */

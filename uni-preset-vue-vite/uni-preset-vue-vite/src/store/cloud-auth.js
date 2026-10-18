@@ -69,14 +69,26 @@ export async function cloudSignIn () {
 }
 
 export async function cloudSignUp () {
-  cloudAuth.busy = true
+  const email = String(cloudAuth.email || '').trim()
+  const password = String(cloudAuth.password || '')
   cloudAuth.error = ''
   cloudAuth.notice = ''
+  if (!email.includes('@')) {
+    cloudAuth.error = 'Enter the email address for the new account.'
+    return
+  }
+  if (password.length < 6) {
+    cloudAuth.error = 'Password needs at least 6 characters.'
+    return
+  }
+  cloudAuth.busy = true
   try {
-    const result = await signUpWithPassword(cloudAuth.email, cloudAuth.password, cloudAuth.displayName)
-    await refreshCloudAuth()
-    if (result && result.user && !result.session) {
-      cloudAuth.notice = 'Check your inbox to confirm the account, then sign in.'
+    const result = await signUpWithPassword(email, password, cloudAuth.displayName)
+    if (result && result.session) {
+      await refreshCloudAuth()
+    } else {
+      cloudAuth.error = ''
+      cloudAuth.notice = 'Account created. Check your inbox to confirm it, then sign in.'
     }
   } catch (err) {
     cloudAuth.error = cloudErrorMessage(err, 'Sign-up failed')

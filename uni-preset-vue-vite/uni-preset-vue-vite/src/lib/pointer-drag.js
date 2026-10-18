@@ -13,16 +13,38 @@ export function beginPointerDrag (event, handlers = {}) {
   const target = event.currentTarget || event.target
   const pointerId = event.pointerId
   let finished = false
+  // 'x' or 'y': a swipe along that axis is a scroll, not a drag. Capture and
+  // preventDefault only after the gesture is clearly the other axis.
+  const allow = handlers.allowScroll === 'x' || handlers.allowScroll === 'y' ? handlers.allowScroll : ''
+  const origin = pointerCoord(event)
+  let dragging = !allow
 
-  if (target && typeof target.setPointerCapture === 'function' && pointerId != null) {
-    try { target.setPointerCapture(pointerId) } catch (err) { /* capture unsupported */ }
+  const capture = () => {
+    if (target && typeof target.setPointerCapture === 'function' && pointerId != null) {
+      try { target.setPointerCapture(pointerId) } catch (err) { /* capture unsupported */ }
+    }
   }
+  if (!allow) capture()
 
   const samePointer = (ev) => pointerId == null || ev == null || ev.pointerId == null
     || ev.pointerId === pointerId
 
   const move = (ev) => {
     if (!samePointer(ev)) return
+    if (!dragging) {
+      const now = pointerCoord(ev)
+      if (!now || !origin) return
+      const dx = now.x - origin.x
+      const dy = now.y - origin.y
+      if (Math.hypot(dx, dy) < 8) return
+      const along = allow === 'x' ? Math.abs(dx) >= Math.abs(dy) : Math.abs(dy) > Math.abs(dx)
+      if (along) {
+        finish(ev)
+        return
+      }
+      dragging = true
+      capture()
+    }
     if (ev.cancelable) ev.preventDefault()
     ;(handlers.onMove || noop)(ev)
   }
@@ -53,6 +75,21 @@ function pickPoint (pt) {
   return { x, y }
 }
 
+// uni-app hands Vue listeners on <view> a substitute event with no coordinates.
+// The original pointer event still passes window first, so keep that point.
+let lastNativePoint = null
+function rememberNativePoint (event) {
+  const point = pickPoint(event)
+  if (!point) return
+  lastNativePoint = { x: point.x, y: point.y, at: Date.now() }
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', rememberNativePoint, true)
+  window.addEventListener('pointermove', rememberNativePoint, true)
+  window.addEventListener('pointerup', rememberNativePoint, true)
+  window.addEventListener('pointercancel', rememberNativePoint, true)
+}
+
 function fromTouchList (list) {
   if (!list || !list.length) return null
   return pickPoint(list[0])
@@ -61,11 +98,15 @@ function fromTouchList (list) {
 /** Uni-app / Safari touch events often omit clientX/Y on the event itself. */
 export function pointerCoord (event) {
   if (!event) return null
-  return pickPoint(event)
+  const direct = pickPoint(event)
     || fromTouchList(event.touches)
     || fromTouchList(event.changedTouches)
     || fromTouchList(event.targetTouches)
-    || null
+  if (direct) return direct
+  if (lastNativePoint && Date.now() - lastNativePoint.at < 50) {
+    return { x: lastNativePoint.x, y: lastNativePoint.y }
+  }
+  return null
 }
 
 /**

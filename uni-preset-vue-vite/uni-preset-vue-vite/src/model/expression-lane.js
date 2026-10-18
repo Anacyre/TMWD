@@ -45,13 +45,24 @@ export function sampleLane (points, t) {
   return 64
 }
 
+/** One value per time. A later point wins, so a move or paste replaces what was already there. */
+export function collapseLane (points, windowBeats = 1e-4) {
+  const out = []
+  sortLane(points).forEach((point) => {
+    const prev = out[out.length - 1]
+    if (prev && Math.abs(prev.t - point.t) <= windowBeats) out[out.length - 1] = point
+    else out.push({ t: point.t, v: point.v })
+  })
+  return out
+}
+
 export function paintPoint (points, t, v, mergeWindow = 0.06) {
   const next = sortLane(points)
   const value = Math.max(0, Math.min(127, Math.round(v)))
   const hit = next.findIndex((p) => Math.abs(p.t - t) <= mergeWindow)
   if (hit >= 0) next[hit] = { t, v: value }
   else next.push({ t, v: value })
-  return sortLane(next)
+  return collapseLane(next, mergeWindow)
 }
 
 export function addLanePoint (points, t, v) {

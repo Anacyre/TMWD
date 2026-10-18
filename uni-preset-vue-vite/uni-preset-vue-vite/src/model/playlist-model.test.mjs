@@ -1,4 +1,5 @@
-import { visibleTrackRows, buildClipPreview, clipSourceLength, relativeClipOffsets, buildCollapsedGroupClip, invalidateClipPreview } from './playlist-model.js'
+import { visibleTrackRows, buildClipPreview, clipSourceLength, nextBarLength, relativeClipOffsets, buildCollapsedGroupClip, invalidateClipPreview, mergeClipPlan } from './playlist-model.js'
+import { applyClipDrag } from './arrange-gestures.js'
 
 function makeTrack (id, name, extra = {}) {
   return { id, name, type: extra.type || 'midi', parentId: extra.parentId || 0, collapsed: !!extra.collapsed }
@@ -65,5 +66,42 @@ const grouped = buildCollapsedGroupClip(tracks, [
 ], 2)
 if (!grouped || grouped.notes.length !== 2) throw new Error('collapsed group clip notes')
 if (grouped.lengthBeats !== 6) throw new Error('collapsed group span')
+
+const snapped = applyClipDrag([
+  { id: 1, start: 0, length: 4, row: 0 },
+  { id: 2, start: 2, length: 4, row: 0 },
+  { id: 3, start: 4, length: 4, row: 0 }
+], { edge: 'move', deltaBeats: -3, snap: (beat) => Math.max(0, beat), rowCount: 4 })
+if (snapped[0].start !== 0 || snapped[1].start !== 2 || snapped[2].start !== 4) {
+  throw new Error('overlapping move stops the whole group at beat 0')
+}
+
+const dragged = applyClipDrag(
+  [{ id: 1, start: 0, length: 2, row: 0 }, { id: 2, start: 4, length: 2, row: 0 }],
+  { deltaBeats: -2, deltaRows: 0, snap: (beat) => Math.max(0, Math.round(beat)) }
+)
+if (dragged[0].start !== 0 || dragged[1].start !== 4) throw new Error('overlapping move must not pull the later clip when the first is at 0')
+const stepped = applyClipDrag(
+  [{ id: 1, start: 1, length: 1, row: 1 }, { id: 2, start: 3, length: 1, row: 1 }],
+  { deltaBeats: -4, deltaRows: -5, snap: (beat) => Math.max(0, beat), rowCount: 4 }
+)
+if (stepped[0].start !== 0 || stepped[1].start !== 2 || stepped[0].row !== 0 || stepped[1].row !== 0) throw new Error('group drag docks at the edge together')
+
+if (nextBarLength(4, 4, 4) !== 4) throw new Error('pattern must not grow when the note ends on the bar')
+if (nextBarLength(4, 4.25, 4) !== 8) throw new Error('a note past the bar grows the pattern by one bar')
+if (nextBarLength(6, 6.1, 4) !== 8) throw new Error('growth lands on the next bar line')
+if (nextBarLength(0, 0.5, 3) !== 3) throw new Error('the first bar follows the time signature')
+
+const merged = mergeClipPlan([
+  { id: 1, trackIndex: 2, kind: 'midi', midi: true, startBeat: 0, lengthBeats: 4, notes: [{ id: 1, pitch: 60, start: 0, duration: 1, velocity: 100 }] },
+  { id: 2, trackIndex: 2, kind: 'midi', midi: true, startBeat: 4, lengthBeats: 4, notes: [{ id: 2, pitch: 64, start: 1, duration: 1, velocity: 90 }], expression: { cc1: [{ t: 0, v: 80 }], cc11: [], cc64: [{ startTick: 0, endTick: 480 }] } }
+])
+if (!merged || merged.lengthBeats !== 8 || merged.notes.length !== 2) throw new Error('merge joins patterns on one track')
+if (merged.notes[1].start !== 5 || merged.notes[1].pitch !== 64) throw new Error('merged notes keep their place on the timeline')
+if (merged.expression.cc1[0].t !== 4 || merged.expression.cc64[0].startTick !== 4 * 960) throw new Error('expression and pedal shift with the pattern')
+if (mergeClipPlan([
+  { id: 1, trackIndex: 2, kind: 'midi', midi: true, startBeat: 0, lengthBeats: 4, notes: [] },
+  { id: 2, trackIndex: 3, kind: 'midi', midi: true, startBeat: 0, lengthBeats: 4, notes: [] }
+])) throw new Error('patterns on different tracks do not merge')
 
 console.log('playlist-model ok')

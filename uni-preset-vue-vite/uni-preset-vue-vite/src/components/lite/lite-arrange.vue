@@ -32,11 +32,12 @@
             v-for="(row, visual) in rows"
             :key="row.track.id"
             class="head"
-            :class="{ sel: row.index === session.selectedTrack, group: isGroup(row.track), muted: !isTrackAudible(row.index), lift: lift && lift.visual === visual }"
+            :class="{ sel: row.index === session.selectedTrack, group: isGroup(row.track), child: row.depth > 0, muted: !isTrackAudible(row.index), lift: lift && lift.visual === visual }"
             :style="headStyle(row, visual)"
             :data-row="visual"
           >
-            <view class="swatch" :style="{ background: row.track.colour || '#6aa8ff' }" />
+            <view v-if="row.depth" class="nest" :style="{ background: groupColour(row), width: (8 + (row.depth - 1) * 10) + 'px' }" />
+            <view class="swatch" :style="{ background: row.track.colour || '#6aa8ff', left: (row.depth ? 10 + row.depth * 14 : 0) + 'px' }" />
             <view class="head-text">
               <view class="name-row" @click.stop="openTrackMenu(row)">
                 <view v-if="isGroup(row.track)" class="fold" @click.stop="toggleFold(row.track)">
@@ -45,7 +46,7 @@
                 <text class="name">{{ row.track.name }}</text>
               </view>
               <view v-if="!isGroup(row.track)" class="inst" @click.stop="openInstrument(row)">
-                <text class="inst-name">{{ instrumentLabel(row.track) }}</text>
+                <text class="inst-name">{{ rowLabel(row) }}</text>
               </view>
               <text v-else class="inst-name dim">{{ childCount(row.track) }} {{ childCount(row.track) === 1 ? 'track' : 'tracks' }}</text>
             </view>
@@ -65,6 +66,13 @@
         >
           <view class="grid" :style="gridStyle" />
           <view
+            v-for="(row, visual) in rows"
+            :key="'lane-' + row.track.id"
+            class="lane-bg"
+            :class="{ child: row.depth > 0, group: isGroup(row.track) }"
+            :style="laneStyle(row, visual)"
+          />
+          <view
             v-for="clip in visibleClips"
             :key="clip.id"
             class="clip"
@@ -74,8 +82,22 @@
           >
             <text class="clip-name">{{ clip.name || 'Pattern' }}{{ repeatLabel(clip) }}</text>
             <daw-clip-preview :clip="clip" :revision="session.clipPreviewRevision" />
-            <view v-if="isSelected(clip) && !clip.virtual" class="grip left" />
-            <view v-if="isSelected(clip) && !clip.virtual" class="grip right" />
+            <view v-if="clipIsAudio(clip) && !clip.virtual && (clip.fadeInBeats || 0) > 0.01" class="fade in" :style="{ width: fadeHandlePx(clip, 'in') + 'px' }" />
+            <view v-if="clipIsAudio(clip) && !clip.virtual && (clip.fadeOutBeats || 0) > 0.01" class="fade out" :style="{ width: (clipWidthPx(clip) - fadeHandlePx(clip, 'out')) + 'px' }" />
+            <view v-if="clipIsAudio(clip) && isSelected(clip) && !clip.virtual" class="env">
+              <view v-if="(clip.fadeInBeats || 0) > 0.01" class="env-seg" :style="envLine(0, 58, fadeHandlePx(clip, 'in'), gainY(clip))" />
+              <view class="env-seg" :style="envLine(fadeHandlePx(clip, 'in'), gainY(clip), fadeHandlePx(clip, 'out'), gainY(clip))" />
+              <view v-if="(clip.fadeOutBeats || 0) > 0.01" class="env-seg" :style="envLine(fadeHandlePx(clip, 'out'), gainY(clip), clipWidthPx(clip), 58)" />
+              <text class="env-db" :style="{ top: (gainY(clip) - 14) + 'px' }">{{ formatDb(clip.gainDb) }}</text>
+              <view class="env-dot" :style="{ left: fadeHandlePx(clip, 'in') + 'px', top: gainY(clip) + 'px' }" />
+              <view class="env-dot" :style="{ left: fadeHandlePx(clip, 'out') + 'px', top: gainY(clip) + 'px' }" />
+              <view class="env-hit in" :style="{ left: fadeHandlePx(clip, 'in') + 'px', top: gainY(clip) + 'px' }" @pointerdown.stop="startFade(clip, 'in', $event)" />
+              <view class="env-hit out" :style="{ left: fadeHandlePx(clip, 'out') + 'px', top: gainY(clip) + 'px' }" @pointerdown.stop="startFade(clip, 'out', $event)" />
+              <view class="env-hit level" :style="levelHitStyle(clip)" @pointerdown.stop="startGain(clip, $event)" />
+            </view>
+            <view v-if="isSelected(clip) && !clip.virtual" class="grip left"><view class="grip-bar" /></view>
+            <view v-if="isSelected(clip) && !clip.virtual" class="grip right" :class="{ trim: clipIsAudio(clip) }"><view class="grip-bar" /></view>
+            <view v-if="isSelected(clip) && !clip.virtual && clipIsAudio(clip)" class="grip stretch"><view class="grip-bar" /></view>
           </view>
           <view v-if="band" class="band" :style="bandStyle" />
           <view ref="playheadRef" class="playhead" :style="{ height: Math.max(lanesH, rows.length * rowH) + 'px' }" />
@@ -84,18 +106,34 @@
           <text class="empty-title">Start with a track</text>
           <view class="empty-btn" @click.stop="addLiteInstrumentTrack">Add track</view>
         </view>
-      </view>
-    </view>
-
-    <view v-if="selection.length" class="actions">
-      <text class="count">{{ selection.length === 1 ? (selection[0].name || 'Pattern') : selection.length + ' clips' }}</text>
-      <view v-if="!audioSelection" class="act" @click.stop="openSelected">Edit notes</view>
-      <view class="act" @click.stop="duplicateSelection">Duplicate</view>
-      <view class="act" @click.stop="loopSelection">Loop</view>
-      <view class="act" @click.stop="muteSelection">{{ allMuted ? 'Unmute' : 'Mute' }}</view>
-      <view class="act danger" @click.stop="deleteSelection">Delete</view>
-      <view class="act icon" aria-label="Deselect" @click.stop="clearSelection">
-        <daw-icon name="close" :size="16" color="currentColor" />
+        <view
+          v-if="menuOpen && selection.length"
+          class="clip-menu"
+          :style="menuStyle"
+          @pointerdown.stop
+          @click.stop
+        >
+          <view class="menu-head">
+            <input
+              v-if="selection.length === 1 && !selection[0].virtual"
+              class="clip-rename"
+              :value="selection[0].name || ''"
+              @input="renameSelection($event)"
+              @focus="setTyping(true)"
+              @blur="setTyping(false)"
+            >
+            <text v-else class="count">{{ selection.length }} clips</text>
+            <view class="act icon" aria-label="Deselect" @click.stop="clearSelection">
+              <daw-icon name="close" :size="16" color="currentColor" />
+            </view>
+          </view>
+          <view v-if="!primaryAudio" class="act" @click.stop="openSelected">Edit notes</view>
+          <view v-if="canMerge" class="act" @click.stop="mergeSelection">Merge</view>
+          <view class="act" @click.stop="duplicateSelection">Duplicate</view>
+          <view class="act" @click.stop="loopSelection">Loop</view>
+          <view class="act" @click.stop="muteSelection">{{ allMuted ? 'Unmute' : 'Mute' }}</view>
+          <view class="act danger" @click.stop="deleteSelection">Delete</view>
+        </view>
       </view>
     </view>
   </view>
@@ -128,6 +166,7 @@ import {
   flushClipMoves,
   selectedClips,
   duplicateSelectedClips,
+  mergeSelectedClips,
   deleteSelectedClips,
   loopClip,
   muteClips,
@@ -140,18 +179,23 @@ import {
   openLiteSheet,
   reorderTracks,
   addClipFromFile,
+  setAudioClipField,
+  renameClip,
+  setTyping,
   loadSf2File,
   loadSf2Wav
 } from '../../store/session.js'
+import { beginPointerDrag, pointerCoord } from '../../lib/pointer-drag.js'
 import { visibleTrackRows, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../../model/playlist-model.js'
 import { bindFileDropZone } from '../../lib/file-drop.js'
 import { applyClipDrag, clipEdgeAt, clipsInBand, pinchView, snapTo, RULER_SNAP_BEATS } from '../../model/arrange-gestures.js'
 import { interpolateBeats } from '../../model/timeline.js'
-
+import { audioFileBeats, audioSourceBeats, audioStretch, audioTrim, clipMatchesTrack } from '../../audio/audio-clips.js'
 const ROW_H = 76
 const DOUBLE_TAP_MS = 320
 const DRAG_SLOP = 8
 const TAP_SLOP = 22
+const CLIP_MENU_MS = 480
 /** Hold a track head this long to lift it for reordering. */
 const LIFT_MS = 480
 
@@ -169,6 +213,7 @@ const lanesW = ref(800)
 const lanesH = ref(600)
 const viewportW = ref(1180)
 const band = ref(null)
+const menuOpen = ref(false)
 
 const rowH = ROW_H
 const ppb = computed(() => session.pixelsPerBeat)
@@ -231,7 +276,10 @@ const visibleClips = computed(() => {
     const built = buildCollapsedGroupClip(session.tracks, session.clips, track.id)
     if (built) groups.push(built)
   })
-  return session.clips.filter((clip) => shown.has(clip.trackIndex)).concat(groups).filter((clip) => {
+  return session.clips.filter((clip) => {
+    if (!shown.has(clip.trackIndex)) return false
+    return clipMatchesTrack(session.tracks[clip.trackIndex], clip)
+  }).concat(groups).filter((clip) => {
     const s = clip.startBeat || 0
     return s + (clip.lengthBeats || 0) >= start && s <= end
   })
@@ -239,7 +287,44 @@ const visibleClips = computed(() => {
 
 const selection = computed(() => session.clips.filter((clip) => session.selectedClipIds.includes(clip.id)))
 const allMuted = computed(() => selection.value.length > 0 && selection.value.every((clip) => clip.muted))
-const audioSelection = computed(() => selection.value.some((clip) => clip.kind === 'audio' || clip.midi === false))
+const primaryAudio = computed(() => {
+  const clip = selection.value[0]
+  return !!clip && clipIsAudio(clip) && selection.value.every((item) => clipIsAudio(item))
+})
+const canMerge = computed(() => {
+  const clips = selection.value.filter((clip) => !clip.virtual && !clipIsAudio(clip))
+  if (clips.length < 2 || clips.length !== selection.value.length) return false
+  const track = clips[0].trackIndex
+  return clips.every((clip) => clip.trackIndex === track)
+})
+const menuStyle = computed(() => {
+  const clips = selection.value
+  if (!clips.length) return {}
+  let left = Infinity
+  let right = -Infinity
+  let top = Infinity
+  clips.forEach((clip) => {
+    const row = rowByTrack.value.get(clip.trackIndex)
+    if (row == null) return
+    const x = (clip.startBeat || 0) * ppb.value - scrollX.value
+    const w = Math.max(10, (clip.lengthBeats || 1) * ppb.value)
+    const y = row * ROW_H - scrollY.value
+    if (x < left) left = x
+    if (x + w > right) right = x + w
+    if (y < top) top = y
+  })
+  if (!Number.isFinite(left)) return { left: '8px', top: '8px' }
+  const menuW = 188
+  const menuH = 332
+  const viewW = Math.max(200, lanesW.value || 400)
+  const viewH = Math.max(200, lanesH.value || 400)
+  const visRight = Math.min(viewW - 8, right)
+  let x = visRight + 8
+  if (x + menuW > viewW - 8) x = Math.max(8, visRight - menuW)
+  let y = Math.max(8, top)
+  if (y + menuH > viewH - 8) y = Math.max(8, viewH - menuH - 8)
+  return { left: Math.round(x) + 'px', top: Math.round(y) + 'px' }
+})
 const bandStyle = computed(() => {
   const b = band.value
   if (!b) return {}
@@ -254,9 +339,32 @@ const bandStyle = computed(() => {
 function isGroup (track) { return isGroupTrack(track) }
 function childCount (group) { return session.tracks.filter((track) => track.parentId === group.id).length }
 function instrumentLabel (track) {
-  if (track.type === 'audio' || track.source === 'audio') return 'Audio'
+  if (isAudioTrack(track)) return 'Add audio'
   if (!track.definitionId && !track.instrument) return 'Choose instrument'
   return track.instrument || 'Instrument'
+}
+function parentTrack (track) {
+  if (!track || !track.parentId) return null
+  return session.tracks.find((item) => item.id === track.parentId) || null
+}
+function groupColour (row) {
+  const parent = parentTrack(row.track)
+  return (parent && parent.colour) || 'rgba(255,255,255,0.4)'
+}
+function rowLabel (row) {
+  const parent = row.depth ? parentTrack(row.track) : null
+  if (parent) return 'in ' + parent.name
+  return instrumentLabel(row.track)
+}
+function laneStyle (row, visual) {
+  return {
+    top: visual * ROW_H + 'px',
+    height: ROW_H + 'px',
+    boxShadow: row.depth ? 'inset 4px 0 0 ' + groupColour(row) : ''
+  }
+}
+function isAudioTrack (track) {
+  return !!track && (track.type === 'audio' || track.source === 'audio')
 }
 function isSelected (clip) { return session.selectedClipIds.includes(clip.id) }
 function repeatLabel (clip) {
@@ -283,7 +391,8 @@ function clipStyle (clip) {
 }
 
 function headStyle (row, visual) {
-  const style = { height: rowH + 'px', paddingLeft: 14 + row.depth * 12 + 'px' }
+  const inset = row.depth ? 22 + row.depth * 16 : 14
+  const style = { height: rowH + 'px', paddingLeft: inset + 'px' }
   if (lift.value && lift.value.visual === visual) style.transform = 'translateY(' + lift.value.dy + 'px)'
   return style
 }
@@ -295,6 +404,7 @@ let headPress = null
 function onHeadDown (e) {
   if (!Number.isFinite(e.clientY) || (e.button != null && e.button !== 0)) return
   const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
+  if (target && target.closest && target.closest('.modes, .flag, .fold')) return
   const head = target && target.closest && target.closest('.head')
   if (!head) return
   const visual = Number(head.getAttribute('data-row'))
@@ -388,6 +498,10 @@ function openTrackMenu (row) {
 function openInstrument (row) {
   if (justLifted()) return
   selectTrack(row.index)
+  if (isAudioTrack(row.track)) {
+    pickAudio(row.index, session.positionBeats || 0)
+    return
+  }
   onTrackInstrumentClick(row.index)
 }
 
@@ -398,14 +512,111 @@ function openClip (clip) {
     selectClip(session.clips.findIndex((item) => item.id === clip.id), true)
     session.selectedClipIds = [clip.id]
   }
-  const track = session.tracks[clip.trackIndex]
-  if (clip.kind === 'audio' || clip.midi === false || (track && (track.type === 'audio' || track.source === 'audio'))) return
+  if (clipIsAudio(clip)) return
   setEditorTab('piano')
   setWorkspaceView('piano')
 }
 function openSelected () { if (selection.value[0]) openClip(selection.value[0]) }
-function clearSelection () { session.selectedClipIds = [] }
+function formatDb (db) {
+  const n = Number(db) || 0
+  return (n > 0 ? '+' : '') + n.toFixed(1) + ' dB'
+}
+function clipIsAudio (clip) {
+  if (!clip) return false
+  return clip.kind === 'audio' || clip.midi === false
+}
+function renameSelection (event) {
+  const clip = selection.value[0]
+  if (!clip) return
+  const raw = event && event.detail && event.detail.value != null
+    ? event.detail.value
+    : (event && event.target && event.target.value)
+  renameClip(clip, raw)
+}
+function gainY (clip) {
+  const db = Number(clip && clip.gainDb) || 0
+  const ratio = Math.min(1, Math.max(0, (db + 24) / 36))
+  return 22 + (1 - ratio) * 32
+}
+function clipWidthPx (clip) {
+  return Math.max(10, (clip.lengthBeats || 1) * ppb.value)
+}
+function envLine (x1, y1, x2, y2) {
+  const dx = x2 - x1
+  const dy = y2 - y1
+  const len = Math.max(1, Math.hypot(dx, dy))
+  const ang = Math.atan2(dy, dx) * 180 / Math.PI
+  return {
+    left: x1 + 'px',
+    top: y1 + 'px',
+    width: len + 'px',
+    transform: 'rotate(' + ang + 'deg)'
+  }
+}
+function levelHitStyle (clip) {
+  const x1 = fadeHandlePx(clip, 'in')
+  const x2 = fadeHandlePx(clip, 'out')
+  return {
+    left: (x1 + 16) + 'px',
+    width: Math.max(24, x2 - x1 - 32) + 'px',
+    top: gainY(clip) + 'px'
+  }
+}
+function fadeHandlePx (clip, edge) {
+  const beats = edge === 'in' ? Number(clip.fadeInBeats) || 0 : Number(clip.fadeOutBeats) || 0
+  const length = Math.max(0.25, clip.lengthBeats || 1)
+  const width = Math.max(10, length * ppb.value)
+  const used = Math.min(length * 0.49, Math.max(0, beats))
+  const px = used * ppb.value
+  if (edge === 'in') return Math.max(0, Math.min(width, px))
+  return Math.max(0, Math.min(width, width - px))
+}
+function startFade (clip, edge, event) {
+  const origin = pointerCoord(event)
+  const key = edge === 'in' ? 'fadeInBeats' : 'fadeOutBeats'
+  const start = Number(clip[key]) || 0
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      const at = pointerCoord(ev)
+      if (!at || !origin) return
+      const delta = (at.x - origin.x) / ppb.value
+      const cap = Math.max(0, (clip.lengthBeats || 1) * 0.49)
+      const next = edge === 'in' ? start + delta : start - delta
+      setAudioClipField(clip, key, Math.min(cap, Math.max(0, next)))
+    }
+  })
+}
+function startGain (clip, event) {
+  const origin = pointerCoord(event)
+  const start = Number(clip.gainDb) || 0
+  beginPointerDrag(event, {
+    onMove: (ev) => {
+      const at = pointerCoord(ev)
+      if (!at || !origin) return
+      setAudioClipField(clip, 'gainDb', start + (origin.y - at.y) / 3)
+    }
+  })
+}
+function pickAudio (trackIndex, beat) {
+  if (typeof document === 'undefined') return
+  const input = document.createElement('input')
+  input.type = 'file'
+  input.accept = 'audio/*,.wav,.mp3,.ogg,.flac,.m4a,.aac,.aif,.aiff'
+  input.onchange = () => {
+    const file = input.files && input.files[0]
+    if (file) addClipFromFile(file, trackIndex, beat || 0)
+  }
+  input.click()
+}
+function clearSelection () {
+  menuOpen.value = false
+  session.selectedClipIds = []
+}
 function duplicateSelection () { duplicateSelectedClips() }
+function mergeSelection () {
+  if (!mergeSelectedClips()) return
+  showUndoToast('Merged patterns', () => undoEdit())
+}
 function loopSelection () { selection.value.forEach((clip) => loopClip(clip)) }
 function muteSelection () { muteClips(selection.value, !allMuted.value) }
 function deleteSelection () {
@@ -437,6 +648,19 @@ function contentPoint (clientX, clientY) {
   const rect = lanesRect()
   return { x: clientX - rect.left + scrollX.value, y: clientY - rect.top + scrollY.value }
 }
+/** Topmost pattern under a content point. Later clips paint above earlier ones. */
+function clipUnder (x, y) {
+  const beat = x / ppb.value
+  const row = Math.floor(y / ROW_H)
+  const list = visibleClips.value
+  for (let i = list.length - 1; i >= 0; i--) {
+    const clip = list[i]
+    if (rowByTrack.value.get(clip.trackIndex) !== row) continue
+    const start = clip.startBeat || 0
+    if (beat >= start && beat < start + (clip.lengthBeats || 0)) return clip
+  }
+  return null
+}
 function rowAtY (y) {
   const visual = Math.floor(y / ROW_H)
   return rows.value[visual] || null
@@ -459,6 +683,17 @@ function startPinch () {
   }
 }
 
+function rowAcceptsClip (row) {
+  const track = rows.value[row] && rows.value[row].track
+  if (!track || !isPlayableTrack(track)) return false
+  const clips = (gesture && gesture.originals || []).map((orig) => session.clips.find((item) => item.id === orig.id)).filter(Boolean)
+  if (!clips.length) return false
+  const audioTrack = track.type === 'audio' || track.source === 'audio'
+  if (clips.every((clip) => clipIsAudio(clip))) return audioTrack
+  if (clips.every((clip) => !clipIsAudio(clip))) return !audioTrack
+  return false
+}
+
 function clearHold () {
   if (gesture && gesture.hold) {
     clearTimeout(gesture.hold)
@@ -475,6 +710,8 @@ function cancelGesture () {
       clip.startBeat = orig.start
       clip.lengthBeats = orig.length
       clip.trackIndex = orig.track
+      if (orig.offset != null) clip.audioOffsetBeats = orig.offset
+      if (orig.source != null) clip.audioSourceBeats = orig.source
     })
   }
   if (gesture && gesture.type === 'clip') endEdit()
@@ -488,6 +725,7 @@ function onDown (e) {
   // Only fingers on the timeline count. A thumb resting on a track head must not turn a
   // one-finger drag into a pinch.
   if (!inLanes || !Number.isFinite(e.clientX)) return
+  if (target.closest('.clip-menu, .env-hit')) return
   if (e.isPrimary) {
     // First finger of a new sequence: forget any pointer whose lift we never saw.
     pointers.clear()
@@ -502,36 +740,76 @@ function onDown (e) {
   }
   if (pointers.size > 2) return
   capture(e)
-  const clipEl = target.closest('[data-clip]')
   const point = contentPoint(e.clientX, e.clientY)
+  const geom = clipUnder(point.x, point.y)
   const now = Date.now()
-  if (clipEl) {
-    const id = clipEl.getAttribute('data-clip')
-    const clip = visibleClips.value.find((item) => String(item.id) === id)
-    if (!clip) return
+  if (geom) {
+    const clip = geom
+    const id = String(clip.id)
     const again = lastTap.clipId === id && now - lastTap.at < DOUBLE_TAP_MS
     lastTap = { at: now, x: e.clientX, y: e.clientY, clipId: id }
     if (again) {
       lastTap = { at: 0, x: 0, y: 0, clipId: null }
+      menuOpen.value = false
       openClip(clip)
       return
     }
     if (clip.virtual) return
-    if (!isSelected(clip)) session.selectedClipIds = [clip.id]
+    const already = session.selectedClipIds.includes(clip.id)
+    const covered = session.clips.some((item) => (
+      item.id !== clip.id
+      && session.selectedClipIds.includes(item.id)
+      && item.trackIndex === clip.trackIndex
+      && (item.startBeat || 0) < (clip.startBeat || 0) + (clip.lengthBeats || 0)
+      && (clip.startBeat || 0) < (item.startBeat || 0) + (item.lengthBeats || 0)
+    ))
+    if (e.shiftKey) {
+      const ids = session.selectedClipIds.filter((id) => id !== clip.id)
+      if (!already) ids.push(clip.id)
+      session.selectedClipIds = ids.length ? ids : [clip.id]
+    } else if (!already || covered) {
+      session.selectedClipIds = [clip.id]
+    }
+    const kept = session.selectedClipIds.slice()
+    selectTrack(clip.trackIndex, { keepClips: true })
+    session.selectedClipIds = kept
     const index = session.clips.findIndex((item) => item.id === clip.id)
     if (index >= 0) session.selectedClip = index
-    selectTrack(clip.trackIndex)
-    const rect = clipEl.getBoundingClientRect()
-    const edge = selection.value.length === 1 ? clipEdgeAt(e.clientX - rect.left, rect.width, 22) : 'move'
+    const width = Math.max(10, (clip.lengthBeats || 1) * ppb.value)
+    const localX = point.x - (clip.startBeat || 0) * ppb.value
+    const grip = target && target.closest && target.closest('.grip')
+    let edge = 'move'
+    if (session.selectedClipIds.length === 1 && clipIsAudio(clip)) {
+      if (grip && grip.classList.contains('stretch')) edge = 'stretch'
+      else if (grip && grip.classList.contains('left')) edge = 'left'
+      else if (grip && grip.classList.contains('right')) edge = 'right'
+    } else if (session.selectedClipIds.length === 1) {
+      edge = clipEdgeAt(localX, width, 22)
+    }
+    menuOpen.value = false
     gesture = {
       type: 'clip',
       edge,
       startX: e.clientX,
       startY: e.clientY,
       armed: false,
-      originals: selectedClips().map((item) => ({ id: item.id, start: item.startBeat, length: item.lengthBeats, track: item.trackIndex }))
+      menu: false,
+      originals: selectedClips().map((item) => ({
+        id: item.id,
+        start: item.startBeat,
+        length: item.lengthBeats,
+        track: item.trackIndex,
+        offset: Number(item.audioOffsetBeats) || 0,
+        source: audioSourceBeats(item),
+        file: audioFileBeats(item, session.bpm)
+      })),
+      hold: clip.virtual ? 0 : setTimeout(() => {
+        if (!gesture || gesture.type !== 'clip' || gesture.armed) return
+        gesture.menu = true
+        menuOpen.value = true
+      }, CLIP_MENU_MS)
     }
-    beginEdit(edge === 'move' ? 'Move clips' : 'Resize clip')
+    beginEdit(edge === 'stretch' ? 'Stretch audio' : (edge === 'move' ? 'Move clips' : 'Resize clip'))
     return
   }
   const again = lastTap.clipId == null && now - lastTap.at < DOUBLE_TAP_MS && Math.hypot(e.clientX - lastTap.x, e.clientY - lastTap.y) < 28
@@ -540,7 +818,9 @@ function onDown (e) {
   if (again) {
     lastTap = { at: 0, x: 0, y: 0, clipId: null }
     if (row && isPlayableTrack(row.track)) {
-      addMidiClip(row.index, snapBeat(Math.floor(point.x / ppb.value / beatsPerBar.value) * beatsPerBar.value))
+      const beat = snapBeat(Math.floor(point.x / ppb.value / beatsPerBar.value) * beatsPerBar.value)
+      if (isAudioTrack(row.track)) pickAudio(row.index, beat)
+      else addMidiClip(row.index, beat)
     }
     return
   }
@@ -579,21 +859,41 @@ function onMove (e) {
   const dx = e.clientX - gesture.startX
   const dy = e.clientY - gesture.startY
   if (gesture.type === 'clip') {
+    if (gesture.menu) return
     if (!gesture.armed) {
       if (Math.hypot(dx, dy) < DRAG_SLOP) return
       gesture.armed = true
+      clearHold()
+      menuOpen.value = false
     }
     const placed = applyClipDrag(gesture.originals.map((orig) => ({ ...orig, row: rowByTrack.value.get(orig.track) })), {
-      edge: gesture.edge,
+      edge: gesture.edge === 'stretch' ? 'right' : gesture.edge,
       deltaBeats: dx / ppb.value,
       deltaRows: Math.round(dy / ROW_H),
       snap: snapBeat,
       rowCount: rows.value.length,
-      canDrop: (row) => !!rows.value[row] && isPlayableTrack(rows.value[row].track)
+      canDrop: (row) => rowAcceptsClip(row)
     })
     placed.forEach((next) => {
       const clip = session.clips.find((item) => item.id === next.id)
-      if (!clip) return
+      const orig = gesture.originals.find((item) => item.id === next.id)
+      if (!clip || !orig) return
+      if (clipIsAudio(clip) && gesture.edge === 'stretch') {
+        const shaped = audioStretch(orig, next.length)
+        clip.startBeat = shaped.start
+        clip.lengthBeats = shaped.length
+        clip.audioOffsetBeats = shaped.offset
+        clip.audioSourceBeats = shaped.source
+        return
+      }
+      if (clipIsAudio(clip) && gesture.edge !== 'move') {
+        const shaped = audioTrim(orig, next.start, next.length, orig.file)
+        clip.startBeat = shaped.start
+        clip.lengthBeats = shaped.length
+        clip.audioOffsetBeats = shaped.offset
+        clip.audioSourceBeats = shaped.source
+        return
+      }
       clip.startBeat = next.start
       clip.lengthBeats = next.length
       if (gesture.edge === 'move' && next.row != null && rows.value[next.row]) clip.trackIndex = rows.value[next.row].index
@@ -618,7 +918,7 @@ function onMove (e) {
   if (gesture.type === 'band') {
     const point = contentPoint(e.clientX, e.clientY)
     band.value = { x0: gesture.origin.x, y0: gesture.origin.y, x1: point.x, y1: point.y }
-    session.selectedClipIds = clipsInBand(session.clips, band.value, {
+    session.selectedClipIds = clipsInBand(session.clips.filter((clip) => clipMatchesTrack(session.tracks[clip.trackIndex], clip)), band.value, {
       pixelsPerBeat: ppb.value,
       rowHeight: ROW_H,
       rowOf: (clip) => rowByTrack.value.get(clip.trackIndex)
@@ -646,7 +946,8 @@ function onUp (e) {
       scrollX.value = gesture.scrollX
       scrollY.value = gesture.scrollY
       session.selectedClipIds = []
-      if (gesture.row) selectTrack(gesture.row.index)
+      menuOpen.value = false
+      if (gesture.row) selectTrack(gesture.row.index, { keepClips: true })
     }
   } else if (gesture.type === 'clip') {
     if (gesture.armed) {
@@ -659,7 +960,8 @@ function onUp (e) {
     endEdit()
   } else if (gesture.type === 'empty') {
     session.selectedClipIds = []
-    if (gesture.row) selectTrack(gesture.row.index)
+    menuOpen.value = false
+    if (gesture.row) selectTrack(gesture.row.index, { keepClips: true })
   }
   gesture = null
   band.value = null
@@ -794,13 +1096,15 @@ onMounted(() => {
     unbindDrop = bindFileDropZone(lanes, {
       onDrop: async (e, files) => {
         const point = contentPoint(e.clientX, e.clientY)
-        const trackIndex = rows.value[point.row] ? rows.value[point.row].index : session.selectedTrack
+        const row = rowAtY(point.y)
+        const trackIndex = row ? row.index : session.selectedTrack
+        const beat = snapBeat(point.x / ppb.value)
         const track = session.tracks[trackIndex]
         for (const file of files || []) {
           const name = file.name || ''
           if (/\.sf2$/i.test(name) && track) await loadSf2File(track, file)
           else if (/\.(wav|mp3|ogg)$/i.test(name) && track && (track.source === 'sf2' || track.definitionId === 'sf2_sampler')) await loadSf2Wav(track, file)
-          else await addClipFromFile(file, trackIndex, point.beat)
+          else await addClipFromFile(file, trackIndex, beat)
         }
       }
     })
@@ -941,6 +1245,16 @@ onUnmounted(() => {
   box-shadow: inset 0 -1px 0 var(--lt-line);
 }
 .head.sel { background: var(--lt-s1); }
+.head.group { background: var(--lt-s1); }
+.head.child { background: rgba(255, 255, 255, 0.035); }
+.nest {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  opacity: 0.9;
+}
 .head.muted .head-text { opacity: 0.45; }
 /* Lifted row rides above its neighbours while it is being dragged. */
 .head.lift {
@@ -1042,6 +1356,14 @@ onUnmounted(() => {
 }
 .content { position: absolute; left: 0; top: 0; will-change: transform; }
 .grid { position: absolute; left: 0; right: 0; top: 0; pointer-events: none; }
+.lane-bg {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+.lane-bg.child { background: rgba(255, 255, 255, 0.028); }
+.lane-bg.group { background: rgba(255, 255, 255, 0.045); }
 .clip {
   position: absolute;
   border-radius: 8px;
@@ -1068,17 +1390,39 @@ onUnmounted(() => {
 .clip :deep(.preview) { top: 22px; left: 6px; right: 6px; bottom: 6px; opacity: 0.85; }
 .grip {
   position: absolute;
-  top: 50%;
+  top: 0;
+  bottom: 0;
+  width: 28px;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.grip-bar {
   width: 4px;
   height: 22px;
-  margin-top: -11px;
   border-radius: 2px;
   background: var(--lt-ink);
-  opacity: 0.8;
+  opacity: 0.85;
   pointer-events: none;
 }
-.grip.left { left: 4px; }
-.grip.right { right: 4px; }
+.grip.left { left: 0; }
+.grip.right { right: 0; }
+.grip.right.trim { top: 0; bottom: 26px; }
+.grip.stretch {
+  top: auto;
+  right: 0;
+  bottom: 0;
+  width: 34px;
+  height: 30px;
+}
+.grip.stretch .grip-bar {
+  width: 12px;
+  height: 12px;
+  background: transparent;
+  box-shadow: inset 0 0 0 2px var(--lt-ink);
+  opacity: 1;
+}
 .band {
   position: absolute;
   border-radius: 4px;
@@ -1116,22 +1460,36 @@ onUnmounted(() => {
   font-size: var(--lt-fs-m);
   font-weight: 600;
 }
-.actions {
+.clip-menu {
   position: absolute;
-  left: 50%;
-  bottom: calc(20px + env(safe-area-inset-bottom, 0px));
-  transform: translateX(-50%);
-  height: 52px;
+  z-index: 6;
+  width: 188px;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 2px;
-  padding: 0 6px 0 16px;
-  border-radius: 26px;
+  padding: 6px;
+  border-radius: 14px;
   background: var(--lt-s2);
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.5), 0 0 0 1px var(--lt-line);
-  z-index: 30;
-  max-width: calc(100% - 24px);
   box-sizing: border-box;
+}
+.menu-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.clip-rename {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  margin: 0;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--lt-s3);
+  color: var(--lt-ink);
+  font-size: 14px;
+  font-weight: 600;
 }
 .count {
   font-size: var(--lt-fs-s);
@@ -1156,4 +1514,63 @@ onUnmounted(() => {
 .act:active { background: var(--lt-s3); }
 .act.danger { color: var(--lt-warn); }
 .act.icon { width: 40px; padding: 0; justify-content: center; color: var(--lt-ink-2); }
+.clip-menu .count { flex: 1; margin: 0 0 0 8px; max-width: none; }
+.clip-menu .act { justify-content: flex-start; }
+.fade {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  pointer-events: none;
+  z-index: 1;
+}
+.fade.in {
+  left: 0;
+  background: linear-gradient(90deg, rgba(0, 0, 0, 0.5), transparent);
+}
+.fade.out {
+  right: 0;
+  background: linear-gradient(270deg, rgba(0, 0, 0, 0.5), transparent);
+}
+.env-dot {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.45);
+  pointer-events: none;
+  z-index: 5;
+}
+.env-seg {
+  position: absolute;
+  height: 2px;
+  margin-top: -1px;
+  border-radius: 1px;
+  background: #fff;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  z-index: 3;
+}
+.env-db {
+  position: absolute;
+  left: 8px;
+  font-size: 10px;
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  z-index: 3;
+}
+.env-hit {
+  position: absolute;
+  width: 28px;
+  height: 28px;
+  margin: -14px 0 0 -14px;
+  z-index: 7;
+  touch-action: none;
+}
+.env-hit.level {
+  margin-left: 0;
+  height: 28px;
+}
 </style>

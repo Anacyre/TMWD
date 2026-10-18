@@ -251,7 +251,7 @@ function toggleMenu (id) {
 
 async function handleNew () {
   await newProject()
-  await addTrack('midi', 'Instrument 1')
+  await addTrack('midi')
 }
 
 async function addSection (names) {

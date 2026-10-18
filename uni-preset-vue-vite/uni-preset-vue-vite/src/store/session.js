@@ -21,8 +21,11 @@ import { invalidateFxWorklet, hasNativeAudioWorklet } from '../dsp/runtime.js'
 import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
 import {
   putProject,
+  putAutosave,
   getProject,
   listProjects,
+  listAutosaves,
+  isAutosaveRecord,
   deleteProject,
   duplicateProject,
   renameProject,
@@ -37,7 +40,7 @@ import {
 } from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
 import { bounceSessionToWav } from '../audio/bounce.js'
-import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, isAudioClip } from '../audio/audio-clips.js'
+import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, isAudioClip, clipMatchesTrack } from '../audio/audio-clips.js'
 import * as sf2Engine from '../audio/sf2/engine.js'
 import { SF2_PLUGIN_ID } from '../audio/sf2/index.js'
 import * as twinEngine from '../dsp/synth/engine.js'
@@ -54,7 +57,7 @@ import {
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
 import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
-import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes, reorderTrackList, subtreeIndexes } from '../model/playlist-model.js'
+import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes, reorderTrackList, subtreeIndexes, nextBarLength, mergeClipPlan } from '../model/playlist-model.js'
 import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker } from '../model/note-model.js'
 import { parseMidiBlob } from '../lib/midi-import.js'
 import {
@@ -152,6 +155,10 @@ function syncSelectionIds () {
 function markDirty () {
   session.unsaved = true
   scheduleAutosave()
+}
+
+export function noteEdited () {
+  markDirty()
 }
 
 let autosaveTimer = 0
@@ -380,7 +387,10 @@ function mapClip (clip) {
     loopLengthBeats: clip.loopLengthBeats || 0,
     sourceId: clip.sourceId || '',
     audioOffsetBeats: clip.audioOffsetBeats || 0,
+    audioSourceBeats: clip.audioSourceBeats > 0 ? Number(clip.audioSourceBeats) : (existing.audioSourceBeats || 0),
     gainDb: clip.gainDb || 0,
+    fadeInBeats: clip.fadeInBeats != null ? Math.max(0, Number(clip.fadeInBeats) || 0) : (existing.fadeInBeats || 0),
+    fadeOutBeats: clip.fadeOutBeats != null ? Math.max(0, Number(clip.fadeOutBeats) || 0) : (existing.fadeOutBeats || 0),
     peaks: clip.peaks || existing.peaks || null,
     audioDuration: clip.audioDuration || 0,
     notes: (clip.notes || []).map((note) => normalizeNote({
@@ -783,11 +793,14 @@ function stampClock () {
 }
 
 export function setPositionBeats (beats) {
-  session.positionBeats = Math.max(0, beats)
+  const next = Math.max(0, beats)
+  const moved = Math.abs(next - (session.positionBeats || 0)) > 0.0001
+  session.positionBeats = next
   clockBeats = session.positionBeats
   lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
   lastPositionPush = lastTime
   stampClock()
+  if (moved) allAudioClipsOff()
   fire('transport.seek', { beats: session.positionBeats })
 }
 
@@ -966,8 +979,11 @@ function preloadSelectedOrchestra (graph) {
   if (!graph) return
   const track = session.tracks[session.selectedTrack]
   if (!track || !track.definitionId) return
+  if (!isOrchestraVTrack(track) && !isMOrchestraTrack(track)) return
   const cloud = cloudSamplerFor(track)
-  if (cloud) cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
+  if (cloud && typeof cloud.preloadInstrument === 'function') {
+    cloud.preloadInstrument(graph, track.definitionId).catch(() => {})
+  }
 }
 
 async function prefetchOrchestraWindow (graph, fromBeat, windowBeats = PREPARE_WINDOW_BEATS, priority = false) {
@@ -1443,9 +1459,19 @@ export function listInsertablePlugins () {
   return insertablePlugins({ includeWebSampler: true, engineConnected: isEngineConnected() })
 }
 
+/** First free name: "track", then "track 1", "track 2", … */
+export function nextTrackName (tracks, base = 'track') {
+  const names = new Set((tracks || []).map((track) => String(track && track.name || '').trim().toLowerCase()))
+  const key = String(base || 'track').trim()
+  if (!names.has(key.toLowerCase())) return key
+  let n = 1
+  while (names.has((key + ' ' + n).toLowerCase())) n += 1
+  return key + ' ' + n
+}
+
 export async function addTrack (type = 'audio', customName = '') {
   const kind = type === 'twin' || type === 'sf2' ? 'midi' : type
-  const name = customName || (type === 'group' ? 'Group' : (type === 'midi' || type === 'twin' || type === 'sf2' ? 'Instrument ' : type === 'web-sampler' ? 'Web Sampler ' : 'Audio ') + session.tracks.length)
+  const name = customName || (type === 'group' ? 'Group' : nextTrackName(session.tracks))
   if (isEngineConnected()) {
     const reply = await fire('track.create', {
       name,
@@ -1512,12 +1538,12 @@ export function openLiteNewTrack () {
 }
 
 export async function addLiteInstrumentTrack (kind = '') {
-  if (!kind) {
+  if (typeof kind !== 'string' || !kind) {
     openLiteNewTrack()
     return -1
   }
   if (kind === 'audio') {
-    const index = await addTrack('audio', 'Audio ' + session.tracks.length)
+    const index = await addTrack('audio', nextTrackName(session.tracks))
     if (index >= 0) {
       session.selectedTrack = index
       closeLiteSheet()
@@ -1525,7 +1551,7 @@ export async function addLiteInstrumentTrack (kind = '') {
     return index
   }
   if (kind === 'twin') {
-    const index = await addTrack('twin', 'Twin')
+    const index = await addTrack('twin', nextTrackName(session.tracks))
     if (index >= 0) {
       session.selectedTrack = index
       openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
@@ -1533,17 +1559,14 @@ export async function addLiteInstrumentTrack (kind = '') {
     return index
   }
   if (kind === 'sf2' || kind === 'sampler') {
-    const index = await addTrack('sf2', 'Sampler')
+    const index = await addTrack('sf2', nextTrackName(session.tracks))
     if (index >= 0) {
       session.selectedTrack = index
       openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
     }
     return index
   }
-  const item = orchestraVInstrument(ORCHESTRA_V_DEFAULT_ID)
-  const base = (item && item.name) || 'Orchestra'
-  const name = session.tracks.some((track) => track.name === base) ? base + ' ' + session.tracks.length : base
-  const index = await addTrack('midi', name)
+  const index = await addTrack('midi', nextTrackName(session.tracks))
   if (index >= 0) {
     session.selectedTrack = index
     openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
@@ -1778,6 +1801,96 @@ export function resizeClip (clip, startBeat, lengthBeats) {
   })
 }
 
+function contentEndBeats (clip) {
+  let end = 0
+  ;(clip.notes || []).forEach((note) => {
+    const start = Number(note.startTick != null ? note.startTick : (note.start || 0) * PPQ) || 0
+    const duration = Number(note.durationTick != null ? note.durationTick : (note.duration || 0) * PPQ) || 0
+    const beats = (start + duration) / PPQ
+    if (beats > end) end = beats
+  })
+  const expr = clip.expression
+  if (expr) {
+    ;['cc1', 'cc11'].forEach((key) => {
+      ;(expr[key] || []).forEach((point) => {
+        if (point && point.t > end) end = point.t
+      })
+    })
+    ;(expr.cc64 || []).forEach((block) => {
+      const beats = (Number(block && block.endTick) || 0) / PPQ
+      if (beats > end) end = beats
+    })
+  }
+  return end
+}
+
+/** Grow a MIDI pattern to the next bar when notes or curves run past its end. */
+export function growClipToContent (clip) {
+  if (!clip || clip.virtual || isAudioClip(clip) || clip.midi === false) return
+  const current = Number(clip.lengthBeats) || 0
+  const next = nextBarLength(current, contentEndBeats(clip), session.timeSigNum)
+  if (next <= current + 0.001) return
+  if (clip.loopLengthBeats > 0.01) clip.loopLengthBeats = next
+  if (clip.loopCount > 1) clip.loopCount = 1
+  resizeClip(clip, clip.startBeat || 0, next)
+  markDirty()
+}
+
+export function renameClip (clip, name) {
+  if (!clip || clip.virtual) return
+  const next = String(name || '').trim().slice(0, 64)
+  if (!next || next === clip.name) return
+  clip.name = next
+  markDirty()
+}
+
+export function liteTrackMode (track) {
+  if (!track || track.type === 'audio' || track.source === 'audio') return 'audio'
+  if (isTwinTrack(track)) return 'twin'
+  if (isSf2Track(track)) return 'sf2'
+  if (isOrchestraVTrack(track)) return 'orchestra'
+  return ''
+}
+
+export function setLiteTrackMode (track, kind) {
+  if (!track || track.type === 'master' || isGroupTrack(track)) return
+  const index = session.tracks.indexOf(track)
+  if (index < 0) return
+  if (liteTrackMode(track) === kind) {
+    if (kind !== 'audio' && isLite()) openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+    return
+  }
+  if (kind === 'audio') {
+    track.type = 'audio'
+    track.source = 'audio'
+    track.definitionId = ''
+    track.instrument = 'Audio'
+    retainModeClips(track)
+    markDirty()
+    if (isLite()) closeLiteSheet()
+    return
+  }
+  track.type = 'midi'
+  if (track.source === 'audio') track.source = ''
+  if (kind === 'twin') loadTwin(track)
+  else if (kind === 'sf2') loadSf2Sampler(track)
+  else loadOrchestraV(track, ORCHESTRA_V_DEFAULT_ID)
+  retainModeClips(track)
+  markDirty()
+  if (isLite()) openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+}
+
+function retainModeClips (track) {
+  session.selectedClipIds = session.selectedClipIds.filter((id) => {
+    const clip = session.clips.find((item) => item.id === id)
+    if (!clip || session.tracks[clip.trackIndex] !== track) return true
+    return clipMatchesTrack(track, clip)
+  })
+  if ((track.type === 'audio' || track.source === 'audio') && session.workspaceView === 'piano') {
+    session.workspaceView = 'arrangement'
+  }
+}
+
 export function renameTrack (index, name) {
   const track = session.tracks[index]
   if (!track || !name) return
@@ -1963,6 +2076,14 @@ export async function addAudioClipFromFile (file, trackIndex, startBeat) {
   showToast('Imported audio clip')
 }
 
+export function setAudioClipField (clip, key, value) {
+  if (!clip || (key !== 'gainDb' && key !== 'fadeInBeats' && key !== 'fadeOutBeats')) return
+  const n = Number(value)
+  if (!Number.isFinite(n)) return
+  clip[key] = key === 'gainDb' ? Math.min(12, Math.max(-48, n)) : Math.max(0, n)
+  markDirty()
+}
+
 function importTargetTrackIndex () {
   const selected = session.tracks[session.selectedTrack]
   if (selected && selected.type === 'midi') return session.selectedTrack
@@ -2014,14 +2135,20 @@ export function isTrackAudible (index) {
   return false
 }
 
-export function selectTrack (index) {
+export function selectTrack (index, options = {}) {
   if (index < 0 || index >= session.tracks.length) return
   session.selectedTrack = index
   const track = session.tracks[index]
   session.activeTrackId = track ? track.id : 0
   session.selectedTrackIds = track ? [track.id] : []
-  const clipIndex = session.clips.findIndex((clip) => clip.trackIndex === index)
-  if (clipIndex >= 0) selectClip(clipIndex, false)
+  const sheet = session.liteSheet
+  if (sheet && typeof sheet.trackIndex === 'number' && (sheet.kind === 'instrument' || sheet.kind === 'track' || sheet.kind === 'track-menu')) {
+    sheet.trackIndex = index
+  }
+  if (!options.keepClips) {
+    const clipIndex = session.clips.findIndex((clip) => clip.trackIndex === index)
+    if (clipIndex >= 0) selectClip(clipIndex, false)
+  }
   session.scrollRequest = Date.now()
 }
 
@@ -2477,11 +2604,16 @@ export function setLegato (track, legato) {
 
 export function previewNoteOn (track, pitch, velocity = 0.8) {
   if (!track) return
+  const previewId = 'preview-' + track.id + '-' + pitch
+  if (isCloudSamplerTrack(track)) {
+    previewReleased.delete(previewId)
+    armedNotes.add(previewId)
+  }
   unlockAudio().then(async () => {
     await ensureMixerAttached()
     refreshMixerGraph()
     if (isCloudSamplerTrack(track)) {
-      previewCloudSampler(track, pitch, velocity)
+      previewCloudSampler(track, pitch, velocity, previewId)
       startBrowserMeterLoop()
       return
     }
@@ -2502,7 +2634,12 @@ export function previewNoteOff (track, pitch) {
   const cloud = cloudSamplerFor(track)
   if (cloud) {
     const previewId = 'preview-' + track.id + '-' + pitch
-    armedNotes.delete(previewId)
+    if (armedNotes.has(previewId)) {
+      previewReleased.set(previewId, Date.now())
+      armedNotes.delete(previewId)
+      return
+    }
+    previewReleased.delete(previewId)
     cloud.cancelPending(previewId, track.id)
     cloud.noteOff(previewId, track.id)
     maybeStopBrowserMeters()
@@ -2538,6 +2675,7 @@ export function createNote (clip, pitch, start, duration = 0.25, velocity = 100,
   })
   clip.notes.push(note)
   bumpClipPreview(clip.id)
+  growClipToContent(clip)
   if (isEngineConnected()) {
     fire('note.create', { clipId: clip.id, ...engineNotePayload(note) }).then((reply) => {
       if (reply && reply.noteId) note.id = reply.noteId
@@ -2563,6 +2701,7 @@ export function createNotes (clip, notes) {
     })
   }
   bumpClipPreview(clip.id)
+  growClipToContent(clip)
   return created
 }
 
@@ -2615,6 +2754,7 @@ export function setNote (clip, note, patch) {
   Object.assign(live, normalizeNote({ ...live, ...patch, id: live.id }))
   bumpClipPreview(clip.id)
   queueNotePatch(clip, live)
+  growClipToContent(clip)
 }
 
 const notePatchQueue = new Map()
@@ -2879,6 +3019,7 @@ export function paintClipExpression (clip, cc, t, v) {
   const key = laneKey(cc)
   expr[key] = paintPoint(expr[key], Math.max(0, t), v)
   markDirty()
+  growClipToContent(clip)
 }
 
 export function eraseClipExpression (clip, cc, t) {
@@ -2894,6 +3035,7 @@ export function addClipExpressionPoint (clip, cc, t, v) {
   const expr = ensureExpression(clip)
   expr[laneKey(cc)] = addLanePoint(expr[laneKey(cc)], Math.max(0, t), v)
   markDirty()
+  growClipToContent(clip)
 }
 
 export function moveClipExpressionPoint (clip, cc, index, t, v) {
@@ -2901,6 +3043,7 @@ export function moveClipExpressionPoint (clip, cc, index, t, v) {
   const expr = ensureExpression(clip)
   expr[laneKey(cc)] = moveLanePoint(expr[laneKey(cc)], index, Math.max(0, t), v)
   markDirty()
+  growClipToContent(clip)
 }
 
 export function deleteClipExpressionPoint (clip, cc, index) {
@@ -2915,6 +3058,7 @@ export function addClipSustain (clip, startTick, endTick) {
   const expr = ensureExpression(clip)
   expr.cc64 = addSustainBlock(expr.cc64, startTick, endTick)
   markDirty()
+  growClipToContent(clip)
 }
 
 export function moveClipSustain (clip, index, startTick, endTick) {
@@ -2922,6 +3066,7 @@ export function moveClipSustain (clip, index, startTick, endTick) {
   const expr = ensureExpression(clip)
   expr.cc64 = moveSustainBlock(expr.cc64, index, startTick, endTick)
   markDirty()
+  growClipToContent(clip)
 }
 
 export function deleteClipSustain (clip, index) {
@@ -3164,6 +3309,31 @@ export function moveSelectedClips (startDelta, trackDelta) {
   queueClipMoves(clips)
 }
 
+export function mergeSelectedClips () {
+  const plan = mergeClipPlan(selectedClips())
+  if (!plan) return null
+  const host = session.clips.find((clip) => clip.id === plan.hostId)
+  if (!host) return null
+  beginEdit('Merge clips')
+  host.startBeat = plan.startBeat
+  host.lengthBeats = plan.lengthBeats
+  host.loopCount = 1
+  host.loopLengthBeats = 0
+  host.notes = []
+  host.expression = plan.expression
+  createNotes(host, plan.notes)
+  plan.removeIds.forEach((id) => {
+    const clip = session.clips.find((item) => item.id === id)
+    if (clip) deleteClip(clip)
+  })
+  session.selectedClipIds = [host.id]
+  const index = session.clips.findIndex((clip) => clip.id === host.id)
+  if (index >= 0) session.selectedClip = index
+  bumpClipPreview(host.id)
+  endEdit()
+  return host
+}
+
 export function duplicateSelectedClips () {
   const clips = selectedClips()
   if (!clips.length) return
@@ -3403,7 +3573,11 @@ export function setEngineHost (value) {
 
 async function autosaveProject () {
   try {
-    await saveCurrentProject()
+    const data = await buildSavePayload()
+    const saved = await putAutosave(data)
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, JSON.stringify(saved))
+    }
   } catch (err) {
     session.saveStatus = ''
   }
@@ -3424,17 +3598,52 @@ export function rememberRecentProject () {
   session.recentProjects = rememberRecentEntry(entry)
 }
 
+export async function listStoredAutosaves () {
+  const rows = await listAutosaves()
+  if (typeof localStorage === 'undefined') return rows
+  try {
+    const local = JSON.parse(localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE) || 'null')
+    if (!isAutosaveRecord(local)) return rows
+    const known = rows.some((row) => Math.abs((row.updatedAt || 0) - (local.updatedAt || 0)) < 1500)
+    if (known) return rows
+    return [{ ...local, id: local.id || 'as_local' }].concat(rows)
+  } catch (err) {
+    return rows
+  }
+}
+
+export async function openAutosaveProject (id) {
+  let row = null
+  if (id === 'as_local' && typeof localStorage !== 'undefined') {
+    try { row = JSON.parse(localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE) || 'null') } catch (err) { row = null }
+  } else {
+    row = await getProject(id)
+  }
+  if (!isAutosaveRecord(row)) {
+    showToast('Autosave not found')
+    return false
+  }
+  const sourceId = row.sourceId || ('p_' + Date.now().toString(36))
+  const data = { ...row, id: sourceId, name: row.sourceName || row.name || 'Untitled' }
+  delete data.kind
+  delete data.sourceId
+  delete data.sourceName
+  const ok = await importProjectJson(data, { quiet: true })
+  if (!ok) return false
+  session.projectId = sourceId
+  session.unsaved = true
+  showToast('Autosave opened')
+  return true
+}
+
 export function restoreAutosave () {
-  if (typeof localStorage === 'undefined') {
-    showToast('No autosave')
-    return
-  }
-  const json = localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE)
-  if (!json) {
-    showToast('No autosave')
-    return
-  }
-  importProjectJson(json)
+  listStoredAutosaves().then((rows) => {
+    if (!rows.length) {
+      showToast('No autosave')
+      return
+    }
+    openAutosaveProject(rows[0].id)
+  })
 }
 
 loadRecentProjects()
@@ -3642,12 +3851,12 @@ export async function restoreLastSession () {
   session.restoring = true
   try {
     const id = await getActiveProjectId()
-    if (id) {
+    if (id && !isAutosaveRecord({ id })) {
       const row = await getProject(id)
-      if (row && await importProjectJson(row, { quiet: true })) return true
+      if (row && !isAutosaveRecord(row) && await importProjectJson(row, { quiet: true })) return true
     }
     if (typeof localStorage !== 'undefined') {
-      const json = localStorage.getItem(FALLBACK_KEYS.LS_LAST) || localStorage.getItem(FALLBACK_KEYS.LS_AUTOSAVE)
+      const json = localStorage.getItem(FALLBACK_KEYS.LS_LAST)
       if (json && await importProjectJson(json, { quiet: true })) return true
     }
   } catch (err) {
@@ -3664,12 +3873,17 @@ export function flushSessionSnapshot () {
   if (!session.unsaved) return
   try {
     const data = serializeProject()
-    const json = JSON.stringify({ ...data, updatedAt: Date.now() })
     if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(FALLBACK_KEYS.LS_LAST, json)
-      localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, json)
+      const snap = JSON.stringify({
+        ...data,
+        id: 'as_local',
+        kind: 'autosave',
+        sourceId: data.id,
+        sourceName: data.name,
+        updatedAt: Date.now()
+      })
+      localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, snap)
     }
-    setActiveProject(data.id).catch(() => {})
   } catch (err) { /* quota or serialisation failure: the next autosave retries */ }
   autosaveProject()
 }
@@ -3740,6 +3954,7 @@ const soundingNotes = new Map()
  * A note-off that arrives in that window must cancel the upcoming voice, not wait
  * for it to start and then ring forever. */
 const armedNotes = new Set()
+const previewReleased = new Map()
 const samplerBuffers = new Map()
 const audioBuffers = new Map()
 let clickBuffer = null
@@ -4181,7 +4396,7 @@ function previewCloudSampler (track, pitch, velocity, id, when) {
   const logicalId = id || ('preview-' + track.id + '-' + pitch)
   const cloud = cloudSamplerFor(track)
   if (!cloud) return logicalId
-  armedNotes.add(logicalId)
+  if (!previewReleased.has(logicalId)) armedNotes.add(logicalId)
   ensureMixerAttached().then(async (graph) => {
     if (!graph) {
       armedNotes.delete(logicalId)
@@ -4190,13 +4405,23 @@ function previewCloudSampler (track, pitch, velocity, id, when) {
     await graph.context.resume()
     const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when)
     const stillArmed = armedNotes.has(logicalId)
+    const releasedAt = previewReleased.get(logicalId) || 0
     armedNotes.delete(logicalId)
+    previewReleased.delete(logicalId)
     if (!stillArmed) {
-      if (engineKey) {
+      if (engineKey && releasedAt) {
+        soundingNotes.set(logicalId, engineKey)
+        const hold = Math.max(180, 420 - (Date.now() - releasedAt))
+        setTimeout(() => {
+          cloud.noteOff(engineKey, track.id)
+          if (soundingNotes.get(logicalId) === engineKey) soundingNotes.delete(logicalId)
+          maybeStopBrowserMeters()
+        }, hold)
+      } else if (engineKey) {
         cloud.cancelPending(engineKey, track.id)
         cloud.noteOff(engineKey, track.id)
       }
-      soundingNotes.delete(logicalId)
+      if (!releasedAt) soundingNotes.delete(logicalId)
       return
     }
     if (engineKey) soundingNotes.set(logicalId, engineKey)

@@ -5,11 +5,14 @@
         v-for="strip in strips"
         :key="strip.key"
         class="strip"
-        :class="{ on: strip.selected, dim: strip.dim }"
+        :class="{ on: strip.selected, dim: strip.dim, child: strip.depth, group: strip.kind === 'group' }"
       >
         <view class="accent" :style="{ background: strip.colour }" />
+        <view v-if="strip.depth" class="nest" :style="{ background: strip.groupColour }" />
         <view class="name" @click="selectStrip(strip)">
           <text class="name-text">{{ strip.name }}</text>
+          <text v-if="strip.groupName" class="in-group">{{ strip.groupName }}</text>
+          <text v-else-if="strip.kind === 'group'" class="in-group">Group</text>
         </view>
         <view class="inserts">
           <template v-for="(slot, i) in strip.slots" :key="i">
@@ -49,18 +52,22 @@
         </view>
         <view v-else class="pan ghost"><text class="pan-label">{{ strip.kind === 'master' ? 'Master' : 'Return' }}</text></view>
         <view class="level">
-          <daw-fader
-            class="fader"
-            orientation="vertical"
-            :label="strip.name + ' volume'"
-            :model-value="strip.volume"
-            @update:model-value="setVolume(strip, $event)"
-            @drag-start="dragStart(strip)"
-            @drag-end="dragEnd(strip)"
-          />
+          <view class="level-balance" />
+          <view class="fader-col">
+            <daw-fader
+              class="fader"
+              orientation="vertical"
+              scroll-axis="x"
+              :label="strip.name + ' volume'"
+              :model-value="strip.volume"
+              @update:model-value="setVolume(strip, $event)"
+              @drag-start="dragStart(strip)"
+              @drag-end="dragEnd(strip)"
+            />
+            <text class="db">{{ strip.db }}</text>
+          </view>
           <daw-meter class="meter" :level="strip.meter" />
         </view>
-        <text class="db">{{ strip.db }}</text>
         <view class="toggles">
           <view class="tog" :class="{ mute: strip.mute }" @click.stop="toggleMute(strip)">M</view>
           <view v-if="strip.kind === 'track'" class="tog" :class="{ solo: strip.solo }" @click.stop="toggleSolo(strip)">S</view>
@@ -89,16 +96,20 @@
         </view>
         <view class="pan ghost" />
         <view class="level">
-          <daw-fader
-            class="fader"
-            orientation="vertical"
-            label="Master volume"
-            :model-value="masterStrip.volume"
-            @update:model-value="setVolume(masterStrip, $event)"
-          />
+          <view class="level-balance" />
+          <view class="fader-col">
+            <daw-fader
+              class="fader"
+              orientation="vertical"
+              scroll-axis="x"
+              label="Master volume"
+              :model-value="masterStrip.volume"
+              @update:model-value="setVolume(masterStrip, $event)"
+            />
+            <text class="db">{{ masterStrip.db }}</text>
+          </view>
           <daw-meter class="meter" :level="masterStrip.meter" />
         </view>
-        <text class="db">{{ masterStrip.db }}</text>
         <view class="toggles">
           <view class="tog" :class="{ mute: masterStrip.mute }" @click.stop="toggleMute(masterStrip)">M</view>
         </view>
@@ -108,7 +119,8 @@
 </template>
 
 <script setup>
-import { computed, onMounted } from 'vue'
+import { computed, onMounted, onUnmounted } from 'vue'
+import { bindAxisScroll } from '../../lib/touch-scroll.js'
 import DawFader from '../daw-fader.vue'
 import DawMeter from '../daw-meter.vue'
 import DawIcon from '../daw-icon.vue'
@@ -128,9 +140,11 @@ import {
   persistWebMixer
 } from '../../store/session.js'
 import { plugins } from '../../dsp/registry.js'
+import { resolveDom } from '../../lib/file-drop.js'
 import { formatVolumeDb, formatPan, dbFromFader, faderFromDb, normalizeSends, BUS_REVERB, BUS_DELAY } from '../../model/mixer-model.js'
+import { visibleTrackRows, isGroupTrack } from '../../model/playlist-model.js'
 import { fxMeterLaneKey, laneInserts } from '../../model/web-mixer.js'
-import { beginPointerDrag, pointerCoord } from '../../lib/pointer-drag.js'
+import { beginPointerDrag, pointerCoord, trackRatio } from '../../lib/pointer-drag.js'
 
 const PAN_TRAVEL_PX = 140
 
@@ -151,9 +165,10 @@ function sendAmount (track, busId) {
     .reduce((sum, send) => sum + (Number(send.level) || 0), 0)
 }
 
-function trackStrip (track, index) {
+function trackStrip (track, index, depth = 0) {
   const master = track.type === 'master'
   const group = track.type === 'group'
+  const parent = track.parentId ? session.tracks.find((item) => item.id === track.parentId) : null
   const lane = master ? { type: 'master' } : { type: 'track', id: track.id }
   const slots = slotsOf(lane)
   const db = track.volumeDb != null ? track.volumeDb : dbFromFader(track.volume)
@@ -171,6 +186,9 @@ function trackStrip (track, index) {
     slots,
     firstEmpty: slots.findIndex((slot) => !slot),
     name: track.name,
+    depth,
+    groupName: parent && isGroupTrack(parent) ? parent.name : '',
+    groupColour: (parent && parent.colour) || '#6aa8ff',
     colour: track.colour || '#3a3d44',
     selected: session.selectedTrack === index,
     dim: !master && !isTrackAudible(index),
@@ -209,10 +227,7 @@ function busStrip (bus) {
 }
 
 const strips = computed(() => {
-  const list = []
-  session.tracks.forEach((track, index) => {
-    if (track.type !== 'master') list.push(trackStrip(track, index))
-  })
+  const list = visibleTrackRows(session.tracks).map((row) => trackStrip(row.track, row.index, row.depth))
   ;(session.webMixer.buses || []).forEach((bus) => list.push(busStrip(bus)))
   return list
 })
@@ -276,23 +291,25 @@ function panFill (pan) {
 
 let lastPanTap = { key: '', at: 0 }
 
-function sendNode (event) {
-  const raw = event && event.target
-  const node = raw && raw.nodeType === 1 ? raw : (raw && raw.parentElement)
-  return node && node.closest ? node.closest('.send') : null
+function sendBar (event) {
+  const root = resolveDom(event && event.currentTarget)
+  if (root && root.querySelector) return root.querySelector('.send-track') || root
+  const at = pointerCoord(event)
+  const hit = at && typeof document !== 'undefined' ? document.elementFromPoint(at.x, at.y) : null
+  let node = hit && hit.nodeType === 1 ? hit : (hit && hit.parentElement)
+  while (node && node !== document.body) {
+    if (node.classList && node.classList.contains('send')) return node.querySelector('.send-track') || node
+    node = node.parentElement
+  }
+  return null
 }
 
 function onSendDown (strip, busId, event) {
-  const el = sendNode(event)
+  const bar = sendBar(event)
   const apply = (ev) => {
-    if (!el || !el.getBoundingClientRect) return
-    const at = pointerCoord(ev)
-    if (!at) return
-    const rect = el.getBoundingClientRect()
-    const bar = el.querySelector('.send-track')
-    const box = bar && bar.getBoundingClientRect ? bar.getBoundingClientRect() : rect
-    const level = Math.min(1, Math.max(0, (at.x - box.left) / Math.max(8, box.width)))
-    setTrackSend(strip.track, busId, level < 0.02 ? 0 : level)
+    const ratio = trackRatio(ev, bar, 'horizontal')
+    if (ratio == null) return
+    setTrackSend(strip.track, busId, ratio < 0.02 ? 0 : ratio)
   }
   apply(event)
   beginPointerDrag(event, { onMove: apply })
@@ -326,9 +343,13 @@ function onPanDown (strip, event) {
   })
 }
 
+let unbindRack = () => {}
 onMounted(() => {
   ensureMixerAttached().catch(() => {})
+  const rack = typeof document !== 'undefined' ? document.querySelector('uni-view.lite-mixer uni-view.rack') : null
+  if (rack) unbindRack = bindAxisScroll(rack, 'x', '.send, .pan:not(.ghost)')
 })
+onUnmounted(() => { unbindRack() })
 </script>
 
 <style scoped>
@@ -381,14 +402,34 @@ onMounted(() => {
   top: 0;
   height: 3px;
 }
+.strip.child { background: #17191d; }
+.strip.group { background: var(--lt-s2); }
+.nest {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  pointer-events: none;
+}
 .name {
-  height: 44px;
+  height: 48px;
   flex-shrink: 0;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 0 10px;
   cursor: pointer;
+  gap: 1px;
+}
+.in-group {
+  font-size: 10px;
+  color: var(--lt-ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
 }
 .name-text {
   font-size: var(--lt-fs-s);
@@ -466,20 +507,21 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  height: 18px;
+  height: 36px;
+  padding: 0 2px;
   touch-action: none;
   cursor: pointer;
 }
 .send-name {
   width: 42px;
   flex-shrink: 0;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--lt-ink-2);
 }
 .send-track {
   flex: 1;
-  height: 4px;
-  border-radius: 2px;
+  height: 8px;
+  border-radius: 4px;
   background: var(--lt-s3);
   position: relative;
 }
@@ -538,10 +580,20 @@ onMounted(() => {
   min-height: 80px;
   display: flex;
   justify-content: center;
+  align-items: stretch;
   gap: 10px;
-  padding: 6px 0;
+  padding: 6px 0 4px;
 }
-.fader { height: 100%; width: 36px; min-width: 36px; }
+.level-balance { width: 4px; flex: none; }
+.fader-col {
+  width: 48px;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+.fader { flex: 1; width: 32px; min-width: 32px; min-height: 0; --fader-cap-half: 9px; --fader-cap-w: 32px; }
+.level :deep(.fader.vertical) { width: 32px; min-width: 32px; }
 .fader :deep(.track) { width: 4px; background: var(--lt-s3); border-radius: 2px; }
 .fader :deep(.fill) { background: var(--lt-ink-2); border-radius: 2px; }
 .fader :deep(.cap) {
@@ -554,11 +606,13 @@ onMounted(() => {
 .meter { width: 4px; height: 100%; border-radius: 2px; background: var(--lt-s3); }
 .meter :deep(.fill) { background: linear-gradient(#ff6b5e, #f2c94c 22%, #4cc38a 45%); }
 .db {
+  width: 48px;
   text-align: center;
   font-size: 11px;
+  line-height: 14px;
   color: var(--lt-ink-2);
   font-variant-numeric: tabular-nums;
-  padding-bottom: 6px;
+  padding-top: 4px;
 }
 .toggles {
   flex-shrink: 0;

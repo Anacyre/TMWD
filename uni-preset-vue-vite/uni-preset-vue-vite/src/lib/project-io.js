@@ -130,7 +130,10 @@ function migrateClip (clip) {
     loopLengthBeats: clip.loopLengthBeats || 0,
     sourceId: clip.sourceId || '',
     audioOffsetBeats: clip.audioOffsetBeats || 0,
+    audioSourceBeats: Math.max(0, Number(clip.audioSourceBeats) || 0),
     gainDb: Number(clip.gainDb) || 0,
+    fadeInBeats: Math.max(0, Number(clip.fadeInBeats) || 0),
+    fadeOutBeats: Math.max(0, Number(clip.fadeOutBeats) || 0),
     peaks: Array.isArray(clip.peaks) ? clip.peaks.slice(0, 512) : null,
     audioDuration: Number(clip.audioDuration) || 0
   }

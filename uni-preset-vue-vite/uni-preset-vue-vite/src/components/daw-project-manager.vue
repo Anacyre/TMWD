@@ -9,6 +9,7 @@
       </view>
       <view class="tabs">
         <view class="tab" :class="{ on: cloudAuth.tab === 'local' }" @click="cloudAuth.tab = 'local'">Local</view>
+        <view class="tab" :class="{ on: cloudAuth.tab === 'autosave' }" @click="openAutosaveTab">Autosave</view>
         <view class="tab" :class="{ on: cloudAuth.tab === 'cloud' }" @click="openCloud">Cloud</view>
       </view>
       <view class="actions">
@@ -32,6 +33,19 @@
           <view class="row-actions">
             <view class="mini" @click.stop="onOpenCloud(row)">Open</view>
             <view class="mini danger" @click.stop="onDeleteCloud(row)">Delete</view>
+          </view>
+        </view>
+      </template>
+      <template v-else-if="cloudAuth.tab === 'autosave'">
+        <view v-if="!autosaveRows.length" class="empty">No autosaves yet. Edits are kept here and do not replace a saved project.</view>
+        <view v-for="row in autosaveRows" :key="row.id" class="row">
+          <view class="meta" @click="onOpenAutosave(row)">
+            <text class="name">{{ row.sourceName || row.name || 'Untitled' }}</text>
+            <text class="when">{{ when(row.updatedAt) }}</text>
+          </view>
+          <view class="row-actions">
+            <view class="mini" @click.stop="onOpenAutosave(row)">Open</view>
+            <view v-if="row.id !== 'as_local'" class="mini danger" @click.stop="onDelete(row)">Delete</view>
           </view>
         </view>
       </template>
@@ -69,6 +83,8 @@ import {
   openMidiFilePicker,
   openStoredProject,
   listStoredProjects,
+  listStoredAutosaves,
+  openAutosaveProject,
   deleteStoredProject,
   duplicateStoredProject,
   renameStoredProject,
@@ -89,14 +105,21 @@ import {
 
 const rows = ref([])
 const cloudRows = ref([])
+const autosaveRows = ref([])
 
 async function refresh () {
   rows.value = await listStoredProjects()
+  autosaveRows.value = await listStoredAutosaves()
   if (cloudAuth.user) {
     try { cloudRows.value = await listCloudProjects() } catch (err) {
       showToast(cloudErrorMessage(err))
     }
   } else cloudRows.value = []
+}
+
+async function openAutosaveTab () {
+  cloudAuth.tab = 'autosave'
+  await refresh()
 }
 
 async function openCloud () {
@@ -159,7 +182,7 @@ function close () {
 
 async function onNew () {
   await newProject()
-  await addTrack('midi', 'Instrument 1')
+  await addTrack('midi')
   close()
 }
 
@@ -207,6 +230,11 @@ async function onShare () {
 async function onOpen (row) {
   await openStoredProject(row.id)
   close()
+}
+
+async function onOpenAutosave (row) {
+  const ok = await openAutosaveProject(row.id)
+  if (ok) close()
 }
 
 async function onRename (row) {

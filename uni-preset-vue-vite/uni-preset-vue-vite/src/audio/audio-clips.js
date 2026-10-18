@@ -11,6 +11,63 @@ export function isAudioClip (clip) {
   return clip.kind === AUDIO_CLIP_KIND || clip.midi === false
 }
 
+/** MIDI modes share MIDI clips. Audio mode shows audio clips. The other kind stays stored. */
+export function clipMatchesTrack (track, clip) {
+  if (!track || !clip) return true
+  if (track.type === 'group' || track.type === 'master') return true
+  const audioTrack = track.type === 'audio' || track.source === 'audio'
+  return audioTrack === isAudioClip(clip)
+}
+
+/** Source beats this clip plays. Unset clips are 1:1 with their timeline length. */
+export function audioSourceBeats (clip) {
+  const stored = Number(clip && clip.audioSourceBeats)
+  if (Number.isFinite(stored) && stored > 0.05) return stored
+  return Math.max(0.25, Number(clip && clip.lengthBeats) || 4)
+}
+
+/** How much of the file exists, in beats at the current tempo. */
+export function audioFileBeats (clip, bpm) {
+  const seconds = Number(clip && clip.audioDuration) || 0
+  if (seconds > 0) return Math.max(0.25, secondsToBeats(seconds, bpm))
+  const stored = Number(clip && clip.audioFileBeats)
+  if (Number.isFinite(stored) && stored > 0.05) return stored
+  return audioSourceBeats(clip) + Math.max(0, Number(clip && clip.audioOffsetBeats) || 0)
+}
+
+/**
+ * Crop. Timeline length and the source window move together, so the
+ * playback rate stays put and the waveform does not squash.
+ * orig: { start, length, offset, source }
+ */
+export function audioTrim (orig, nextStart, nextLength, fileBeats) {
+  const rate = orig.source / Math.max(0.25, orig.length)
+  const dStart = nextStart - orig.start
+  let offset = orig.offset + dStart * rate
+  let source = orig.source + (nextLength - orig.length) * rate
+  if (offset < 0) offset = 0
+  const file = Math.max(0.25, Number(fileBeats) || offset + source)
+  if (offset + source > file) source = file - offset
+  source = Math.max(0.25, source)
+  if (offset + source > file) offset = Math.max(0, file - source)
+  return {
+    start: Math.max(0, nextStart),
+    length: Math.max(0.25, source / rate),
+    offset,
+    source
+  }
+}
+
+/** Time-stretch. The same source region plays across a new timeline length. */
+export function audioStretch (orig, nextLength) {
+  return {
+    start: orig.start,
+    length: Math.max(0.25, nextLength),
+    offset: orig.offset,
+    source: orig.source
+  }
+}
+
 export function audioClipGain (clip) {
   const db = Number(clip && clip.gainDb)
   if (!Number.isFinite(db)) return 1
@@ -72,14 +129,16 @@ export function peaksForClip (clip, bins) {
 }
 
 export function sliceWindow (clip, bpm, buffer) {
-  const durationBeats = Math.max(0.05, Number(clip.lengthBeats) || 4)
+  const sourceBeats = audioSourceBeats(clip)
+  const timelineBeats = Math.max(0.25, Number(clip.lengthBeats) || sourceBeats)
   const offsetBeats = Math.max(0, Number(clip.audioOffsetBeats) || 0)
   const offsetSec = beatsToSeconds(offsetBeats, bpm)
-  const durationSec = beatsToSeconds(durationBeats, bpm)
-  const total = buffer && buffer.duration ? buffer.duration : offsetSec + durationSec
+  const sourceSec = beatsToSeconds(sourceBeats, bpm)
+  const total = buffer && buffer.duration ? buffer.duration : offsetSec + sourceSec
   const startSec = Math.min(Math.max(0, offsetSec), Math.max(0, total - 0.01))
-  const playSec = Math.max(0.02, Math.min(durationSec, total - startSec))
-  return { offsetSec: startSec, durationSec: playSec, durationBeats }
+  const playSec = Math.max(0.02, Math.min(sourceSec, total - startSec))
+  const playbackRate = sourceBeats / timelineBeats
+  return { offsetSec: startSec, durationSec: playSec, durationBeats: timelineBeats, playbackRate }
 }
 
 export function collectAudioEvents (session) {
@@ -89,7 +148,7 @@ export function collectAudioEvents (session) {
   ;(session && session.clips || []).forEach((clip) => {
     if (!isAudioClip(clip) || clip.muted) return
     const track = (session.tracks || [])[clip.trackIndex]
-    if (!track || track.type === 'master' || track.mute) return
+    if (!track || track.type === 'master' || track.mute || !clipMatchesTrack(track, clip)) return
     const start = Number(clip.startBeat) || 0
     const length = Math.max(0.05, Number(clip.lengthBeats) || 4)
     endBeat = Math.max(endBeat, start + length)
@@ -107,22 +166,84 @@ export function collectAudioEvents (session) {
   return { events, endBeat, bpm }
 }
 
-export function scheduleAudioClip (context, dest, buffer, clip, when, bpm) {
-  if (!context || !buffer) return null
+/** Fade lengths in seconds, each capped so the two ramps cannot cross. */
+export function audioFadePlan (clip, durationSec, bpm) {
+  const spb = 60 / Math.max(20, Number(bpm) || 120)
+  const dur = Math.max(0, Number(durationSec) || 0)
+  const cap = dur * 0.49
+  return {
+    fadeInSec: Math.min(Math.max(0, Number(clip && clip.fadeInBeats) || 0) * spb, cap),
+    fadeOutSec: Math.min(Math.max(0, Number(clip && clip.fadeOutBeats) || 0) * spb, cap)
+  }
+}
+
+/** Where playback should enter a clip. skipBeats is timeline time already past the clip start. */
+export function audioPlaySlice (clip, bpm, buffer, skipBeats) {
   const win = sliceWindow(clip, bpm, buffer)
+  const rate = Math.max(0.05, Number(win.playbackRate) || 1)
+  const outputSec = Math.max(0.01, (win.durationSec || 0) / rate)
+  const spb = 60 / Math.max(20, Number(bpm) || 120)
+  const elapsedSec = Math.min(Math.max(0, outputSec - 0.01), Math.max(0, Number(skipBeats) || 0) * spb)
+  const sourceDur = Math.max(0.01, win.durationSec - elapsedSec * rate)
+  return {
+    sourceOffset: win.offsetSec + elapsedSec * rate,
+    sourceDur,
+    remainSec: sourceDur / rate,
+    elapsedSec,
+    outputSec,
+    rate
+  }
+}
+
+function envelopeAt (peak, fades, outputSec, t) {
+  if (fades.fadeInSec > 0.004 && t < fades.fadeInSec) return peak * (t / fades.fadeInSec)
+  const fadeOutAt = outputSec - fades.fadeOutSec
+  if (fades.fadeOutSec > 0.004 && t > fadeOutAt) return peak * Math.max(0, (outputSec - t) / fades.fadeOutSec)
+  return peak
+}
+
+export function scheduleAudioClip (context, dest, buffer, clip, when, bpm, skipBeats) {
+  if (!context || !buffer) return null
+  const slice = audioPlaySlice(clip, bpm, buffer, skipBeats)
   const src = context.createBufferSource()
   src.buffer = buffer
   const gain = context.createGain()
-  gain.gain.value = audioClipGain(clip)
+  const peak = audioClipGain(clip)
   src.connect(gain)
   gain.connect(dest)
   const startAt = when == null ? context.currentTime : Math.max(context.currentTime, when)
-  try {
-    src.start(startAt, win.offsetSec, win.durationSec)
-  } catch (err) {
-    src.start(startAt)
+  src.playbackRate.value = slice.rate
+  const fades = audioFadePlan(clip, slice.outputSec, bpm)
+  const g = gain.gain
+  const elapsed = slice.elapsedSec
+  const remain = slice.remainSec
+  g.setValueAtTime(envelopeAt(peak, fades, slice.outputSec, elapsed), startAt)
+  if (fades.fadeInSec > 0.004 && elapsed < fades.fadeInSec) {
+    g.linearRampToValueAtTime(peak, startAt + (fades.fadeInSec - elapsed))
   }
-  return { source: src, gain, startAt, durationSec: win.durationSec }
+  if (fades.fadeOutSec > 0.004) {
+    const fadeOutAt = slice.outputSec - fades.fadeOutSec
+    if (elapsed < fadeOutAt) g.setValueAtTime(peak, startAt + (fadeOutAt - elapsed))
+    g.linearRampToValueAtTime(0.0001, startAt + remain)
+  }
+  const offset = Math.min(Math.max(0, slice.sourceOffset), Math.max(0, buffer.duration - 0.01))
+  const dur = Math.min(Math.max(0.01, slice.sourceDur), Math.max(0.01, buffer.duration - offset))
+  let started = false
+  try {
+    src.start(startAt, offset, dur)
+    started = true
+  } catch (err) {
+    try {
+      src.start(startAt, offset)
+      src.stop(startAt + remain)
+      started = true
+    } catch (err2) { /* node rejected the offset */ }
+  }
+  if (!started) {
+    try { src.disconnect() } catch (err) { /* already gone */ }
+    return null
+  }
+  return { source: src, gain, startAt, durationSec: remain }
 }
 
 export function tickAudioClips (session, options = {}) {
@@ -140,7 +261,7 @@ export function tickAudioClips (session, options = {}) {
   ;(session.clips || []).forEach((clip) => {
     if (!isAudioClip(clip) || clip.muted) return
     const track = session.tracks[clip.trackIndex]
-    if (!track || track.type === 'master' || !audible(clip.trackIndex)) return
+    if (!track || track.type === 'master' || !audible(clip.trackIndex) || !clipMatchesTrack(track, clip)) return
     const start = Number(clip.startBeat) || 0
     const length = Math.max(0.05, Number(clip.lengthBeats) || 4)
     if (nowBeats + lookBeats < start || nowBeats >= start + length) return
@@ -149,8 +270,9 @@ export function tickAudioClips (session, options = {}) {
     if (liveSources.has(key)) return
     const buffer = buffers.get(clip.sourceId)
     if (!buffer) return
+    const into = Math.max(0, nowBeats - start)
     const when = ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / bpm)
-    const handle = scheduleAudioClip(ctx, destFor(track), buffer, clip, when, bpm)
+    const handle = scheduleAudioClip(ctx, destFor(track), buffer, clip, when, bpm, into)
     if (handle) liveSources.set(key, handle)
   })
 
@@ -175,7 +297,10 @@ export function createAudioClip (fields = {}) {
     midi: false,
     sourceId: fields.sourceId || '',
     audioOffsetBeats: Number(fields.audioOffsetBeats) || 0,
+    audioSourceBeats: Math.max(0.25, Number(fields.audioSourceBeats) || Number(fields.lengthBeats) || 4),
     gainDb: Number(fields.gainDb) || 0,
+    fadeInBeats: Math.max(0, Number(fields.fadeInBeats) || 0),
+    fadeOutBeats: Math.max(0, Number(fields.fadeOutBeats) || 0),
     peaks: fields.peaks || null,
     audioDuration: Number(fields.audioDuration) || 0,
     name: fields.name || 'Audio',

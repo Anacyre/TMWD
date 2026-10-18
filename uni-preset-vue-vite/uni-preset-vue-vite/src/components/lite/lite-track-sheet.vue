@@ -4,6 +4,7 @@
     :title="title"
     :wide="kind === 'instrument'"
     :flush="kind === 'instrument'"
+    :dock="false"
     @close="closeLiteSheet"
   >
     <view v-if="kind === 'track-menu' && track && pick === 'group-with'" class="menu">
@@ -144,38 +145,36 @@
       </view>
     </view>
 
-    <view v-else-if="kind === 'new-track'" class="menu">
-      <text class="lt-cap">New track</text>
-      <view class="group">
+    <view v-else-if="kind === 'new-track'" class="fx">
+      <view class="fx-group">
+        <text class="lt-cap">Track mode</text>
         <view class="lt-row" @click.stop="createKind('orchestra')">
-          <view class="row-ico"><daw-icon name="piano" :size="18" color="currentColor" /></view>
           <text class="grow">Orchestra V</text>
           <text class="sub">Sampled orchestra</text>
         </view>
         <view class="lt-row" @click.stop="createKind('twin')">
-          <view class="row-ico"><daw-icon name="wave" :size="18" color="currentColor" /></view>
-          <text class="grow">Twin</text>
+          <text class="grow">Twin synth</text>
           <text class="sub">3-osc synth</text>
         </view>
         <view class="lt-row" @click.stop="createKind('sf2')">
-          <view class="row-ico"><daw-icon name="note" :size="18" color="currentColor" /></view>
           <text class="grow">Sampler</text>
           <text class="sub">SoundFont or WAV</text>
         </view>
         <view class="lt-row" @click.stop="createKind('audio')">
-          <view class="row-ico"><daw-icon name="wave" :size="18" color="currentColor" /></view>
           <text class="grow">Audio</text>
           <text class="sub">WAV · MP3 · OGG</text>
         </view>
       </view>
     </view>
 
-    <view v-else-if="kind === 'instrument' && track" class="inst">
+    <view v-else-if="kind === 'instrument' && track" class="inst-wrap">
+      <view class="inst">
       <plugin-twin v-if="twin" :track="track" />
       <daw-sf2 v-else-if="sf2" :track="track" />
       <daw-orchestra-v v-else-if="orchestraV" lite />
       <daw-m-orchestra-lite v-else-if="mOrchestra" />
       <daw-orchestra-sampler v-else />
+      </view>
     </view>
 
     <view v-else-if="kind === 'fx'" class="fx">
@@ -200,9 +199,10 @@
 </template>
 
 <script setup>
-import { computed, defineAsyncComponent, ref, watch } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import LiteSheet from './lite-sheet.vue'
 import DawIcon from '../daw-icon.vue'
+import { bindLiveScroll } from '../../lib/touch-scroll.js'
 import {
   session,
   closeLiteSheet,
@@ -222,11 +222,9 @@ import {
   groupTracksById,
   applyGroupColourToChildren,
   addLiteInstrumentTrack,
-  loadOrchestraV,
-  insertPlugin
+  setLiteTrackMode
 } from '../../store/session.js'
-import { ORCHESTRA_V_DEFAULT_ID, isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
-import { TWIN_PLUGIN_ID, SF2_PLUGIN_ID } from '../../model/m-orchestra-ui.js'
+import { isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
 import { isGroupTrack, isPlayableTrack } from '../../model/playlist-model.js'
 import { createTapGuard } from '../../lib/tap-guard.js'
 import { isMOrchestraTrack, isTwinTrack, isSf2Track } from '../../model/m-orchestra-ui.js'
@@ -255,6 +253,11 @@ const kind = computed(() => {
   if (s.kind === 'track' && s.tab === 'sampler') return 'instrument'
   return ''
 })
+let unbindSheetScroll = () => {}
+onMounted(() => {
+  unbindSheetScroll = bindLiveScroll('.inst-wrap .inst', 'y', '.twin, .sf2, .knob, .plot, .src, .keys, .xy, .env, .k, .uni, .lfo-dial')
+})
+onBeforeUnmount(() => { unbindSheetScroll() })
 const open = computed(() => !!kind.value)
 const track = computed(() => {
   const s = sheet.value
@@ -422,26 +425,7 @@ function openInstrument () {
 }
 
 function setTrackType (kind) {
-  const t = track.value
-  const index = trackIndex.value
-  if (!t || index < 0 || isGroupTrack(t)) return
-  if (kind === 'audio') {
-    t.type = 'audio'
-    t.source = 'audio'
-    t.definitionId = ''
-    t.instrument = 'Audio'
-    closeLiteSheet()
-    return
-  }
-  t.type = 'midi'
-  if (kind === 'orchestra') {
-    loadOrchestraV(t, ORCHESTRA_V_DEFAULT_ID)
-  } else if (kind === 'twin') {
-    insertPlugin(t, TWIN_PLUGIN_ID)
-  } else if (kind === 'sf2') {
-    insertPlugin(t, SF2_PLUGIN_ID)
-  }
-  openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+  setLiteTrackMode(track.value, kind)
 }
 
 function duplicate () {
@@ -586,20 +570,76 @@ function choose (pluginId) {
 .lt-btn.off { opacity: 0.4; pointer-events: none; }
 .lt-btn.ghost { background: var(--lt-s2); color: var(--lt-ink); }
 :deep(.lt-sheet.wide) {
-  height: min(880px, calc(100dvh - 32px));
+  max-height: min(820px, calc(100dvh - 48px));
 }
 :deep(.lt-sheet.wide):has(.twin) {
   width: min(1120px, calc(100vw - 32px));
 }
-.inst {
-  flex: 1;
-  height: 100%;
-  min-height: 0;
+.inst-wrap {
   display: flex;
   flex-direction: column;
+  min-height: 0;
+  max-height: min(78dvh, calc(100dvh - 88px));
 }
-.inst > * { flex: 1; min-height: 0; }
+.type-bar {
+  flex: none;
+  display: flex;
+  gap: 6px;
+  padding: 8px 12px;
+  overflow-x: auto;
+  touch-action: pan-x;
+  background: var(--lt-bg);
+  position: relative;
+  z-index: 3;
+}
+.type-chip {
+  flex: none;
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: var(--lt-s3);
+  color: var(--lt-ink-2);
+  display: flex;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+}
+.type-chip.on { background: var(--lt-ink); color: var(--lt-bg); }
+.inst {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(70dvh, calc(100dvh - 148px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.fx {
+  display: block;
+  max-height: min(62dvh, 640px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+.inst > * { flex: 1; min-height: 0; min-width: 0; }
+.inst :deep(.twin) { flex: 1 0 auto; min-height: 520px; }
 .inst :deep(.orch) { background: transparent; }
 .inst :deep(.orch .head) { box-shadow: inset 0 -1px 0 var(--lt-line), inset 0 1px 0 var(--lt-line); }
 .fx-group + .fx-group { margin-top: 6px; }
+</style>
+<style>
+uni-view.fx {
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  max-height: min(62dvh, 640px) !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+}
+uni-view.inst {
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  max-height: min(70dvh, calc(100dvh - 148px)) !important;
+}
 </style>

@@ -519,7 +519,7 @@ function pickSnap (option) {
 
 async function createTrack (kind) {
   closeMenus()
-  if (kind === 'empty') await addTrack('midi', 'Track')
+  if (kind === 'empty') await addTrack('midi')
   else if (kind === 'web-sampler') await addTrack('web-sampler')
   else if (kind === 'group') await addTrack('group', 'Group')
   else await addTrack(kind === 'audio' ? 'audio' : 'midi')

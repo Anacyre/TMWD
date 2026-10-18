@@ -143,6 +143,7 @@ import PluginDynamicX from './plugin-dynamic-x.vue'
 import PluginLimiterX from './plugin-limiter-x.vue'
 import PluginVitalLite from './plugin-vital-lite.vue'
 import { isVitalLiteId } from '../../dsp/vital-lite/index.js'
+import { bindLiveScroll } from '../../lib/touch-scroll.js'
 import './dsp-theme.css'
 import './lite-plugin-surface.css'
 
@@ -241,14 +242,17 @@ function onVisibility () {
   else startTick()
 }
 
+let unbindPlug = () => {}
 onMounted(() => {
   startTick()
   syncNarrow()
+  unbindPlug = bindLiveScroll('.host .sheet .x-plug, .host .sheet .plug', 'y')
   if (typeof window !== 'undefined') window.addEventListener('resize', syncNarrow)
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onVisibility)
 })
 onUnmounted(() => {
   stopTick()
+  unbindPlug()
   if (typeof window !== 'undefined') window.removeEventListener('resize', syncNarrow)
   if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', onVisibility)
 })
@@ -392,8 +396,7 @@ function onChange () { persistWebMixer() }
 .host.card .sheet {
   width: min(86.6vw, 980px);
   height: auto;
-  max-height: 75vh;
-  max-height: 75dvh;
+  max-height: min(88dvh, calc(100dvh - 16px));
   border-radius: 16px;
   padding: 0 8px 12px;
 }
@@ -402,7 +405,7 @@ function onChange () { persistWebMixer() }
   flex: 0 1 auto;
   height: auto;
   min-height: 0;
-  max-height: calc(75dvh - 72px);
+  max-height: calc(88dvh - 72px);
   overflow-x: hidden !important;
   overflow-y: auto !important;
   -webkit-overflow-scrolling: touch;

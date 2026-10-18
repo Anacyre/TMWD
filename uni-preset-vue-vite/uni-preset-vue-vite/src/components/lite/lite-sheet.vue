@@ -1,5 +1,5 @@
 <template>
-  <view v-if="open" class="lt lt-mask" @click="emit('close')">
+  <view v-if="open" class="lt lt-mask" :class="{ dock }" @click="emit('close')">
     <view class="lt-sheet" :class="{ wide, full }" @click.stop>
       <view class="lt-sheet-head">
         <view v-if="back" class="lt-hit" aria-label="Back" @click.stop="emit('back')">
@@ -19,18 +19,27 @@
 </template>
 
 <script setup>
+import { onBeforeUnmount, onMounted } from 'vue'
 import DawIcon from '../daw-icon.vue'
+import { bindLiveScroll } from '../../lib/touch-scroll.js'
 import './lite-tokens.css'
 
-defineProps({
+const props = defineProps({
   open: { type: Boolean, default: false },
   title: { type: String, default: '' },
   back: { type: Boolean, default: false },
   wide: { type: Boolean, default: false },
   full: { type: Boolean, default: false },
-  flush: { type: Boolean, default: false }
+  flush: { type: Boolean, default: false },
+  dock: { type: Boolean, default: false }
 })
 const emit = defineEmits(['close', 'back'])
+
+let unbind = () => {}
+onMounted(() => {
+  unbind = bindLiveScroll('.lt-sheet .fx, .lt-sheet-body:not(.flush)', 'y')
+})
+onBeforeUnmount(() => { unbind() })
 </script>
 
 <style scoped>
@@ -101,6 +110,19 @@ const emit = defineEmits(['close', 'back'])
   box-sizing: border-box;
 }
 .lt-sheet-body.flush { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.lt-mask.dock {
+  background: transparent;
+  pointer-events: none;
+  justify-content: flex-end;
+  align-items: stretch;
+  padding-left: 200px;
+}
+.lt-mask.dock .lt-sheet {
+  pointer-events: auto;
+  height: 100%;
+  max-height: 100%;
+  width: min(640px, 100%);
+}
 @keyframes lt-rise {
   from { transform: translateY(12px); opacity: 0; }
   to { transform: none; opacity: 1; }

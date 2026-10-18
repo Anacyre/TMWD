@@ -14,11 +14,12 @@
       <view class="lt-btn ghost" @click="cloudSignOut">Sign out</view>
     </view>
     <view v-else class="account-form">
-      <input class="rename" type="email" placeholder="Email" :value="cloudAuth.email" @input="cloudAuth.email = $event.target.value" @focus="setTyping(true)" @blur="setTyping(false)">
-      <input class="rename" type="password" placeholder="Password" :value="cloudAuth.password" @input="cloudAuth.password = $event.target.value" @focus="setTyping(true)" @blur="setTyping(false)">
+      <input class="rename" type="text" placeholder="Name" :value="cloudAuth.displayName" @input="setAuthField('displayName', $event)" @focus="setTyping(true)" @blur="setTyping(false)">
+      <input class="rename" type="email" placeholder="Email" :value="cloudAuth.email" @input="setAuthField('email', $event)" @focus="setTyping(true)" @blur="setTyping(false)">
+      <input class="rename" type="password" placeholder="Password, 6 characters or more" :value="cloudAuth.password" @input="setAuthField('password', $event)" @focus="setTyping(true)" @blur="setTyping(false)">
       <view class="cta-row">
         <view class="lt-btn" :class="{ off: cloudAuth.busy }" @click="cloudSignIn">Sign in</view>
-        <view class="lt-btn ghost" :class="{ off: cloudAuth.busy }" @click="cloudSignUp">Create</view>
+        <view class="lt-btn ghost" :class="{ off: cloudAuth.busy }" @click="cloudSignUp">Create account</view>
       </view>
       <view class="lt-row" @click="cloudSendLink">
         <text class="grow">Email me a sign-in link</text>
@@ -117,6 +118,13 @@ const inputHint = computed(() => {
   const mode = INPUTS.find((item) => item.id === session.inputMode) || INPUTS[1]
   return mode.hint
 })
+
+function setAuthField (key, event) {
+  const value = event && event.detail && event.detail.value != null
+    ? event.detail.value
+    : (event && event.target && event.target.value) || ''
+  cloudAuth[key] = value
+}
 
 function snapOn (option) {
   if (!option.beats) return !session.snap

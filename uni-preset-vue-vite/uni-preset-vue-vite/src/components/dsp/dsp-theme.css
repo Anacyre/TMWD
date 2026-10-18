@@ -66,7 +66,7 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  padding: 0 14px 12px;
+  padding: 0 14px 28px;
   box-sizing: border-box;
   overflow: auto;
   overscroll-behavior: contain;
@@ -114,9 +114,11 @@ uni-view.x-knobs {
 .x-footer {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
+  row-gap: 6px;
   min-height: 38px;
-  padding: 8px 2px 2px;
+  padding: 8px 2px 6px;
   color: var(--x-ink-3);
   font-size: 9px;
   letter-spacing: 0.13em;
@@ -497,7 +499,18 @@ uni-view.x-knobs {
   min-height: clamp(140px, 24vh, 220px);
 }
 .full-plugin .x-chip,
-.card-plugin .x-chip { min-height: 36px; min-width: 52px; font-size: 11px; padding: 0 12px; }
+.card-plugin .x-chip,
+.full-plugin .x-chip {
+  height: auto;
+  min-height: 40px;
+  overflow: visible;
+  line-height: 1.2;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.card-plugin .x-plug,
+.full-plugin .x-plug,
+.compact-plugin .x-plug { padding-bottom: 28px; }
 .full-plugin .x-dot,
 .card-plugin .x-dot { width: 32px; height: 32px; }
 .full-plugin .x-sel,
@@ -569,4 +582,33 @@ uni-view.x-knobs {
     height: 72px !important;
     flex: 1 1 auto !important;
   }
+}
+
+@media (max-height: 900px) and (orientation: landscape) {
+  .card-plugin .dsp-canvas,
+  .card-plugin .scope,
+  .card-plugin .vital-plot,
+  .card-plugin .vital-plot.short {
+    min-height: 88px !important;
+    max-height: 112px !important;
+    height: 112px !important;
+  }
+}
+
+uni-view.x-chip,
+uni-view.x-footer {
+  overflow: visible !important;
+}
+uni-view.x-chip {
+  height: auto !important;
+  min-height: 36px !important;
+}
+uni-view.x-plug {
+  display: block !important;
+  overflow-x: hidden !important;
+  overflow-y: auto !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-y;
+  padding-bottom: max(28px, env(safe-area-inset-bottom, 0px)) !important;
+  box-sizing: border-box;
 }
