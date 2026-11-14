@@ -70,9 +70,8 @@ export function publicOrchestraUrl (path) {
 
 /**
  * Object URL for a sample library bucket. In H5 dev the Vite plugin serves each bucket
- * from disk (`.sample-cache/<id>` or the M Orchestra folder). VMS Symphonic stays on
- * that same-origin path, the one used before the cloud upload: one local or deployed
- * file per sample, not a separate Supabase request for every note.
+ * from disk. Outside dev, VMS Symphonic is read from the public Supabase bucket.
+ * The Cloudflare site does not contain those files, so a same-origin path is HTML.
  */
 export function publicLibraryUrl (bucket, path) {
   const rel = encodeLibraryPath(path)
@@ -83,8 +82,7 @@ export function publicLibraryUrl (bucket, path) {
   if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
   const local = localLibraryUrl(bucket, rel)
   if (local) return local
-  if (bucket === 'vms-symphonic' && typeof location !== 'undefined' && location.origin) {
-    return location.origin + '/' + bucket + '/' + rel
-  }
+  // Cloudflare has no /vms-symphonic files; that path is the app HTML and stays silent.
+  // Production reads the public bucket, which serves the real Ogg objects.
   return publicAssetUrl(rel, bucket)
 }
