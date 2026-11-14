@@ -69,10 +69,10 @@ export function publicOrchestraUrl (path) {
 }
 
 /**
- * Object URL for a sample library bucket.
- * M Orchestra and VMS Symphonic both use the public Supabase bucket so an iPad
- * is not reading this computer's disk. In dev, other buckets may still be
- * served from `.sample-cache` by the Vite plugin.
+ * Object URL for a sample library bucket. In H5 dev the Vite plugin serves each bucket
+ * from disk (`.sample-cache/<id>` or the M Orchestra folder). VMS Symphonic stays on
+ * that same-origin path, the one used before the cloud upload: one local or deployed
+ * file per sample, not a separate Supabase request for every note.
  */
 export function publicLibraryUrl (bucket, path) {
   const rel = encodeLibraryPath(path)
@@ -81,8 +81,10 @@ export function publicLibraryUrl (bucket, path) {
   const envKey = 'VITE_' + String(bucket).replace(/[^A-Za-z0-9]/g, '_').toUpperCase() + '_BASE'
   const envBase = env && env[envKey]
   if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
-  if (bucket === 'vms-symphonic') return publicAssetUrl(rel, bucket)
   const local = localLibraryUrl(bucket, rel)
   if (local) return local
+  if (bucket === 'vms-symphonic' && typeof location !== 'undefined' && location.origin) {
+    return location.origin + '/' + bucket + '/' + rel
+  }
   return publicAssetUrl(rel, bucket)
 }
