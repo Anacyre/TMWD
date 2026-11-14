@@ -13,13 +13,23 @@ export const M_ORCHESTRA_BUCKET = 'm-orchestra'
 export const PROJECTS_BUCKET = 'projects'
 export const SOUNDFONT_BUCKET = 'soundfonts'
 
-/* Sessions persist in localStorage so an account survives a refresh or a closed tab. */
+function browserFetch (input, init) {
+  const impl = typeof window !== 'undefined' && window.fetch ? window.fetch : fetch
+  const target = typeof window !== 'undefined' ? window : globalThis
+  return impl.call(target, input, init)
+}
+
+/* Sessions persist in localStorage so an account survives a refresh or a closed tab.
+   The default Web Lock makes Safari and iPad abort sign-in as "Failed to fetch"
+   even when the network is fine, so auth runs without that lock. */
 export const supabase = createClient(url, anonKey, {
+  global: { fetch: browserFetch },
   auth: {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: true,
-    storageKey: 'dawweb.auth'
+    storageKey: 'dawweb.auth',
+    lock: async (_name, _acquireTimeout, fn) => fn()
   }
 })
 

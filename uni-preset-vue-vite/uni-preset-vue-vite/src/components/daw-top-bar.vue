@@ -86,6 +86,9 @@
           <text v-if="!isPhone">{{ engineStateLabel() }}</text>
         </view>
         <view v-if="!isPhone" class="nav">
+          <view class="hit" :class="{ on: session.libraryOpen }" title="Library" @click.stop="session.libraryOpen = !session.libraryOpen">
+            <daw-icon name="library" :color="session.libraryOpen ? '#e6e6e6' : ''" />
+          </view>
           <view class="hit" :class="{ on: session.workspaceView === 'arrangement' }" title="Arrangement" @click.stop="setWorkspaceView('arrangement')">
             <daw-icon name="arrange" :color="session.workspaceView === 'arrangement' ? '#e6e6e6' : ''" />
           </view>

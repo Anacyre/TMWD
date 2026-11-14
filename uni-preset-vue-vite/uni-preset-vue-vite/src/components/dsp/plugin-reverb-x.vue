@@ -474,10 +474,12 @@ function dragTime (event) {
 .graph {
   flex: 1;
   min-width: 0;
-  min-height: 180px;
+  min-height: 200px;
   position: relative;
   display: flex;
-  overflow: hidden;
+  align-items: stretch;
+  overflow: visible;
+  gap: 8px;
 }
 .graph-lab {
   position: absolute;
@@ -491,10 +493,9 @@ function dragTime (event) {
   pointer-events: none;
 }
 .pods {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  bottom: 8px;
+  position: relative;
+  flex: 0 0 auto;
+  align-self: center;
   z-index: 3;
   display: flex;
   flex-direction: column;
@@ -502,10 +503,11 @@ function dragTime (event) {
   gap: 8px;
 }
 .pod {
-  width: 76px;
+  width: 108px;
   padding: 6px 4px;
   display: flex;
   justify-content: center;
+  overflow: visible;
   background: var(--x-panel-2);
 }
 .tray {
@@ -545,7 +547,7 @@ function dragTime (event) {
     justify-content: flex-start;
   }
   .graph { flex-direction: column; }
-  .pod { width: 68px; }
+  .pod { width: auto; min-width: 108px; overflow: visible; }
   .tray {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));

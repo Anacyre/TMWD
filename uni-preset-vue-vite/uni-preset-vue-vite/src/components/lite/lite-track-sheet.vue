@@ -152,7 +152,11 @@
           <text class="grow">Orchestra V</text>
           <text class="sub">Sampled orchestra</text>
         </view>
-        <view class="lt-row" @click.stop="createKind('twin')">
+        <view v-if="liteShell" class="lt-row" @click.stop="createKind('cosmic')">
+          <text class="grow">Cosmic 2</text>
+          <text class="sub">Wavetable synth</text>
+        </view>
+        <view v-if="!liteShell" class="lt-row" @click.stop="createKind('twin')">
           <text class="grow">Twin synth</text>
           <text class="sub">3-osc synth</text>
         </view>
@@ -169,7 +173,8 @@
 
     <view v-else-if="kind === 'instrument' && track" class="inst-wrap">
       <view class="inst">
-      <plugin-twin v-if="twin" :track="track" />
+      <plugin-cosmic v-if="cosmic" :track="track" />
+      <plugin-twin v-else-if="twin" :track="track" />
       <daw-sf2 v-else-if="sf2" :track="track" />
       <daw-orchestra-v v-else-if="orchestraV" lite />
       <daw-m-orchestra-lite v-else-if="mOrchestra" />
@@ -222,26 +227,33 @@ import {
   groupTracksById,
   applyGroupColourToChildren,
   addLiteInstrumentTrack,
-  setLiteTrackMode
+  setLiteTrackMode,
+  isNewLite
 } from '../../store/session.js'
 import { isOrchestraVTrack } from '../../model/orchestra-v-ui.js'
 import { isGroupTrack, isPlayableTrack } from '../../model/playlist-model.js'
 import { createTapGuard } from '../../lib/tap-guard.js'
-import { isMOrchestraTrack, isTwinTrack, isSf2Track } from '../../model/m-orchestra-ui.js'
+import { isMOrchestraTrack, isTwinTrack, isCosmicTrack, isSf2Track } from '../../model/m-orchestra-ui.js'
 
 const DawOrchestraV = defineAsyncComponent(() => import('../daw-orchestra-v.vue'))
 const DawMOrchestraLite = defineAsyncComponent(() => import('./lite-m-orchestra.vue'))
 const DawOrchestraSampler = defineAsyncComponent(() => import('../daw-orchestra-sampler.vue'))
 const PluginTwin = defineAsyncComponent(() => import('../dsp/plugin-twin.vue'))
+const PluginCosmic = defineAsyncComponent(() => import('../dsp/plugin-cosmic.vue'))
 const DawSf2 = defineAsyncComponent(() => import('../daw-sf2.vue'))
 
 const COLOURS = ['#6aa8ff', '#5bc4c9', '#4cc38a', '#b7cf5a', '#e0b341', '#f08a4b', '#ef6a6a', '#e46aa8', '#a77df0', '#8b8e96']
-const TRACK_TYPES = [
-  { id: 'orchestra', label: 'Orchestra V', icon: 'piano' },
-  { id: 'twin', label: 'Twin synth', icon: 'wave' },
-  { id: 'sf2', label: 'Sampler', icon: 'note' },
-  { id: 'audio', label: 'Audio', icon: 'wave' }
-]
+const TRACK_TYPES = computed(() => {
+  const rows = [
+    { id: 'orchestra', label: 'Orchestra V', icon: 'piano' },
+    { id: 'sf2', label: 'Sampler', icon: 'note' },
+    { id: 'audio', label: 'Audio', icon: 'wave' }
+  ]
+  if (isNewLite()) rows.splice(1, 0, { id: 'cosmic', label: 'Cosmic 2', icon: 'wave' })
+  else rows.splice(1, 0, { id: 'twin', label: 'Twin synth', icon: 'wave' })
+  return rows
+})
+const liteShell = computed(() => isNewLite())
 
 const sheet = computed(() => session.liteSheet)
 const kind = computed(() => {
@@ -255,7 +267,7 @@ const kind = computed(() => {
 })
 let unbindSheetScroll = () => {}
 onMounted(() => {
-  unbindSheetScroll = bindLiveScroll('.inst-wrap .inst', 'y', '.twin, .sf2, .knob, .plot, .src, .keys, .xy, .env, .k, .uni, .lfo-dial')
+  unbindSheetScroll = bindLiveScroll('.inst-wrap .inst', 'y', '.twin, .cosmic, .sf2, .knob, .plot, .src, .keys, .xy, .env, .k, .uni, .lfo-dial')
 })
 onBeforeUnmount(() => { unbindSheetScroll() })
 const open = computed(() => !!kind.value)
@@ -269,12 +281,14 @@ const isGroup = computed(() => isGroupTrack(track.value))
 const orchestraV = computed(() => isOrchestraVTrack(track.value))
 const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
 const twin = computed(() => isTwinTrack(track.value))
+const cosmic = computed(() => isCosmicTrack(track.value))
 const sf2 = computed(() => isSf2Track(track.value))
 const activeTrackType = computed(() => {
   const t = track.value
   if (!t || t.type === 'audio' || t.source === 'audio') return 'audio'
   if (isOrchestraVTrack(t)) return 'orchestra'
   if (isTwinTrack(t)) return 'twin'
+  if (isCosmicTrack(t)) return 'cosmic'
   if (isSf2Track(t)) return 'sf2'
   return ''
 })
@@ -572,8 +586,11 @@ function choose (pluginId) {
 :deep(.lt-sheet.wide) {
   max-height: min(820px, calc(100dvh - 48px));
 }
-:deep(.lt-sheet.wide):has(.twin) {
-  width: min(1120px, calc(100vw - 32px));
+:deep(.lt-sheet.wide):has(.twin),
+:deep(.lt-sheet.wide):has(.cosmic) {
+  width: min(1180px, calc(100vw - 24px));
+  height: min(860px, calc(100dvh - 24px));
+  max-height: calc(100dvh - 24px);
 }
 .inst-wrap {
   display: flex;
@@ -623,6 +640,7 @@ function choose (pluginId) {
 }
 .inst > * { flex: 1; min-height: 0; min-width: 0; }
 .inst :deep(.twin) { flex: 1 0 auto; min-height: 520px; }
+.inst :deep(.cosmic) { flex: 1 0 auto; min-height: 560px; }
 .inst :deep(.orch) { background: transparent; }
 .inst :deep(.orch .head) { box-shadow: inset 0 -1px 0 var(--lt-line), inset 0 1px 0 var(--lt-line); }
 .fx-group + .fx-group { margin-top: 6px; }
@@ -641,5 +659,8 @@ uni-view.inst {
   flex-direction: column !important;
   overflow: hidden !important;
   max-height: min(70dvh, calc(100dvh - 148px)) !important;
+}
+uni-view.inst:has(.cosmic) {
+  max-height: calc(100dvh - 120px) !important;
 }
 </style>

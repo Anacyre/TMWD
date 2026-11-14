@@ -103,8 +103,9 @@ const MODES = [
   { id: 'professional', label: 'Pro', hint: 'Full desktop layout.' }
 ]
 const INPUTS = [
+  { id: 'auto', label: 'Auto', hint: 'Fingers scroll and pinch. Mouse and pen edit directly.' },
   { id: 'touch', label: 'Touch', hint: 'One finger scrolls. Drag a clip to move it. Pinch to zoom.' },
-  { id: 'pc', label: 'PC', hint: 'One finger edits. Two fingers move and zoom.' }
+  { id: 'pc', label: 'PC', hint: 'Click and drag edits. Right-click opens the clip menu or deletes a note.' }
 ]
 const SNAP_IDS = ['off', '1/4', '1/8', '1/16', '1/32']
 const SNAPS = SNAP_IDS.map((id) => SNAP_OPTIONS.find((option) => option.id === id)).filter(Boolean)
@@ -115,8 +116,9 @@ const modeHint = computed(() => {
   return (mode ? mode.hint + ' ' : '') + 'All layouts edit the same project.'
 })
 const inputHint = computed(() => {
-  const mode = INPUTS.find((item) => item.id === session.inputMode) || INPUTS[1]
-  return mode.hint
+  const mode = INPUTS.find((item) => item.id === session.inputMode) || INPUTS[0]
+  if (mode.id !== 'auto') return mode.hint
+  return mode.hint + ' This device: ' + (session.deviceInput === 'touch' ? 'touch' : 'mouse and keyboard') + '.'
 })
 
 function setAuthField (key, event) {

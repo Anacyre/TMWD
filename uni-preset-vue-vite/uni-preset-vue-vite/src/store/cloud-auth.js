@@ -24,10 +24,19 @@ export const cloudAuth = reactive({
 })
 
 let watching = false
+let ownerHandler = null
+
+/** Called with the signed-in user id ('' when signed out) whenever auth state is known. */
+export function setOwnerHandler (handler) {
+  ownerHandler = typeof handler === 'function' ? handler : null
+}
 
 function applyUser (user) {
   cloudAuth.user = user
   if (!user) cloudAuth.usage = null
+  if (ownerHandler) {
+    Promise.resolve(ownerHandler(user ? user.id : '')).catch((err) => console.warn('[cloud] library switch failed', err))
+  }
 }
 
 export async function refreshCloudAuth () {

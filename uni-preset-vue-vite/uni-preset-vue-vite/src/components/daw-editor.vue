@@ -11,6 +11,7 @@
     <daw-piano-roll v-if="session.editorTab === 'piano'" embedded />
     <daw-orchestra-v v-else-if="pluginTabOn && (session.editorTab === 'orchestra-v' || orchestraV)" />
     <daw-m-orchestra v-else-if="pluginTabOn && (session.editorTab === 'm-orchestra' || mOrchestra)" />
+    <plugin-cosmic v-else-if="pluginTabOn && cosmic && track" :track="track" />
     <daw-orchestra-sampler v-else-if="pluginTabOn" />
     <view v-else-if="session.editorTab === 'automation'" class="info">
       <text class="note">Automation lanes are visual only, matching the native editor. Volume, pan, expression and send are not yet played by the engine.</text>
@@ -30,22 +31,25 @@
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, defineAsyncComponent } from 'vue'
 import DawPianoRoll from './daw-piano-roll.vue'
 import DawOrchestraSampler from './daw-orchestra-sampler.vue'
 import DawMOrchestra from './daw-m-orchestra.vue'
 import DawOrchestraV from './daw-orchestra-v.vue'
 import { session, getSelectedTrack, setEditorTab, closeEditor, openPluginPicker } from '../store/session.js'
-import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
+import { isMOrchestraTrack, isCosmicTrack } from '../model/m-orchestra-ui.js'
 import { isOrchestraVTrack } from '../model/orchestra-v-ui.js'
 
+const PluginCosmic = defineAsyncComponent(() => import('./dsp/plugin-cosmic.vue'))
 const track = computed(() => getSelectedTrack())
 const orchestraV = computed(() => isOrchestraVTrack(track.value))
 const mOrchestra = computed(() => !orchestraV.value && isMOrchestraTrack(track.value))
+const cosmic = computed(() => isCosmicTrack(track.value))
 const pluginTabOn = computed(() => session.editorTab === 'sampler'
   || session.editorTab === 'm-orchestra'
   || session.editorTab === 'orchestra-v')
 const pluginTabLabel = computed(() => {
+  if (cosmic.value) return 'Cosmic 2'
   if (orchestraV.value) return 'Orchestra V'
   return mOrchestra.value ? 'M Orchestra' : 'Orchestra Sampler'
 })

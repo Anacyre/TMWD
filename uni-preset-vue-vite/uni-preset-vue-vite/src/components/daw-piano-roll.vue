@@ -11,6 +11,7 @@
       <view class="chip" :class="{ on: tool === 'draw' }" @click="tool = 'draw'">Draw</view>
       <view class="chip" :class="{ on: tool === 'select' }" @click="tool = 'select'">Select</view>
       <view class="chip" :class="{ on: tool === 'erase' }" @click="tool = 'erase'">Erase</view>
+      <view class="chip" :class="{ on: chordTool.on }" title="Place chords (C)" @click="chordTool.on = !chordTool.on">Chord</view>
       <view class="chip" :class="{ on: snapId !== 'off' }" @click="cycleSnap">Snap {{ snapLabel }}</view>
       <view class="chip" @click="quantizeSelected">Quantize</view>
       <view class="chip" @click="undoEdit">Undo</view>
@@ -19,6 +20,27 @@
       <view v-if="isPhone" class="chip" :class="{ on: keyboardOpen }" @click="keyboardOpen = !keyboardOpen">Keys</view>
       <view class="chip" :class="{ on: velocityOpen }" @click="velocityOpen = !velocityOpen">Vel</view>
       <view class="more" @click.stop="showMore = !showMore">⋯</view>
+    </view>
+
+    <view v-if="chordTool.on && !lite" class="more-row chord-row">
+      <view
+        v-for="item in chordQualities"
+        :key="item.id"
+        class="chip"
+        :class="{ on: chordTool.quality === item.id }"
+        @click="chordTool.quality = item.id"
+      >{{ item.id === 'scale' ? 'In ' + session.scaleKey + ' ' + session.scaleName : item.label }}</view>
+      <text class="sep">|</text>
+      <view
+        v-for="item in chordSizes"
+        :key="item.id"
+        class="chip"
+        :class="{ on: chordTool.size === item.id }"
+        @click="chordTool.size = item.id"
+      >{{ item.label }}</view>
+      <text class="sep">|</text>
+      <view class="chip" @click="cycleInversion">{{ inversionLabels[chordTool.inversion] }}</view>
+      <text class="hint">{{ lastChord }}</text>
     </view>
 
     <view v-if="showMore" class="more-row">
@@ -120,6 +142,7 @@ import {
   pitchNameFull,
   cloneNote,
   duplicateNotes,
+  nextNoteGroup,
   quantizeNotes,
   serializeClipboard,
   parseClipboard,
@@ -152,6 +175,21 @@ import { drawPianoRoll, resizeCanvas } from '../model/piano-roll-render.js'
 import { interpolateBeats } from '../model/timeline.js'
 import { pointerCoord } from '../lib/pointer-drag.js'
 import { ensureExpression, laneKey, mappedExpressionControllers } from '../model/expression-lane.js'
+import {
+  chordTool,
+  CHORD_QUALITIES,
+  CHORD_SIZES,
+  INVERSION_LABELS,
+  chordLabel,
+  cycleInversion,
+  placeChord,
+  previewChord
+} from '../store/chord-tool.js'
+
+const chordQualities = CHORD_QUALITIES
+const chordSizes = CHORD_SIZES
+const inversionLabels = INVERSION_LABELS
+const lastChord = ref('')
 
 defineProps({
   embedded: { type: Boolean, default: false }
@@ -531,15 +569,18 @@ function onPointerDown (e) {
       if (!e.shiftKey) selectedIds.clear()
       return
     }
-    beginEdit('Create note')
+    beginEdit(chordTool.on ? 'Create chord' : 'Create note')
     const pitch = snapP(yToPitch(g.y, view))
     const startTick = xToTick(g.x, view, { snap: true, free: e.ctrlKey || e.metaKey || e.altKey })
-    const note = createNote(clip.value, pitch, startTick / PPQ, defaultDurationTicks(view) / PPQ, 100)
-    selectOnly(note.id)
-    startPreview(pitch)
+    const created = placeAt(pitch, startTick, defaultDurationTicks(view))
+    selectedIds.clear()
+    created.forEach((item) => selectedIds.add(item.id))
+    if (created.length > 1) previewChord(track.value, created.map((item) => item.pitch))
+    else startPreview(pitch)
     gesture = {
       type: 'create',
-      note,
+      note: created[0],
+      notes: created,
       originX: p.x,
       startTick,
       free: e.ctrlKey || e.metaKey || e.altKey
@@ -638,7 +679,7 @@ function onPointerMove (e) {
   if (gesture.type === 'create' && gesture.note) {
     const tick = xToTick(p.x - layout.gridX, view, { snap: true, free: gesture.free })
     const durationTick = Math.max(MIN_DURATION_TICKS, snapTick(tick, gridTicksForView(view), gesture.free) - gesture.startTick)
-    setNote(clip.value, gesture.note, { durationTick })
+    ;(gesture.notes || [gesture.note]).forEach((item) => setNote(clip.value, item, { durationTick }))
     return
   }
   if (gesture.type === 'move' || gesture.type === 'resize') {
@@ -686,9 +727,11 @@ function onPointerUp (e) {
     const now = Date.now()
     const close = Math.hypot(p.x - lastEmptyTap.x, p.y - lastEmptyTap.y) < 28
     if (now - lastEmptyTap.at < 360 && close) {
-      beginEdit('Create note')
-      const note = createNote(clip.value, gesture.pitch, gesture.startTick / PPQ, (view.lastDurationTicks || PPQ) / PPQ, 100)
-      selectOnly(note.id)
+      beginEdit(chordTool.on ? 'Create chord' : 'Create note')
+      const created = placeAt(gesture.pitch, gesture.startTick, view.lastDurationTicks || PPQ)
+      selectedIds.clear()
+      created.forEach((item) => selectedIds.add(item.id))
+      if (created.length > 1) previewChord(track.value, created.map((item) => item.pitch))
       endEdit()
       lastEmptyTap = { at: 0, x: 0, y: 0 }
     } else {
@@ -828,6 +871,16 @@ function selectGroup (group) {
   })
 }
 
+/** A single note or, with the chord tool on, a grouped chord. Caller owns the edit. */
+function placeAt (pitch, startTick, lengthTicks) {
+  if (!chordTool.on) {
+    const note = createNote(clip.value, pitch, startTick / PPQ, lengthTicks / PPQ, 100)
+    return note ? [note] : []
+  }
+  lastChord.value = chordLabel(pitch)
+  return placeChord(clip.value, pitch, startTick / PPQ, lengthTicks / PPQ, 100)
+}
+
 function startPreview (pitch, velocity = 0.85) {
   hoverPitch = pitch
   if (pitch === previewPitch) return
@@ -867,7 +920,7 @@ function deleteSelected () {
 function duplicateSelected () {
   if (!selectedNotes.value.length) return
   beginEdit('Duplicate notes')
-  const copies = duplicateNotes(selectedNotes.value)
+  const copies = duplicateNotes(selectedNotes.value, null, nextNoteGroup(notes.value))
   const created = createNotes(clip.value, copies)
   selectedIds.clear()
   created.forEach((note) => selectedIds.add(note.id))
@@ -976,6 +1029,7 @@ function onKey (e) {
   else if (e.key === '2') tool.value = 'select'
   else if (e.key === '3') tool.value = 'erase'
   else if (e.key.toLowerCase() === 'q' && !e.ctrlKey && !e.metaKey) quantizeSelected()
+  else if (e.key.toLowerCase() === 'c' && !e.ctrlKey && !e.metaKey && !e.altKey) chordTool.on = !chordTool.on
 }
 
 watch(clip, (c, prev) => {

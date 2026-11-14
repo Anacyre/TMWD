@@ -18,7 +18,9 @@ import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
 import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains, setLaneMix, setMasterMix, setFxMeterDetail } from '../audio/mixer-graph.js'
 import { invalidateFxWorklet, hasNativeAudioWorklet } from '../dsp/runtime.js'
-import { serializeSession, migrateProject, mergeNativeExport } from '../lib/project-io.js'
+import { serializeSession, migrateProject, mergeNativeExport, normalizeProjectMeta } from '../lib/project-io.js'
+import { setOwnerHandler, watchCloudAuth } from './cloud-auth.js'
+import { packProjectAssets, unpackProjectAssets, stripPackedAssets } from '../lib/project-assets.js'
 import {
   putProject,
   putAutosave,
@@ -36,6 +38,11 @@ import {
   hashBlob,
   setActiveProject,
   getActiveProjectId,
+  getLibraryOwner,
+  setLibraryOwner,
+  moveProjectToOwner,
+  listOwnerProjects,
+  GUEST_OWNER,
   FALLBACK_KEYS
 } from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
@@ -44,7 +51,9 @@ import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, i
 import * as sf2Engine from '../audio/sf2/engine.js'
 import { SF2_PLUGIN_ID } from '../audio/sf2/index.js'
 import * as twinEngine from '../dsp/synth/engine.js'
+import * as cosmicEngine from '../dsp/cosmic/engine.js'
 import { defaultTwinState, normalizeTwinState } from '../dsp/synth/params.js'
+import { defaultCosmicState, normalizeCosmicState } from '../dsp/cosmic/dsp.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
@@ -73,6 +82,9 @@ import {
   readInputMode,
   writeInputMode,
   normalizeInputMode,
+  detectInputMode,
+  readDeviceEnv,
+  resolveInputMode,
   INPUT_TOUCH
 } from '../model/ui-mode.js'
 import { ensureExpression, laneKey, paintPoint, eraseNear, sampleLane, sampleSustain, controllerIdForCc, addLanePoint, moveLanePoint, deleteLanePoint, addSustainBlock, moveSustainBlock, deleteSustainBlock, sortSustain } from '../model/expression-lane.js'
@@ -84,8 +96,12 @@ import {
   WEB_SAMPLER_PLUGIN_ID,
   TWIN_PLUGIN_ID as TWIN_ID,
   SF2_PLUGIN_ID as SF2_ID,
+  COSMIC_PLUGIN_ID as COSMIC_ID,
   isMOrchestraTrack,
   isTwinTrack,
+  isCosmicTrack,
+  upgradeCosmicTrack,
+  COSMIC_DISPLAY_NAME,
   isSf2Track,
   insertablePlugins,
   mOrchestraInstrument,
@@ -109,6 +125,7 @@ function cloudSamplerFor (track) {
   if (isOrchestraVTrack(track)) return orchestraVCloud
   if (isMOrchestraTrack(track)) return mOrchestraCloud
   if (isTwinTrack(track)) return twinEngine
+  if (isCosmicTrack(track)) return cosmicEngine
   if (isSf2Track(track)) return sf2Engine
   return null
 }
@@ -186,6 +203,10 @@ export const session = reactive({
   projectId: '',
   cloudId: '',
   projectName: starterDemo.projectName,
+  projectMeta: normalizeProjectMeta(starterDemo.meta, starterDemo.projectName),
+  libraryOwner: getLibraryOwner(),
+  savedAt: 0,
+  libraryOpen: false,
   projectManagerOpen: false,
   restoring: false,
   audioBlocked: false,
@@ -220,12 +241,14 @@ export const session = reactive({
   timeSignatures: [{ timeTick: 0, numerator: starterDemo.timeSigNum || 4, denominator: starterDemo.timeSigDen || 4 }],
   score: defaultScore({
     markers: starterDemo.markers || [],
-    timeSignatures: [{ timeTick: 0, numerator: starterDemo.timeSigNum || 4, denominator: starterDemo.timeSigDen || 4 }]
+    timeSignatures: [{ timeTick: 0, numerator: starterDemo.timeSigNum || 4, denominator: starterDemo.timeSigDen || 4 }],
+    ...(readInterfaceMode() === INTERFACE_LITE ? { key: 'C', scale: 'chromatic' } : {})
   }),
   pianoRollFocus: false,
   workspaceView: 'arrangement',
   interfaceMode: readInterfaceMode(),
   inputMode: readInputMode(),
+  deviceInput: detectInputMode(readDeviceEnv()),
   liteHintDismissed: readLiteHintDismissed(),
   liteSheet: null,
   settingsOpen: false,
@@ -236,7 +259,7 @@ export const session = reactive({
   scaleGuide: true,
   scaleSnap: true,
   scaleKey: 'C',
-  scaleName: 'major',
+  scaleName: readInterfaceMode() === INTERFACE_LITE ? 'chromatic' : 'major',
   scaleMenuOpen: false,
   positionFormat: 'musical',
   saveStatus: '',
@@ -325,7 +348,7 @@ export function snapBeat (beat) {
 function mapTrack (track) {
   const id = track.trackId != null ? track.trackId : track.id
   const existing = session.tracks.find((item) => item.id === id) || {}
-  return {
+  return upgradeCosmicTrack({
     id,
     name: track.name,
     type: track.type,
@@ -364,11 +387,12 @@ function mapTrack (track) {
     meterLevel: existing.meterLevel || 0,
     webSampler: existing.webSampler || createWebSamplerInstrument({ name: track.instrument || 'Web Sampler' }),
     twinState: track.twinState || existing.twinState || null,
+    cosmicState: track.cosmicState || existing.cosmicState || null,
     sf2Id: track.sf2Id || existing.sf2Id || '',
     sf2Name: track.sf2Name || existing.sf2Name || '',
     sf2Patch: track.sf2Patch || existing.sf2Patch || null,
     sf2Hash: track.sf2Hash || existing.sf2Hash || ''
-  }
+  })
 }
 
 function mapClip (clip) {
@@ -421,6 +445,7 @@ function applyProject (project) {
   if (data.id) session.projectId = data.id
   session.cloudId = project.cloudId || data.cloudId || session.cloudId || ''
   session.projectName = data.name || project.name || session.projectName
+  session.projectMeta = normalizeProjectMeta(data.meta, session.projectName)
   if (project.userName) session.userName = project.userName
   session.bpm = data.tempo || project.bpm || session.bpm
   session.timeSigNum = data.timeSigNumerator || project.timeSigNumerator || session.timeSigNum
@@ -1312,9 +1337,22 @@ export function setEditorTab (tab) {
 }
 
 export function setProjectName (name) {
-  if (!name) return
-  session.projectName = name
-  fire('project.setName', { name })
+  const next = String(name || '').trim().slice(0, 80)
+  if (!next) return
+  if (next === session.projectName) return
+  session.projectName = next
+  session.projectMeta = normalizeProjectMeta(session.projectMeta, next)
+  fire('project.setName', { name: next })
+  markDirty()
+}
+
+/** Edit the details card (description, creator, tags). The title goes through setProjectName. */
+export function updateProjectMeta (patch = {}) {
+  const prev = session.projectMeta || {}
+  const next = normalizeProjectMeta({ ...prev, ...patch }, session.projectName)
+  if (JSON.stringify(next) === JSON.stringify(prev)) return
+  session.projectMeta = next
+  markDirty()
 }
 
 export function openInstrumentPicker (trackIndex) {
@@ -1429,6 +1467,8 @@ export function insertPlugin (track, pluginId) {
     loadCloudOrchestra(track, M_ORCHESTRA_DEFAULT_ID)
   } else if (pluginId === TWIN_ID || pluginId === 'twin') {
     loadTwin(track)
+  } else if (pluginId === COSMIC_ID || pluginId === 'cosmic' || pluginId === 'cosmic-1') {
+    loadCosmic(track)
   } else if (pluginId === SF2_ID || pluginId === SF2_PLUGIN_ID) {
     loadSf2Sampler(track)
   } else if (pluginId === TEST_SYNTH_PLUGIN_ID) {
@@ -1450,7 +1490,7 @@ export function insertPlugin (track, pluginId) {
   session.workspaceView = 'sampler'
   if (pluginId === ORCHESTRA_V_PLUGIN_ID) session.editorTab = 'orchestra-v'
   else if (pluginId === M_ORCHESTRA_PLUGIN_ID) session.editorTab = 'm-orchestra'
-  else if (pluginId === TWIN_ID || pluginId === SF2_ID) session.editorTab = 'sampler'
+  else if (pluginId === TWIN_ID || pluginId === SF2_ID || pluginId === COSMIC_ID) session.editorTab = 'sampler'
   else if (pluginId === TEST_SYNTH_PLUGIN_ID) session.editorTab = 'info'
   else session.editorTab = 'sampler'
 }
@@ -1470,12 +1510,12 @@ export function nextTrackName (tracks, base = 'track') {
 }
 
 export async function addTrack (type = 'audio', customName = '') {
-  const kind = type === 'twin' || type === 'sf2' ? 'midi' : type
+  const kind = type === 'twin' || type === 'sf2' || type === 'cosmic' ? 'midi' : type
   const name = customName || (type === 'group' ? 'Group' : nextTrackName(session.tracks))
   if (isEngineConnected()) {
     const reply = await fire('track.create', {
       name,
-      trackType: type === 'web-sampler' || type === 'twin' || type === 'sf2' ? 'midi' : kind
+      trackType: type === 'web-sampler' || type === 'twin' || type === 'sf2' || type === 'cosmic' ? 'midi' : kind
     })
     if (type === 'web-sampler' && reply && reply.trackId != null) {
       const track = session.tracks.find((item) => item.id === reply.trackId)
@@ -1488,6 +1528,10 @@ export async function addTrack (type = 'audio', customName = '') {
       const track = session.tracks.find((item) => item.id === reply.trackId)
       if (track) loadTwin(track)
     }
+    if (type === 'cosmic' && reply && reply.trackId != null) {
+      const track = session.tracks.find((item) => item.id === reply.trackId)
+      if (track) loadCosmic(track)
+    }
     if (type === 'sf2' && reply && reply.trackId != null) {
       const track = session.tracks.find((item) => item.id === reply.trackId)
       if (track) loadSf2Sampler(track)
@@ -1499,7 +1543,7 @@ export async function addTrack (type = 'audio', customName = '') {
   session.tracks.push({
     id: nextId(session.tracks),
     name,
-    type: type === 'web-sampler' || type === 'twin' || type === 'sf2' ? 'midi' : kind,
+    type: type === 'web-sampler' || type === 'twin' || type === 'sf2' || type === 'cosmic' ? 'midi' : kind,
     parentId: 0,
     collapsed: false,
     colour,
@@ -1508,14 +1552,14 @@ export async function addTrack (type = 'audio', customName = '') {
     mute: false,
     solo: false,
     recordArm: false,
-    instrument: type === 'twin' ? 'Twin' : (type === 'sf2' ? 'Sampler' : (type === 'midi' ? 'Test Synth' : (type === 'web-sampler' ? 'Web Sampler' : ''))),
-    definitionId: type === 'twin' ? TWIN_ID : (type === 'sf2' ? SF2_ID : (type === 'midi' ? 'test_synth' : (type === 'web-sampler' ? 'web_sampler' : ''))),
+    instrument: type === 'cosmic' ? COSMIC_DISPLAY_NAME : (type === 'twin' ? 'Twin' : (type === 'sf2' ? 'Sampler' : (type === 'midi' ? 'Test Synth' : (type === 'web-sampler' ? 'Web Sampler' : '')))),
+    definitionId: type === 'cosmic' ? COSMIC_ID : (type === 'twin' ? TWIN_ID : (type === 'sf2' ? SF2_ID : (type === 'midi' ? 'test_synth' : (type === 'web-sampler' ? 'web_sampler' : '')))),
     techniqueId: '',
     section: type === 'group' ? name : '',
     controllerValues: {},
     inserts: [],
     sends: defaultSends(),
-    source: type === 'twin' ? 'twin' : (type === 'sf2' ? 'sf2' : (type === 'web-sampler' ? 'web-sampler' : (type === 'audio' ? 'audio' : 'empty'))),
+    source: type === 'cosmic' ? 'cosmic' : (type === 'twin' ? 'twin' : (type === 'sf2' ? 'sf2' : (type === 'web-sampler' ? 'web-sampler' : (type === 'audio' ? 'audio' : 'empty')))),
     legato: false,
     meterLevel: 0
   })
@@ -1527,6 +1571,7 @@ export async function addTrack (type = 'audio', customName = '') {
     else loadCloudOrchestra(created, M_ORCHESTRA_DEFAULT_ID)
   }
   if (type === 'twin') loadTwin(created)
+  if (type === 'cosmic') loadCosmic(created)
   if (type === 'sf2') loadSf2Sampler(created)
   markDirty()
   return session.tracks.length - 1
@@ -1551,7 +1596,16 @@ export async function addLiteInstrumentTrack (kind = '') {
     return index
   }
   if (kind === 'twin') {
+    if (isNewLite()) return -1
     const index = await addTrack('twin', nextTrackName(session.tracks))
+    if (index >= 0) {
+      session.selectedTrack = index
+      openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
+    }
+    return index
+  }
+  if (kind === 'cosmic') {
+    const index = await addTrack('cosmic', nextTrackName(session.tracks, 'Cosmic'))
     if (index >= 0) {
       session.selectedTrack = index
       openLiteSheet({ kind: 'track', tab: 'sampler', trackIndex: index })
@@ -1847,6 +1901,7 @@ export function renameClip (clip, name) {
 export function liteTrackMode (track) {
   if (!track || track.type === 'audio' || track.source === 'audio') return 'audio'
   if (isTwinTrack(track)) return 'twin'
+  if (isCosmicTrack(track)) return 'cosmic'
   if (isSf2Track(track)) return 'sf2'
   if (isOrchestraVTrack(track)) return 'orchestra'
   return ''
@@ -1872,7 +1927,11 @@ export function setLiteTrackMode (track, kind) {
   }
   track.type = 'midi'
   if (track.source === 'audio') track.source = ''
-  if (kind === 'twin') loadTwin(track)
+  if (kind === 'twin') {
+    if (isNewLite()) return
+    loadTwin(track)
+  }
+  else if (kind === 'cosmic') loadCosmic(track)
   else if (kind === 'sf2') loadSf2Sampler(track)
   else loadOrchestraV(track, ORCHESTRA_V_DEFAULT_ID)
   retainModeClips(track)
@@ -1911,7 +1970,9 @@ export function moveClip (clip, startBeat, trackIndex) {
 export function newProject () {
   stop()
   session.projectId = ''
+  session.cloudId = ''
   session.projectName = 'New Project'
+  session.projectMeta = normalizeProjectMeta({ creator: session.projectMeta && session.projectMeta.creator }, 'New Project')
   session.selectedTrack = 0
   session.selectedClip = -1
   session.markers = []
@@ -1927,20 +1988,27 @@ export function newProject () {
   markDirty()
 }
 
-export async function loadDemoProject () {
+export async function loadDemoProject (options = {}) {
   stop()
   const demo = migrateProject(createDemoProject())
   if (isEngineConnected()) {
     await pushSessionProjectToEngine(demo)
   }
+  // An example is always a fresh, unsaved copy: saving it must not overwrite the project
+  // that was open before.
+  session.projectId = ''
+  session.cloudId = ''
   applyProject(demo)
+  session.projectId = ''
+  session.cloudId = ''
   persistWebMixer()
   session.selectedTrack = 1
   session.selectedClip = session.clips.length ? 0 : -1
   session.positionBeats = 0
   session.unsaved = false
+  setActiveProject('').catch(() => {})
   maybeStartRemoteAudio()
-  if (!isEngineConnected()) {
+  if (!isEngineConnected() && !options.quiet && !isLite()) {
     showToast('BBCSO / Synchron need the DawWeb engine on the PC')
   }
 }
@@ -2370,6 +2438,10 @@ export function loadInstrument (track, definitionId) {
     loadTwin(track)
     return
   }
+  if (definitionId === COSMIC_ID || definitionId === 'cosmic' || definitionId === 'cosmic-1') {
+    loadCosmic(track)
+    return
+  }
   if (definitionId === SF2_ID || definitionId === SF2_PLUGIN_ID) {
     loadSf2Sampler(track)
     return
@@ -2487,6 +2559,38 @@ export function loadTwin (track) {
   unlockAudio().then((graph) => {
     if (graph) twinEngine.updateTwinState(graph, track)
   }).catch(() => {})
+}
+
+export function loadCosmic (track) {
+  if (!track || track.type === 'master') return
+  track.type = track.type === 'audio' ? 'midi' : (track.type || 'midi')
+  track.source = 'cosmic'
+  track.definitionId = COSMIC_ID
+  track.instrument = COSMIC_DISPLAY_NAME
+  track.cosmicState = normalizeCosmicState(track.cosmicState || defaultCosmicState())
+  track.loadState = 'Ready'
+  track.loadMessage = COSMIC_DISPLAY_NAME
+  track.instrumentLoadState = 'ready'
+  track.instrumentLoadMessage = COSMIC_DISPLAY_NAME
+  unlockAudio().then((graph) => {
+    if (graph) cosmicEngine.updateCosmicState(graph, track)
+  }).catch(() => {})
+}
+
+export function updateCosmicPatch (track) {
+  if (!track) return
+  track.cosmicState = normalizeCosmicState(track.cosmicState || defaultCosmicState())
+  markDirty()
+  const graph = audioGraph
+  if (graph) cosmicEngine.updateCosmicState(graph, track)
+}
+
+export function setCosmicPerformance (perf) {
+  cosmicEngine.setPerformance(audioGraph, perf || {})
+}
+
+export function watchCosmicTrack (track, on) {
+  cosmicEngine.watchCosmic(audioGraph, track, on)
 }
 
 export function updateTwinPatch (track) {
@@ -2924,9 +3028,20 @@ export function setInputMode (mode) {
   writeInputMode(session.inputMode)
 }
 
-export function isTouchInput () {
-  return session.inputMode === INPUT_TOUCH
+/** Pass the pointer event when there is one: in Auto, a finger is Touch and a mouse is PC. */
+export function isTouchInput (event) {
+  return resolveInputMode(session.inputMode, event && event.pointerType, session.deviceInput) === INPUT_TOUCH
 }
+
+function watchDeviceInput () {
+  if (typeof window === 'undefined' || !window.matchMedia) return
+  const update = () => { session.deviceInput = detectInputMode(readDeviceEnv()) }
+  for (const query of ['(pointer: coarse)', '(any-pointer: fine)', '(hover: hover)']) {
+    const list = window.matchMedia(query)
+    if (list.addEventListener) list.addEventListener('change', update)
+  }
+}
+watchDeviceInput()
 
 export function setInterfaceMode (mode) {
   const next = normalizeInterfaceMode(mode)
@@ -3572,6 +3687,7 @@ export function setEngineHost (value) {
 }
 
 async function autosaveProject () {
+  if (!session.unsaved) return
   try {
     const data = await buildSavePayload()
     const saved = await putAutosave(data)
@@ -3755,6 +3871,7 @@ async function buildSavePayload () {
 
 function markSaved () {
   session.unsaved = false
+  session.savedAt = Date.now()
   session.saveStatus = 'Saved'
   rememberRecentProject()
   setActiveProject(session.projectId).catch(() => {})
@@ -3763,14 +3880,14 @@ function markSaved () {
   }, 1400)
 }
 
-export async function saveCurrentProject () {
+export async function saveCurrentProject (options = {}) {
   session.saveStatus = 'Saving…'
   try {
     const data = await buildSavePayload()
     const saved = await putProject(data)
     session.projectId = saved.id
     markSaved()
-    showToast('Project saved')
+    if (!options.quiet) showToast('Project saved')
     return saved
   } catch (err) {
     session.saveStatus = ''
@@ -3780,9 +3897,14 @@ export async function saveCurrentProject () {
 }
 
 export async function saveProjectAs (name) {
-  const nextName = (name || '').trim()
-  if (nextName) session.projectName = nextName
+  const nextName = (name || '').trim().slice(0, 80)
+  if (nextName) {
+    session.projectName = nextName
+    session.projectMeta = normalizeProjectMeta(session.projectMeta, nextName)
+  }
   session.projectId = ''
+  session.cloudId = ''
+  session.projectMeta = normalizeProjectMeta({ ...session.projectMeta, publishedId: '', publishedAt: 0 }, session.projectName)
   return saveCurrentProject()
 }
 
@@ -3790,13 +3912,19 @@ export async function saveProjectLocal () {
   return saveCurrentProject()
 }
 
+/** The current project with its audio packed inline, for files that leave this device. */
+export async function buildPortableProject (options = {}) {
+  const data = await buildSavePayload()
+  return packProjectAssets(data, getAsset, options)
+}
+
 export async function shareProjectFile () {
   session.saveStatus = 'Saving…'
   try {
-    const data = await buildSavePayload()
-    downloadText((session.projectName || 'project') + '.dawweb', JSON.stringify(data, null, 2))
-    markSaved()
-    showToast('Project file downloaded')
+    const { project, missing } = await buildPortableProject()
+    downloadText((session.projectName || 'project') + '.dawweb', JSON.stringify(project))
+    session.saveStatus = ''
+    showToast(missing.length ? 'Project file downloaded (some audio was not found)' : 'Project file downloaded')
   } catch (err) {
     session.saveStatus = ''
     showToast(err.message || 'Share failed')
@@ -3830,16 +3958,94 @@ export async function importProjectJson (json, options = {}) {
       return false
     }
   }
+  if (data && data.assets) {
+    await unpackProjectAssets(data, putAsset, (bytes, type) => new Blob([bytes], { type: type || '' }))
+    data = stripPackedAssets(data)
+  }
   const migrated = migrateProject(data)
   if (isEngineConnected()) {
     await fire('project.import', { json: JSON.stringify(migrated) })
   }
+  if (options.asCopy) {
+    session.projectId = ''
+    session.cloudId = ''
+    migrated.id = ''
+    migrated.cloudId = ''
+  }
   applyProject(migrated)
+  if (options.asCopy) {
+    session.projectId = ''
+    session.cloudId = ''
+    session.projectMeta = normalizeProjectMeta({ ...session.projectMeta, publishedId: '', publishedAt: 0 }, session.projectName)
+  }
   await restoreSamplerAssets(migrated)
-  session.unsaved = false
-  rememberRecentProject()
-  setActiveProject(session.projectId).catch(() => {})
-  if (!options.quiet) showToast('Project loaded')
+  session.unsaved = !!options.asCopy
+  session.savedAt = options.asCopy ? 0 : (Number(data.updatedAt) || Date.now())
+  if (!options.asCopy) {
+    rememberRecentProject()
+    setActiveProject(session.projectId).catch(() => {})
+  }
+  if (!options.quiet) showToast(options.asCopy ? 'Opened as a copy' : 'Project loaded')
+  return true
+}
+
+/**
+ * Switch the local library between the guest and an account. Signing in keeps the open
+ * work on screen as a new, unsaved project of the account (the guest copy stays in the
+ * guest library). Signing out never leaves account work on screen: it is autosaved into
+ * the account first, then the guest's last project (or an empty one) opens.
+ */
+export async function switchLibraryOwner (owner) {
+  const next = owner ? String(owner) : GUEST_OWNER
+  const prev = getLibraryOwner()
+  if (next === prev) return false
+  if (session.unsaved) {
+    try { await autosaveProject() } catch (err) { /* best effort */ }
+  }
+  if (autosaveTimer) {
+    clearTimeout(autosaveTimer)
+    autosaveTimer = 0
+  }
+  setLibraryOwner(next)
+  session.libraryOwner = next
+  loadRecentProjects()
+  if (prev === GUEST_OWNER && next !== GUEST_OWNER) {
+    session.projectId = ''
+    session.cloudId = ''
+    session.unsaved = true
+    showToast('Signed in. Saving now goes to your account.')
+    return true
+  }
+  const restored = await restoreLastSession()
+  if (!restored) {
+    newProject()
+    await addTrack('midi')
+    session.unsaved = false
+  }
+  showToast(next === GUEST_OWNER ? 'Signed out. Showing the guest library.' : 'Switched account')
+  return true
+}
+
+/** Projects saved on this device before signing in. Empty while signed out (they are
+ * the active library then). */
+export async function listGuestProjects () {
+  if (getLibraryOwner() === GUEST_OWNER) return []
+  return listOwnerProjects(GUEST_OWNER)
+}
+
+/** Move a guest project into the signed-in account's library. */
+export async function adoptGuestProject (id) {
+  const owner = getLibraryOwner()
+  if (owner === GUEST_OWNER) return null
+  const moved = await moveProjectToOwner(id, owner, GUEST_OWNER)
+  loadRecentProjects()
+  return moved
+}
+
+/** Before replacing the open project: unsaved work goes to Recovery instead of being lost. */
+export async function keepUnsavedInRecovery () {
+  if (!session.unsaved) return false
+  await autosaveProject()
   return true
 }
 
@@ -3921,7 +4127,10 @@ export async function duplicateStoredProject (id) {
 
 export async function renameStoredProject (id, name) {
   const row = await renameProject(id, name)
-  if (row && row.id === session.projectId) session.projectName = row.name
+  if (row && row.id === session.projectId) {
+    session.projectName = row.name
+    session.projectMeta = normalizeProjectMeta(session.projectMeta, row.name)
+  }
   session.recentProjects = readRecent()
   return row
 }
@@ -3940,6 +4149,11 @@ export function closeProjectManager () {
 getActiveProjectId().then((id) => {
   if (id && !session.projectId) session.projectId = id
 }).catch(() => {})
+
+if (typeof window !== 'undefined') {
+  setOwnerHandler(switchLibraryOwner)
+  watchCloudAuth()
+}
 
 let audioGraph = null
 let audioUnsub = null
@@ -3961,21 +4175,30 @@ let clickBuffer = null
 let clickLoadPromise = null
 let lastMetroBeat = -1
 
+/** A short woodblock-like tick, so the metronome works offline or when the asset is unreachable. */
+function synthClickBuffer (context) {
+  const rate = context.sampleRate
+  const length = Math.floor(rate * 0.04)
+  const buffer = context.createBuffer(1, length, rate)
+  const data = buffer.getChannelData(0)
+  for (let i = 0; i < length; i++) {
+    const t = i / rate
+    data[i] = (Math.sin(2 * Math.PI * 1760 * t) * 0.7 + Math.sin(2 * Math.PI * 2640 * t) * 0.3) * Math.exp(-t * 140) * 0.8
+  }
+  return buffer
+}
+
 async function ensureClickBuffer () {
-  if (clickBuffer) return clickBuffer
   if (clickLoadPromise) return clickLoadPromise
   const graph = ensureGraph()
   if (!graph) return null
+  if (!clickBuffer) clickBuffer = synthClickBuffer(graph.context)
   clickLoadPromise = decodeSampleFile(graph.context, publicAssetUrl('click.wav'))
     .then((buffer) => {
       clickBuffer = buffer
       return buffer
     })
-    .catch((err) => {
-      console.warn('[metronome] failed to load click.wav from Supabase:', err)
-      clickLoadPromise = null
-      return null
-    })
+    .catch(() => clickBuffer)
   return clickLoadPromise
 }
 
@@ -3999,6 +4222,7 @@ function tickLocalMetronome (positionBeats) {
   lastMetroBeat = beat
   const src = audioGraph.context.createBufferSource()
   src.buffer = clickBuffer
+  if (beat % Math.max(1, session.timeSigNum || 4) === 0) src.playbackRate.value = 1.5
   const dest = clickBus(audioGraph) || audioGraph.context.destination
   src.connect(dest)
   try { src.start() } catch (err) { /* already started */ }
@@ -4310,6 +4534,7 @@ function scheduleAheadSec () {
 }
 
 function tickLocalNotes (nowBeats) {
+  cosmicEngine.setClock(session.bpm)
   const next = new Set()
   const ctx = audioGraph && audioGraph.context
   const lookSec = scheduleAheadSec()
@@ -4370,11 +4595,13 @@ function allLocalNotesOff () {
     mOrchestraCloud.noteOff(voiceKey)
     orchestraVCloud.noteOff(voiceKey)
     twinEngine.noteOff(voiceKey)
+    cosmicEngine.noteOff(voiceKey)
     sf2Engine.noteOff(voiceKey)
   })
   mOrchestraCloud.allNotesOff()
   orchestraVCloud.allNotesOff()
   twinEngine.allNotesOff()
+  cosmicEngine.allNotesOff()
   sf2Engine.allNotesOff()
   allAudioClipsOff()
   soundingNotes.clear()

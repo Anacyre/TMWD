@@ -17,8 +17,12 @@
             <text>Select</text>
           </view>
         </view>
+        <view class="lt-chip icon-chip" :class="{ on: chordTool.on }" title="Place chords (C)" aria-label="Chord" @click="chordTool.on = !chordTool.on">
+          <daw-icon name="chord" :size="16" color="currentColor" />
+          <text>Chord</text>
+        </view>
         <view class="lt-chip" :class="{ on: session.snap }" @click="cycleSnap">Snap {{ snapLabel }}</view>
-        <view class="lt-chip" @click="quantize">
+        <view class="lt-chip icon-chip" title="Quantize" aria-label="Quantize" @click="quantize">
           <daw-icon name="quantize" :size="16" color="currentColor" />
           <text>Quantize</text>
         </view>
@@ -27,12 +31,36 @@
           <text>{{ session.scaleKey }} {{ scaleLabel(session.scaleName) }}</text>
         </view>
       </view>
-      <view class="selection" :class="{ show: selectedCount > 0 || canPaste }">
-        <text class="count">{{ selectedCount }} selected</text>
-        <view class="lt-hit" title="Copy" @click="copySelection"><daw-icon name="copy" :size="20" color="currentColor" /></view>
-        <view v-if="canPaste" class="lt-hit paste" title="Paste at playhead" @click="pasteSelection">Paste</view>
-        <view class="lt-hit" @click="deleteSelected"><daw-icon name="trash" :size="20" color="currentColor" /></view>
+      <view class="selection" :class="{ show: noteCount > 0 || canPasteNotes }">
+        <text class="count">{{ noteCount }} selected</text>
+        <view v-if="selectionGrouped" class="lt-hit paste" title="Edit chord notes one by one" @click="ungroupSelection">Ungroup</view>
+        <view class="lt-hit" title="Copy" @click="copyNotes"><daw-icon name="copy" :size="20" color="currentColor" /></view>
+        <view v-if="canPasteNotes" class="lt-hit paste" title="Paste at playhead" @click="pasteNotes">Paste</view>
+        <view class="lt-hit" @click="deleteNotesSelection"><daw-icon name="trash" :size="20" color="currentColor" /></view>
       </view>
+    </view>
+
+    <view v-if="chordTool.on" class="chord-bar">
+      <view class="lt-seg">
+        <view
+          v-for="item in chordQualities"
+          :key="item.id"
+          class="lt-seg-item"
+          :class="{ on: chordTool.quality === item.id }"
+          @click="chordTool.quality = item.id"
+        >{{ item.id === 'scale' ? session.scaleKey + ' ' + scaleLabel(session.scaleName) : item.label }}</view>
+      </view>
+      <view class="lt-seg">
+        <view
+          v-for="item in chordSizes"
+          :key="item.id"
+          class="lt-seg-item"
+          :class="{ on: chordTool.size === item.id }"
+          @click="setChordSize(item.id)"
+        >{{ item.label }}</view>
+      </view>
+      <view class="lt-chip" @click="cycleInversion">{{ inversionLabels[chordTool.inversion] }}</view>
+      <text class="chord-name">{{ lastChord || 'Tap the grid to place a chord' }}</text>
     </view>
 
     <view v-if="!clip || !clip.midi" class="empty">
@@ -60,6 +88,12 @@
           <daw-icon name="pencil" :size="16" color="currentColor" />
         </view>
         <text v-if="laneHint" class="lane-hint">{{ laneHint }}</text>
+        <view v-if="lane !== 'velocity'" class="selection lane-selection" :class="{ show: laneCount > 0 || canPasteLane }">
+          <text class="count">{{ laneCount }} selected</text>
+          <view class="lt-hit" title="Copy lane" @click="copyLane"><daw-icon name="copy" :size="20" color="currentColor" /></view>
+          <view v-if="canPasteLane" class="lt-hit paste" title="Paste lane at playhead" @click="pasteLane">Paste</view>
+          <view class="lt-hit" @click="deleteLaneSelection"><daw-icon name="trash" :size="20" color="currentColor" /></view>
+        </view>
       </view>
       <view ref="laneHost" class="lane-host" />
     </template>
@@ -139,6 +173,7 @@ import {
   midiVelocity,
   normalizeNote,
   duplicateNotes,
+  nextNoteGroup,
   quantizeNotes,
   snapTick,
   snapPitchToScale,
@@ -164,6 +199,17 @@ import { drawPianoRoll, resizeCanvas, LITE_THEME, shade } from '../../model/pian
 import { interpolateBeats } from '../../model/timeline.js'
 import { RULER_SNAP_BEATS, snapTo } from '../../model/arrange-gestures.js'
 import { collapseLane, ensureExpression, laneKey, hitLanePoint, hitSustainBlock, sortSustain } from '../../model/expression-lane.js'
+import { rollClipboard } from './roll-clipboard.js'
+import {
+  chordTool,
+  CHORD_QUALITIES,
+  CHORD_SIZES,
+  INVERSION_LABELS,
+  chordLabel,
+  cycleInversion,
+  placeChord,
+  previewChord
+} from '../../store/chord-tool.js'
 
 const SNAP_STEPS = [
   { beats: 0, label: 'Off' },
@@ -186,6 +232,10 @@ const SIXTEENTH = 0.25
 const LONG_PRESS_MS = 480
 const keyNames = KEY_NAMES
 const scaleNames = SCALE_NAMES
+const chordQualities = CHORD_QUALITIES
+const chordSizes = CHORD_SIZES
+const inversionLabels = INVERSION_LABELS
+const lastChord = ref('')
 
 const rollHost = ref(null)
 const laneHost = ref(null)
@@ -199,15 +249,12 @@ const laneReadout = ref('')
 const clip = computed(() => getSelectedClip())
 const track = computed(() => getSelectedTrack())
 const notes = computed(() => ((clip.value && clip.value.notes) || []).map((note) => normalizeNote(note)))
-const editClipboard = ref(null)
-const selectedCount = computed(() => {
-  if (lane.value !== 'notes' && lane.value !== 'velocity') return laneSelection.value.keys.length
-  return notes.value.filter((note) => selectedIds.has(note.id)).length
-})
-const canPaste = computed(() => {
-  const board = editClipboard.value
+const noteCount = computed(() => notes.value.filter((note) => selectedIds.has(note.id)).length)
+const canPasteNotes = computed(() => !!(rollClipboard.notes && rollClipboard.notes.length))
+const laneCount = computed(() => laneSelection.value.keys.length)
+const canPasteLane = computed(() => {
+  const board = rollClipboard.lane
   if (!board) return false
-  if (board.kind === 'notes') return lane.value === 'notes' || lane.value === 'velocity'
   if (board.kind === 'pedal') return lane.value === 'pedal'
   if (board.kind === 'points') {
     return (lane.value === 'dynamics' && board.cc === 1) || (lane.value === 'expression' && board.cc === 11)
@@ -240,6 +287,7 @@ let previewPitch = -1
 let rubber = null
 let gesture = null
 let laneGesture = null
+let laneRubber = null
 const laneSelection = ref({ kind: '', cc: 0, keys: [] })
 let lastNoteTap = { at: 0, id: 0 }
 let lastPointTap = { at: 0, index: -1 }
@@ -249,6 +297,42 @@ const pointers = new Map()
 
 function scaleLabel (name) {
   return String(name || '').replace(/([a-z])([A-Z])/g, '$1 $2').replace(/^./, (c) => c.toUpperCase())
+}
+
+function setChordSize (size) {
+  chordTool.size = size
+  if (size === 'triad' && chordTool.inversion > 2) chordTool.inversion = 0
+}
+
+/** Chord notes share a group: touching one selects the whole chord. */
+function selectWithGroup (note) {
+  selectedIds.clear()
+  const group = Number(note && note.group) || 0
+  if (group) notes.value.forEach((item) => { if (item.group === group) selectedIds.add(item.id) })
+  else if (note) selectedIds.add(note.id)
+}
+
+const selectionGrouped = computed(() => notes.value.some((note) => selectedIds.has(note.id) && note.group))
+
+function ungroupSelection () {
+  const live = (clip.value && clip.value.notes) || []
+  beginEdit('Ungroup notes')
+  live.forEach((note) => {
+    if (selectedIds.has(note.id) && note.group) setNote(clip.value, note, { group: 0 })
+  })
+  flushNotePatches()
+  endEdit()
+  markDirty()
+}
+
+/** Create a single note or, with the chord tool on, a grouped chord. Caller owns the edit. */
+function placeAt (pitch, startTick, lengthTicks) {
+  if (!chordTool.on) {
+    const note = createNote(clip.value, pitch, startTick / PPQ, lengthTicks / PPQ, 100)
+    return note ? [note] : []
+  }
+  lastChord.value = chordLabel(pitch)
+  return placeChord(clip.value, pitch, startTick / PPQ, lengthTicks / PPQ, 100)
 }
 
 function hostEl (r) {
@@ -473,13 +557,15 @@ function onRollDown (e) {
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   const g = { x: p.x - layout.gridX, y: p.y - layout.gridY }
   const hit = hitNote(notes.value, g.x, g.y, view, e.pointerType === 'touch' ? 22 : 10)
-  gesture = { type: 'pending', origin: p, hit, started: false }
+  if (e.button === 2) {
+    pointers.delete(e.pointerId)
+    if (hit) eraseAt(hit.note)
+    return
+  }
+  gesture = { type: 'pending', origin: p, hit, started: false, touch: isTouchInput(e) }
   armSelectHold()
   if (hit) {
-    if (!selectedIds.has(hit.note.id)) {
-      selectedIds.clear()
-      selectedIds.add(hit.note.id)
-    }
+    if (!selectedIds.has(hit.note.id)) selectWithGroup(hit.note)
     startPreview(hit.note.pitch, midiVelocity(hit.note.velocity) / 127)
   }
 }
@@ -492,7 +578,7 @@ function clearRollHold () {
 }
 
 function armSelectHold () {
-  if (!isTouchInput() || !gesture || gesture.type !== 'pending') return
+  if (!gesture || gesture.type !== 'pending' || !gesture.touch) return
   const origin = gesture.origin
   const hadHit = !!gesture.hit
   gesture.hold = setTimeout(() => {
@@ -509,7 +595,7 @@ function armSelectHold () {
 function cancelSingle () {
   clearRollHold()
   if (gesture && gesture.started && (gesture.type === 'move' || gesture.type === 'resize' || gesture.type === 'create')) {
-    if (gesture.type === 'create' && gesture.note) deleteNotes(clip.value, [gesture.note])
+    if (gesture.type === 'create' && gesture.notes) deleteNotes(clip.value, gesture.notes)
     else restore(gesture.originals)
     flushNotePatches()
     endEdit()
@@ -534,7 +620,7 @@ function seekTo (x) {
 
 function beginDrag () {
   clearRollHold()
-  const { hit, origin } = gesture
+  const { hit, origin, touch } = gesture
   const g = { x: origin.x - layout.gridX, y: origin.y - layout.gridY }
   if (hit) {
     const type = hit.resize ? 'resize' : 'move'
@@ -549,7 +635,7 @@ function beginDrag () {
     selectedIds.clear()
     return
   }
-  if (isTouchInput()) {
+  if (touch) {
     gesture = { type: 'pan', origin, scrollX: view.scrollX, scrollY: view.scrollY, started: true }
     return
   }
@@ -557,13 +643,14 @@ function beginDrag () {
   const grid = gridTicks()
   const raw = xToTick(g.x, view, { snap: false })
   const startTick = grid > 0 ? Math.floor(raw / grid) * grid : raw
-  beginEdit('Create note')
+  beginEdit(chordTool.on ? 'Create chord' : 'Create note')
   setPianoDragActive(clip.value.id)
-  const note = createNote(clip.value, pitch, startTick / PPQ, Math.max(gridTicks(), MIN_DURATION_TICKS) / PPQ, 100)
+  const created = placeAt(pitch, startTick, Math.max(gridTicks(), MIN_DURATION_TICKS))
   selectedIds.clear()
-  if (note) selectedIds.add(note.id)
-  startPreview(pitch)
-  gesture = { type: 'create', origin, note, startTick, started: true }
+  created.forEach((note) => selectedIds.add(note.id))
+  if (created.length > 1) previewChord(track.value, created.map((note) => note.pitch))
+  else startPreview(pitch)
+  gesture = { type: 'create', origin, notes: created, startTick, started: true }
 }
 
 function onRollMove (e) {
@@ -608,10 +695,11 @@ function onRollMove (e) {
       .forEach((note) => selectedIds.add(note.id))
     return
   }
-  if (gesture.type === 'create' && gesture.note) {
+  if (gesture.type === 'create' && gesture.notes && gesture.notes.length) {
     const end = xToTick(p.x - layout.gridX, view, { snap: false })
     const snapped = snapTick(end, grid, grid <= 0)
-    setNote(clip.value, gesture.note, { durationTick: Math.max(grid || MIN_DURATION_TICKS, snapped - gesture.startTick) })
+    const durationTick = Math.max(grid || MIN_DURATION_TICKS, snapped - gesture.startTick)
+    gesture.notes.forEach((note) => setNote(clip.value, note, { durationTick }))
     return
   }
   if (gesture.type === 'move' || gesture.type === 'resize') {
@@ -669,21 +757,28 @@ function onRollUp (e) {
   gesture = null
 }
 
+/** Deletes the note and the rest of its chord group. */
+function eraseAt (note) {
+  const group = Number(note.group) || 0
+  const doomed = group ? (clip.value.notes || []).filter((item) => item.group === group) : [note]
+  beginEdit('Delete notes')
+  deleteNotes(clip.value, doomed)
+  endEdit()
+  selectedIds.clear()
+  markDirty()
+}
+
 function tapAt (g) {
   const now = Date.now()
   if (g.hit) {
     const id = g.hit.note.id
     if (now - lastNoteTap.at < 360 && lastNoteTap.id === id) {
-      beginEdit('Delete notes')
-      deleteNotes(clip.value, [g.hit.note])
-      endEdit()
-      selectedIds.delete(id)
+      eraseAt(g.hit.note)
       lastNoteTap = { at: 0, id: 0 }
       return
     }
     lastNoteTap = { at: now, id }
-    selectedIds.clear()
-    selectedIds.add(id)
+    selectWithGroup(g.hit.note)
     return
   }
   lastNoteTap = { at: 0, id: 0 }
@@ -699,10 +794,14 @@ function tapAt (g) {
   const raw = xToTick(gx, view, { snap: false })
   const startTick = grid > 0 ? Math.floor(raw / grid) * grid : raw
   const length = Math.max(grid || PPQ / 4, session.lastNoteDurationTicks || PPQ / 4)
-  beginEdit('Create note')
-  const note = createNote(clip.value, pitch, startTick / PPQ, length / PPQ, 100)
+  beginEdit(chordTool.on ? 'Create chord' : 'Create note')
+  const created = placeAt(pitch, startTick, length)
   endEdit()
-  if (note) selectedIds.add(note.id)
+  created.forEach((note) => selectedIds.add(note.id))
+  if (created.length > 1) {
+    previewChord(track.value, created.map((note) => note.pitch))
+    return
+  }
   startPreview(pitch)
   setTimeout(stopPreview, 180)
 }
@@ -745,8 +844,7 @@ function cycleSnap () {
 }
 
 function quantize () {
-  if (lane.value !== 'notes' && lane.value !== 'velocity') return
-  const list = selectedCount.value ? notes.value.filter((note) => selectedIds.has(note.id)) : notes.value
+  const list = noteCount.value ? notes.value.filter((note) => selectedIds.has(note.id)) : notes.value
   if (!list.length) return
   const grid = gridTicks() || PPQ / 4
   beginEdit('Quantize')
@@ -787,46 +885,48 @@ function togglePedalSelection (key) {
   laneSelection.value = { kind: 'pedal', cc: 64, keys: [key] }
 }
 
-function copySelection () {
+function copyNotes () {
+  const list = notes.value.filter((note) => selectedIds.has(note.id))
+  if (!list.length) return
+  rollClipboard.notes = JSON.parse(JSON.stringify(list))
+}
+
+function pasteNotes () {
   const live = clip.value
-  if (!live) return
-  if (lane.value === 'notes' || lane.value === 'velocity') {
-    const list = notes.value.filter((note) => selectedIds.has(note.id))
-    if (!list.length) return
-    editClipboard.value = { kind: 'notes', notes: JSON.parse(JSON.stringify(list)) }
-    return
-  }
+  const board = rollClipboard.notes
+  if (!live || !board || !board.length) return
+  const min = Math.min(...board.map((note) => note.startTick || 0))
+  const shift = Math.round(pasteBeat() * PPQ) - min
+  beginEdit('Paste notes')
+  const created = createNotes(live, duplicateNotes(board, shift, nextNoteGroup(live.notes)))
+  endEdit()
+  selectedIds.clear()
+  ;(created || []).forEach((note) => selectedIds.add(note.id))
+  markDirty()
+}
+
+function copyLane () {
+  const live = clip.value
   const sel = laneSelection.value
-  if (!sel.keys.length) return
+  if (!live || !sel.keys.length) return
   if (sel.kind === 'pedal') {
     const blocks = sortSustain(ensureExpression(live).cc64)
       .filter((block) => sel.keys.indexOf(block.startTick) >= 0)
     if (!blocks.length) return
-    editClipboard.value = { kind: 'pedal', blocks: blocks.map((block) => ({ startTick: block.startTick, endTick: block.endTick })) }
+    rollClipboard.lane = { kind: 'pedal', blocks: blocks.map((block) => ({ startTick: block.startTick, endTick: block.endTick })) }
     return
   }
   const points = (ensureExpression(live)[laneKey(sel.cc)] || [])
     .filter((point) => sel.keys.some((t) => Math.abs(t - point.t) < 1e-4))
   if (!points.length) return
-  editClipboard.value = { kind: 'points', cc: sel.cc, points: points.map((point) => ({ t: point.t, v: point.v })) }
+  rollClipboard.lane = { kind: 'points', cc: sel.cc, points: points.map((point) => ({ t: point.t, v: point.v })) }
 }
 
-function pasteSelection () {
+function pasteLane () {
   const live = clip.value
-  const board = editClipboard.value
+  const board = rollClipboard.lane
   if (!live || !board) return
   const at = pasteBeat()
-  if (board.kind === 'notes') {
-    const min = Math.min(...board.notes.map((note) => note.startTick || 0))
-    const shift = Math.round(at * PPQ) - min
-    beginEdit('Paste notes')
-    const created = createNotes(live, duplicateNotes(board.notes, shift))
-    endEdit()
-    selectedIds.clear()
-    ;(created || []).forEach((note) => selectedIds.add(note.id))
-    markDirty()
-    return
-  }
   if (board.kind === 'pedal') {
     const min = Math.min(...board.blocks.map((block) => block.startTick))
     const shift = Math.round(snapSixteenth(at) * PPQ) - min
@@ -854,6 +954,16 @@ function pasteSelection () {
   markDirty()
 }
 
+function deleteNotesSelection () {
+  const list = notes.value.filter((note) => selectedIds.has(note.id))
+  if (!list.length) return
+  beginEdit('Delete notes')
+  deleteNotes(clip.value, list)
+  endEdit()
+  selectedIds.clear()
+  markDirty()
+}
+
 function duplicateSelected () {
   if (lane.value !== 'notes' && lane.value !== 'velocity') {
     duplicateLaneSelection()
@@ -862,7 +972,7 @@ function duplicateSelected () {
   const list = notes.value.filter((note) => selectedIds.has(note.id))
   if (!list.length) return
   beginEdit('Duplicate notes')
-  const created = createNotes(clip.value, duplicateNotes(list))
+  const created = createNotes(clip.value, duplicateNotes(list, null, nextNoteGroup(clip.value.notes)))
   endEdit()
   selectedIds.clear()
   ;(created || []).forEach((note) => selectedIds.add(note.id))
@@ -1003,6 +1113,13 @@ function paintLane () {
   else if (active.id === 'pedal') paintPedal(ctx, height, colour)
   else paintCurve(ctx, width, height, active.cc)
   ctx.restore()
+  if (laneRubber && laneRubber.w > 2 && laneRubber.h > 2) {
+    ctx.fillStyle = LITE_THEME.rubberFill
+    ctx.strokeStyle = LITE_THEME.rubberLine
+    ctx.lineWidth = 1
+    ctx.fillRect(laneRubber.x, laneRubber.y, laneRubber.w, laneRubber.h)
+    ctx.strokeRect(laneRubber.x, laneRubber.y, laneRubber.w, laneRubber.h)
+  }
   ctx.fillStyle = 'rgba(255,255,255,0.06)'
   ctx.fillRect(gx - 1, 0, 1, height)
 }
@@ -1273,6 +1390,12 @@ function onLaneMove (e) {
   markDirty()
   if (laneGesture.type === 'lane-rubber') {
     const beat = laneXToBeat(p.x)
+    laneRubber = {
+      x: Math.min(laneGesture.x0, p.x),
+      y: Math.min(laneGesture.y0, p.y),
+      w: Math.abs(p.x - laneGesture.x0),
+      h: Math.abs(p.y - laneGesture.y0)
+    }
     const a = Math.min(laneGesture.beat0, beat)
     const b = Math.max(laneGesture.beat0, beat)
     if (laneGesture.laneId === 'pedal') {
@@ -1404,6 +1527,7 @@ function onLaneUp () {
   const g = laneGesture
   clearLaneHold()
   laneGesture = null
+  laneRubber = null
   if (g.type === 'lane-rubber') {
     markDirty()
     return
@@ -1468,17 +1592,38 @@ watch(() => clip.value && clip.value.expression, () => markDirty(), { deep: true
 
 function onKey (e) {
   const tag = (e.target && e.target.tagName) || ''
-  if (tag === 'INPUT' || tag === 'TEXTAREA') return
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || session.typing || session.projectManagerOpen) return
+  const mod = e.ctrlKey || e.metaKey
+  const key = String(e.key || '').toLowerCase()
   if (e.code === 'Delete' || e.code === 'Backspace') {
     e.preventDefault()
     deleteSelected()
   } else if (e.key === 'Escape') {
-    goBack()
+    if (selectedIds.size) {
+      selectedIds.clear()
+      markDirty()
+    } else goBack()
+  } else if (mod && key === 'a') {
+    e.preventDefault()
+    notes.value.forEach((note) => selectedIds.add(note.id))
+    markDirty()
+  } else if (mod && key === 'c') {
+    e.preventDefault()
+    copyNotes()
+  } else if (mod && key === 'v') {
+    e.preventDefault()
+    pasteNotes()
+  } else if (mod && key === 'd') {
+    e.preventDefault()
+    duplicateSelected()
+  } else if (!mod && !e.altKey && key === 'c') {
+    chordTool.on = !chordTool.on
   }
 }
 
 onMounted(() => {
   mount()
+  session.pianoRollFocus = true
   window.addEventListener('keydown', onKey)
 })
 
@@ -1488,6 +1633,7 @@ onUnmounted(() => {
   stopPreview()
   flushNotePatches()
   unmount()
+  session.pianoRollFocus = false
   window.removeEventListener('keydown', onKey)
 })
 </script>
@@ -1578,6 +1724,28 @@ onUnmounted(() => {
   color: var(--lt-ink-2);
   font-size: var(--lt-fs-m);
 }
+.chord-bar {
+  height: 52px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+  box-shadow: inset 0 -1px 0 var(--lt-line);
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.chord-bar .lt-seg { flex-shrink: 0; }
+.chord-bar .lt-seg-item { min-width: 0; height: 34px; padding: 0 12px; white-space: nowrap; }
+.chord-bar .lt-chip { flex-shrink: 0; }
+.chord-name {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 15px;
+  font-weight: 650;
+  color: var(--lt-ink);
+  white-space: nowrap;
+}
 .roll-host {
   flex: 1;
   min-height: 0;
@@ -1601,7 +1769,7 @@ onUnmounted(() => {
   padding: 0;
   justify-content: center;
 }
-.lane-head .pen :deep(.icon) { width: 16px; height: 16px; }
+.lane-head .lane-selection { margin-left: auto; }
 .lane-hint {
   font-size: var(--lt-fs-s);
   color: var(--lt-ink-2);
@@ -1643,6 +1811,15 @@ onUnmounted(() => {
 .switch.on { background: var(--lt-accent); }
 .switch.on .knob { transform: translateX(18px); }
 @media (max-width: 900px) {
-  .tool text, .clip-name { display: none; }
+  .tool text, .clip-name, .icon-chip text { display: none; }
+  .tools { justify-content: flex-start; }
+}
+</style>
+<style>
+uni-view.chord-bar {
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
 }
 </style>

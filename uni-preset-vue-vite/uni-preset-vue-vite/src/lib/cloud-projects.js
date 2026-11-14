@@ -32,7 +32,12 @@ export function cloudErrorMessage (err, fallback = 'Cloud request failed') {
   if (/invalid login credentials/i.test(raw)) return 'Email or password is incorrect.'
   if (/email not confirmed/i.test(raw)) return 'Check your inbox and confirm your email first.'
   if (/rate limit/i.test(raw)) return 'Too many attempts. Try again in a minute.'
-  if (/network|fetch/i.test(raw)) return 'No connection. Check your network and try again.'
+  if (/failed to fetch|networkerror|network request failed|load failed|authretryablefetch/i.test(raw)) {
+    const offline = typeof navigator !== 'undefined' && navigator.onLine === false
+    return offline
+      ? 'No connection. Check your network and try again.'
+      : 'Could not reach the account service. Try again in a moment.'
+  }
   if (/row-level security|permission denied/i.test(raw)) return 'Sign in to use cloud projects.'
   return raw || fallback
 }

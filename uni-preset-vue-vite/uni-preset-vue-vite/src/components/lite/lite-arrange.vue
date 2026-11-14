@@ -188,6 +188,7 @@ import {
 import { beginPointerDrag, pointerCoord } from '../../lib/pointer-drag.js'
 import { visibleTrackRows, clipSourceLength, isGroupTrack, buildCollapsedGroupClip } from '../../model/playlist-model.js'
 import { bindFileDropZone } from '../../lib/file-drop.js'
+import { registerMediaDropTarget } from '../../store/media-library.js'
 import { applyClipDrag, clipEdgeAt, clipsInBand, pinchView, snapTo, RULER_SNAP_BEATS } from '../../model/arrange-gestures.js'
 import { interpolateBeats } from '../../model/timeline.js'
 import { audioFileBeats, audioSourceBeats, audioStretch, audioTrim, clipMatchesTrack } from '../../audio/audio-clips.js'
@@ -339,7 +340,10 @@ const bandStyle = computed(() => {
 function isGroup (track) { return isGroupTrack(track) }
 function childCount (group) { return session.tracks.filter((track) => track.parentId === group.id).length }
 function instrumentLabel (track) {
-  if (isAudioTrack(track)) return 'Add audio'
+  if (isAudioTrack(track)) {
+    const index = session.tracks.indexOf(track)
+    return session.clips.some((clip) => clip.trackIndex === index) ? 'Audio' : 'Add audio'
+  }
   if (!track.definitionId && !track.instrument) return 'Choose instrument'
   return track.instrument || 'Instrument'
 }
@@ -719,6 +723,22 @@ function cancelGesture () {
   band.value = null
 }
 
+/** Right-click: the same clip menu a long press opens. */
+function openClipMenuAt (clientX, clientY) {
+  const point = contentPoint(clientX, clientY)
+  const clip = clipUnder(point.x, point.y)
+  if (!clip || clip.virtual) {
+    menuOpen.value = false
+    return
+  }
+  const ids = session.selectedClipIds.includes(clip.id) ? session.selectedClipIds.slice() : [clip.id]
+  selectTrack(clip.trackIndex, { keepClips: true })
+  session.selectedClipIds = ids
+  const index = session.clips.findIndex((item) => item.id === clip.id)
+  if (index >= 0) session.selectedClip = index
+  menuOpen.value = true
+}
+
 function onDown (e) {
   const target = e.target && e.target.nodeType === 1 ? e.target : (e.target && e.target.parentElement)
   const inLanes = target && target.closest && target.closest('.lanes')
@@ -726,6 +746,10 @@ function onDown (e) {
   // one-finger drag into a pinch.
   if (!inLanes || !Number.isFinite(e.clientX)) return
   if (target.closest('.clip-menu, .env-hit')) return
+  if (e.button === 2) {
+    openClipMenuAt(e.clientX, e.clientY)
+    return
+  }
   if (e.isPrimary) {
     // First finger of a new sequence: forget any pointer whose lift we never saw.
     pointers.clear()
@@ -824,7 +848,7 @@ function onDown (e) {
     }
     return
   }
-  if (isTouchInput()) {
+  if (isTouchInput(e)) {
     gesture = {
       type: 'pan',
       startX: e.clientX,
@@ -1067,8 +1091,15 @@ function measure () {
   clampScroll()
 }
 
+function onContextMenu (e) {
+  const target = e.target && e.target.closest ? e.target : null
+  if (target && target.closest('input, textarea')) return
+  e.preventDefault()
+}
+
 const listeners = { body: null, ruler: null, lanes: null, heads: null }
 let unbindDrop = () => {}
+let unbindMediaDrop = () => {}
 onMounted(() => {
   const body = dom(bodyRef)
   const ruler = dom(rulerRef)
@@ -1088,11 +1119,28 @@ onMounted(() => {
     body.addEventListener('pointerup', onUp)
     body.addEventListener('pointercancel', onUp)
     body.addEventListener('lostpointercapture', onLost)
+    body.addEventListener('contextmenu', onContextMenu)
     listeners.body = body
   }
   if (lanes) {
     lanes.addEventListener('wheel', onWheel, { passive: false })
     listeners.lanes = lanes
+    unbindMediaDrop = registerMediaDropTarget({
+      el: lanes,
+      describe: (x, y, entry) => {
+        const point = contentPoint(x, y)
+        const row = rowAtY(point.y)
+        const bar = Math.floor(snapBeat(point.x / ppb.value) / beatsPerBar.value) + 1
+        const fits = row && row.track && isPlayableTrack(row.track) &&
+          (entry.kind === 'midi' ? row.track.type === 'midi' : (row.track.type === 'audio' || row.track.source === 'audio'))
+        return (fits ? row.track.name : 'New ' + (entry.kind === 'midi' ? 'MIDI' : 'audio') + ' track') + ' · bar ' + bar
+      },
+      drop: async (x, y, file) => {
+        const point = contentPoint(x, y)
+        const row = rowAtY(point.y)
+        await addClipFromFile(file, row ? row.index : -1, snapBeat(point.x / ppb.value))
+      }
+    })
     unbindDrop = bindFileDropZone(lanes, {
       onDrop: async (e, files) => {
         const point = contentPoint(e.clientX, e.clientY)
@@ -1136,12 +1184,14 @@ onUnmounted(() => {
     body.removeEventListener('pointerup', onUp)
     body.removeEventListener('pointercancel', onUp)
     body.removeEventListener('lostpointercapture', onLost)
+    body.removeEventListener('contextmenu', onContextMenu)
   }
   if (lanes) lanes.removeEventListener('wheel', onWheel)
   if (ruler) ruler.removeEventListener('pointerdown', onRulerDown)
   if (resizeObserver) resizeObserver.disconnect()
   if (typeof window !== 'undefined') window.removeEventListener('resize', measure)
   unbindDrop()
+  unbindMediaDrop()
   if (raf) cancelAnimationFrame(raf)
   raf = 0
 })

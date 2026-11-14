@@ -290,6 +290,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { bindFileDropZone, isFileDrag, filesFromDrop, resolveDom } from '../lib/file-drop.js'
 import { pointerCoord } from '../lib/pointer-drag.js'
+import { registerMediaDropTarget } from '../store/media-library.js'
 import DawIcon from './daw-icon.vue'
 import DawClipPreview from './daw-clip-preview.vue'
 import {
@@ -1322,6 +1323,25 @@ onMounted(async () => {
     ruler.addEventListener('pointerdown', onRuler)
     unbindFileDrop.push(() => ruler.removeEventListener('pointerdown', onRuler))
   }
+
+  unbindFileDrop.push(registerMediaDropTarget({
+    el: dropTargetDom(),
+    describe: (x, y, entry) => {
+      draggingFiles.value = true
+      updateDropGhost(x, y)
+      const { beat, row } = dropPointFromClient(x, y)
+      const track = row && row.track
+      const fits = track && (entry.kind === 'midi' ? track.type === 'midi' : (track.type === 'audio' || track.source === 'audio'))
+      const name = fits ? track.name : 'New ' + (entry.kind === 'midi' ? 'MIDI' : 'audio') + ' track'
+      return name + ' · bar ' + (Math.floor(beat / Math.max(1, session.timeSigNum || 4)) + 1)
+    },
+    leave: onDragLeave,
+    drop: async (x, y, file) => {
+      onDragLeave()
+      const { beat, trackIndex } = dropPointFromClient(x, y)
+      await importDroppedFiles([file], beat, trackIndex)
+    }
+  }))
 
   ;[plEl.value, boardEl.value, canvasEl.value, lanesEl.value, vScrollEl.value].forEach(addBind)
   if (typeof document !== 'undefined') {

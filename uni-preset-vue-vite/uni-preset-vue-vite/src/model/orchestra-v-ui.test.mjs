@@ -218,7 +218,7 @@ function validate (value, spec, path) {
 {
   const own = manifests['vms-symphonic']
   const symphonic = definitionsInLibrary('vms-symphonic').filter((def) => def.available)
-  assert(symphonic.length === 5, `expected 5 symphonic instruments, found ${symphonic.length}`)
+  assert(symphonic.length === 25, `expected 25 symphonic instruments, found ${symphonic.length}`)
 
   for (const def of symphonic) {
     const map = compileRegions(own.samples, def, own)

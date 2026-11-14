@@ -14,7 +14,7 @@
     <daw-le-hint />
     <daw-instrument-browser />
     <plugin-host />
-    <daw-project-manager />
+    <project-hub />
     <view v-if="session.toast" class="toast">{{ session.toast }}</view>
   </view>
 </template>
@@ -47,7 +47,7 @@ const liteTrackSheet = computed(() => {
 })
 const DawInstrumentBrowser = defineAsyncComponent(() => import('./daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('./dsp/plugin-host.vue'))
-const DawProjectManager = defineAsyncComponent(() => import('./daw-project-manager.vue'))
+const ProjectHub = defineAsyncComponent(() => import('./projects/project-hub.vue'))
 </script>
 
 <style scoped>

@@ -1,8 +1,9 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 
 export const FX_WORKLET_FILE = 'daw-fx-chain.js'
+export const COSMIC_WORKLET_FILE = 'daw-cosmic.js'
 
 async function workletSourceFromDisk (root) {
   const file = path.join(root, 'src', 'dsp', 'fx-worklet.js')
@@ -10,10 +11,17 @@ async function workletSourceFromDisk (root) {
   return String(mod.FX_WORKLET_SOURCE || '')
 }
 
-async function writePublicWorklet (root, source) {
+async function cosmicSourceFromDisk (root) {
+  const dsp = await readFile(path.join(root, 'src', 'dsp', 'cosmic', 'dsp.js'), 'utf8')
+  const tailFile = path.join(root, 'src', 'dsp', 'cosmic', 'processor-tail.js')
+  const mod = await import(pathToFileURL(tailFile).href + '?t=' + Date.now())
+  return dsp.replace(/^export /gm, '') + '\n' + String(mod.COSMIC_PROCESSOR_TAIL || '')
+}
+
+async function writePublicWorklet (root, fileName, source) {
   const dir = path.join(root, 'public')
   await mkdir(dir, { recursive: true })
-  await writeFile(path.join(dir, FX_WORKLET_FILE), source)
+  await writeFile(path.join(dir, fileName), source)
 }
 
 function sendWorklet (res, source) {
@@ -23,32 +31,39 @@ function sendWorklet (res, source) {
   res.end(source)
 }
 
-function isWorkletRequest (url) {
-  if (!url) return false
+function workletKind (url) {
+  if (!url) return ''
   const pathOnly = url.split('?')[0]
-  return pathOnly === '/' + FX_WORKLET_FILE || pathOnly.endsWith('/' + FX_WORKLET_FILE)
+  if (pathOnly === '/' + FX_WORKLET_FILE || pathOnly.endsWith('/' + FX_WORKLET_FILE)) return 'fx'
+  if (pathOnly === '/' + COSMIC_WORKLET_FILE || pathOnly.endsWith('/' + COSMIC_WORKLET_FILE)) return 'cosmic'
+  return ''
 }
 
-/** Serve / emit a same-origin AudioWorklet file. Safari rejects blob: and data: modules. */
+/** Serve / emit same-origin AudioWorklet files. Safari rejects blob: and data: modules. */
 export function dawFxWorkletPlugin () {
   return {
     name: 'daw-fx-worklet-file',
     async buildStart () {
       const root = process.cwd()
-      await writePublicWorklet(root, await workletSourceFromDisk(root))
+      await writePublicWorklet(root, FX_WORKLET_FILE, await workletSourceFromDisk(root))
+      await writePublicWorklet(root, COSMIC_WORKLET_FILE, await cosmicSourceFromDisk(root))
     },
     configureServer (server) {
       server.middlewares.use(async (req, res, next) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') return next()
-        if (!isWorkletRequest(req.url)) return next()
+        const kind = workletKind(req.url)
+        if (!kind) return next()
         try {
-          let source = ''
-          try {
-            const mod = await server.ssrLoadModule('/src/dsp/fx-worklet.js')
-            source = String(mod.FX_WORKLET_SOURCE || '')
-          } catch (err) {
-            source = await workletSourceFromDisk(server.config.root)
-          }
+          const source = kind === 'cosmic'
+            ? await cosmicSourceFromDisk(server.config.root)
+            : await (async () => {
+              try {
+                const mod = await server.ssrLoadModule('/src/dsp/fx-worklet.js')
+                return String(mod.FX_WORKLET_SOURCE || '')
+              } catch (err) {
+                return workletSourceFromDisk(server.config.root)
+              }
+            })()
           sendWorklet(res, source)
         } catch (err) {
           next(err)
@@ -57,8 +72,8 @@ export function dawFxWorkletPlugin () {
     },
     async generateBundle () {
       const root = process.cwd()
-      const source = await workletSourceFromDisk(root)
-      this.emitFile({ type: 'asset', fileName: FX_WORKLET_FILE, source })
+      this.emitFile({ type: 'asset', fileName: FX_WORKLET_FILE, source: await workletSourceFromDisk(root) })
+      this.emitFile({ type: 'asset', fileName: COSMIC_WORKLET_FILE, source: await cosmicSourceFromDisk(root) })
     }
   }
 }

@@ -58,7 +58,7 @@ const LIBRARY_TARGETS = {
   'vms-symphonic': {
     bucket: 'vms-symphonic',
     displayName: 'VMS Symphonic Orchestra',
-    defaultRoot: 'D:\\FL Plugin\\Sample library\\Xvert Sounds - Virtual Modelling Symphonic Orchestra',
+    defaultRoot: 'D:\\FL Plugin\\Sample library\\XSounds - Virtual Modelling Symphonic Orchestra',
     manifestOut: join(appRoot, 'src', 'audio', 'orchestra-v', 'vms-symphonic-manifest.json'),
     /**
      * Octave numbers in these filenames run from C0 = MIDI 0, so `_C5_` is middle C. The
@@ -297,7 +297,9 @@ function samplePacks () {
   const packs = new Map()
   for (const leaf of leaves) {
     const rel = relative(sampleRoot, leaf).split(sep)
-    const pack = rel.length >= 2 ? rel[rel.length - 2] : rel[0]
+    // Group/Instrument/Articulation uses the instrument folder. Group/Instrument with the
+    // wavs sitting directly inside (timpani, untuned percussion) uses that folder itself.
+    const pack = rel.length >= 3 ? rel[rel.length - 2] : rel[rel.length - 1]
     if (only && !pack.toLowerCase().includes(only)) continue
     if (!packs.has(pack)) packs.set(pack, [])
     packs.get(pack).push(leaf)
@@ -618,6 +620,10 @@ async function main () {
     const fresh = await encodeOggSegment(item.sample.absolute, item.dest, item.start, item.duration)
     if (fresh) encoded++
     else reused++
+    const done = encoded + reused
+    if (done % 100 === 0 || done === objects.length) {
+      console.log('  ' + done + ' / ' + objects.length + '  (encoded ' + encoded + ', reused ' + reused + ')')
+    }
     if (item.kind === 'body') {
       item.sample.encoded = item.dest
       item.sample.ref.bytes = statSync(item.dest).size

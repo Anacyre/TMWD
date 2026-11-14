@@ -11,6 +11,44 @@ const LS_RECENT = 'dawweb.recent'
 const LS_ACTIVE = 'dawweb.activeProject'
 const ASSET_BUDGET = 80 * 1024 * 1024
 
+/** Library owner: 'guest' or a Supabase user id. Rows saved before scoping existed have
+ * no owner and belong to the guest library, so nothing an account saved is ever listed
+ * for a signed-out visitor and nothing a guest saved shows up inside an account. */
+export const GUEST_OWNER = 'guest'
+let currentOwner = readStoredAuthOwner()
+
+function readStoredAuthOwner () {
+  if (typeof localStorage === 'undefined') return GUEST_OWNER
+  try {
+    const raw = JSON.parse(localStorage.getItem('dawweb.auth') || 'null')
+    const user = raw && (raw.user || (raw.currentSession && raw.currentSession.user))
+    return user && user.id ? String(user.id) : GUEST_OWNER
+  } catch (err) {
+    return GUEST_OWNER
+  }
+}
+
+export function ownerOf (row) {
+  return (row && row.owner) || GUEST_OWNER
+}
+
+export function getLibraryOwner () {
+  return currentOwner
+}
+
+export function setLibraryOwner (owner) {
+  currentOwner = owner ? String(owner) : GUEST_OWNER
+  return currentOwner
+}
+
+function scopedKey (base) {
+  return currentOwner === GUEST_OWNER ? base : base + '.' + currentOwner
+}
+
+function settingKey (key) {
+  return currentOwner === GUEST_OWNER ? key : key + ':' + currentOwner
+}
+
 let memory = null
 
 function memoryDb () {
@@ -84,14 +122,22 @@ async function writeProjectRecord (record) {
   }
 }
 
-export async function putProject (project) {
+export async function putProject (project, options = {}) {
   const record = {
     ...cloneForStore(project),
+    owner: options.owner || currentOwner,
     updatedAt: Date.now()
   }
   delete record.kind
   delete record.sourceId
   delete record.sourceName
+  if (record.id) {
+    const existing = await readProjectRow(record.id)
+    if (existing && ownerOf(existing) !== record.owner) {
+      record.id = 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8)
+      record.cloudId = ''
+    }
+  }
   await writeProjectRecord(record)
   writeFallback(record)
   return record
@@ -124,6 +170,7 @@ export async function putAutosave (project) {
   const record = {
     ...cloneForStore(project),
     id: 'as_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 6),
+    owner: currentOwner,
     kind: 'autosave',
     sourceId,
     sourceName: (project && project.name) || 'Untitled',
@@ -135,17 +182,20 @@ export async function putAutosave (project) {
   return record
 }
 
-export async function getProject (id) {
-  if (!id) return null
+async function readProjectRow (id) {
   if (hasIndexedDb()) {
     const db = await openDb()
     const tx = db.transaction(STORE_PROJECTS, 'readonly')
-    const row = await requestToPromise(tx.objectStore(STORE_PROJECTS).get(id))
-    if (row) return row
-  } else {
-    const row = memoryDb().projects.get(id)
-    if (row) return row
+    return (await requestToPromise(tx.objectStore(STORE_PROJECTS).get(id))) || null
   }
+  return memoryDb().projects.get(id) || null
+}
+
+/** A project from the current owner's library; another owner's row reads as missing. */
+export async function getProject (id) {
+  if (!id) return null
+  const row = await readProjectRow(id)
+  if (row) return ownerOf(row) === currentOwner ? row : null
   return readFallbackById(id)
 }
 
@@ -158,7 +208,38 @@ async function listProjectRows () {
   } else {
     rows = Array.from(memoryDb().projects.values())
   }
-  return (rows || []).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+  return (rows || [])
+    .filter((row) => ownerOf(row) === currentOwner)
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+}
+
+/** Saved (non-autosave) projects of one owner, regardless of the active library. */
+export async function listOwnerProjects (owner) {
+  const want = owner || GUEST_OWNER
+  let rows = []
+  if (hasIndexedDb()) {
+    const db = await openDb()
+    const tx = db.transaction(STORE_PROJECTS, 'readonly')
+    rows = await requestToPromise(tx.objectStore(STORE_PROJECTS).getAll())
+  } else {
+    rows = Array.from(memoryDb().projects.values())
+  }
+  return (rows || [])
+    .filter((row) => ownerOf(row) === want && !isAutosaveRecord(row))
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))
+}
+
+/** Hand a project to another owner (explicit "Move to my account"). `from` defaults to
+ * the active library. */
+export async function moveProjectToOwner (id, owner, from) {
+  const row = await readProjectRow(id)
+  if (!row || !owner || ownerOf(row) !== (from || currentOwner)) return null
+  const record = { ...row, owner: String(owner), updatedAt: Date.now() }
+  await writeProjectRecord(record)
+  const recent = readRecent().filter((item) => item.id !== id)
+  writeRecent(recent)
+  if (readActiveId() === id) writeActiveId('')
+  return record
 }
 
 export async function listProjects () {
@@ -171,6 +252,8 @@ export async function listAutosaves () {
 
 export async function deleteProject (id) {
   if (!id) return
+  const existing = await readProjectRow(id)
+  if (existing && ownerOf(existing) !== currentOwner) return
   if (hasIndexedDb()) {
     const db = await openDb()
     const tx = db.transaction(STORE_PROJECTS, 'readwrite')
@@ -191,8 +274,10 @@ export async function duplicateProject (id, name) {
     ...src,
     id: 'p_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 8),
     name: name || ((src.name || 'Untitled') + ' copy'),
+    cloudId: '',
     updatedAt: Date.now()
   }
+  if (copy.meta) copy.meta = { ...copy.meta, title: copy.name, publishedId: '', publishedAt: 0 }
   return putProject(copy)
 }
 
@@ -200,6 +285,7 @@ export async function renameProject (id, name) {
   const src = await getProject(id)
   if (!src) return null
   src.name = name
+  if (src.meta) src.meta = { ...src.meta, title: name }
   return putProject(src)
 }
 
@@ -284,18 +370,18 @@ export async function setSetting (key, value) {
 
 export async function setActiveProject (id) {
   writeActiveId(id)
-  await setSetting('activeProject', id)
+  await setSetting(settingKey('activeProject'), id)
 }
 
 export async function getActiveProjectId () {
-  const stored = await getSetting('activeProject')
+  const stored = await getSetting(settingKey('activeProject'))
   return stored || readActiveId()
 }
 
 export function readRecent () {
-  if (typeof localStorage === 'undefined') return memoryDb().settings.get('recent') || []
+  if (typeof localStorage === 'undefined') return memoryDb().settings.get(settingKey('recent')) || []
   try {
-    return JSON.parse(localStorage.getItem(LS_RECENT) || '[]') || []
+    return JSON.parse(localStorage.getItem(scopedKey(LS_RECENT)) || '[]') || []
   } catch (err) {
     return []
   }
@@ -304,10 +390,10 @@ export function readRecent () {
 export function writeRecent (list) {
   const next = (list || []).slice(0, 8)
   if (typeof localStorage === 'undefined') {
-    memoryDb().settings.set('recent', next)
+    memoryDb().settings.set(settingKey('recent'), next)
     return
   }
-  try { localStorage.setItem(LS_RECENT, JSON.stringify(next)) } catch (err) { /* quota */ }
+  try { localStorage.setItem(scopedKey(LS_RECENT), JSON.stringify(next)) } catch (err) { /* quota */ }
 }
 
 export function rememberRecent (entry) {
@@ -323,30 +409,31 @@ export function isAutosaveRecord (row) {
 
 function writeFallback (record) {
   if (typeof localStorage === 'undefined' || isAutosaveRecord(record)) return
+  if (ownerOf(record) !== currentOwner) return
   try {
     const slim = { ...record, webMixer: record.webMixer }
-    localStorage.setItem(LS_LAST, JSON.stringify(slim))
+    localStorage.setItem(scopedKey(LS_LAST), JSON.stringify(slim))
   } catch (err) { /* quota */ }
 }
 
 function readFallbackById (id) {
   if (typeof localStorage === 'undefined') return null
   try {
-    const last = JSON.parse(localStorage.getItem(LS_LAST) || 'null')
-    if (last && last.id === id) return last
+    const last = JSON.parse(localStorage.getItem(scopedKey(LS_LAST)) || 'null')
+    if (last && last.id === id && ownerOf(last) === currentOwner) return last
   } catch (err) { /* ignore */ }
   return null
 }
 
 function readActiveId () {
   if (typeof localStorage === 'undefined') return ''
-  return localStorage.getItem(LS_ACTIVE) || ''
+  return localStorage.getItem(scopedKey(LS_ACTIVE)) || ''
 }
 
 function writeActiveId (id) {
   if (typeof localStorage === 'undefined') return
-  if (id) localStorage.setItem(LS_ACTIVE, id)
-  else localStorage.removeItem(LS_ACTIVE)
+  if (id) localStorage.setItem(scopedKey(LS_ACTIVE), id)
+  else localStorage.removeItem(scopedKey(LS_ACTIVE))
 }
 
 export async function hashBlob (blob) {
@@ -365,4 +452,10 @@ export function resetMemoryDb () {
   memory = null
 }
 
-export const FALLBACK_KEYS = { LS_AUTOSAVE, LS_LAST, LS_RECENT, LS_ACTIVE }
+/** localStorage keys for the current owner. Guest keys keep their historical names. */
+export const FALLBACK_KEYS = {
+  get LS_AUTOSAVE () { return scopedKey(LS_AUTOSAVE) },
+  get LS_LAST () { return scopedKey(LS_LAST) },
+  get LS_RECENT () { return scopedKey(LS_RECENT) },
+  get LS_ACTIVE () { return scopedKey(LS_ACTIVE) }
+}

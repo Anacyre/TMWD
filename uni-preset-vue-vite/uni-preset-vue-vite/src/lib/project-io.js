@@ -149,13 +149,15 @@ export function migrateProject (raw) {
   const tempo = src.tempo != null ? Number(src.tempo) : Number(src.bpm != null ? src.bpm : 120)
   const tracks = Array.isArray(src.tracks) ? src.tracks.map(migrateTrack) : []
   const clips = Array.isArray(src.clips) ? src.clips.map(migrateClip) : []
+  const name = src.name || src.projectName || (src.meta && src.meta.title) || 'Untitled'
   return {
     schemaVersion: SCHEMA_VERSION,
     projectVersion: SCHEMA_VERSION,
     migratedFrom: schemaVersion,
     id: src.id || src.projectId || '',
     cloudId: src.cloudId || '',
-    name: src.name || src.projectName || 'Untitled',
+    name,
+    meta: normalizeProjectMeta(src.meta, name),
     tempo,
     bpm: tempo,
     timeSigNumerator: src.timeSigNumerator || 4,
@@ -178,6 +180,29 @@ export function migrateProject (raw) {
   }
 }
 
+export const META_LIMITS = { title: 80, description: 1000, creator: 40, tag: 24, tags: 6 }
+
+/** Title, description, creator and tags used by the project details card and publishing.
+ * `title` always mirrors the project name. */
+export function normalizeProjectMeta (meta, name) {
+  const src = meta && typeof meta === 'object' ? meta : {}
+  const text = (value, max) => String(value == null ? '' : value).replace(/\s+/g, ' ').trim().slice(0, max)
+  const tags = Array.isArray(src.tags) ? src.tags : String(src.tags || '').split(',')
+  const seen = new Set()
+  return {
+    title: text(name || src.title || 'Untitled', META_LIMITS.title) || 'Untitled',
+    description: String(src.description == null ? '' : src.description).trim().slice(0, META_LIMITS.description),
+    creator: text(src.creator, META_LIMITS.creator),
+    tags: tags.map((tag) => text(tag, META_LIMITS.tag).toLowerCase()).filter((tag) => {
+      if (!tag || seen.has(tag)) return false
+      seen.add(tag)
+      return true
+    }).slice(0, META_LIMITS.tags),
+    publishedId: text(src.publishedId, 64),
+    publishedAt: Number(src.publishedAt) || 0
+  }
+}
+
 /** Drop Vue proxies, functions and AudioBuffers so IndexedDB structured clone succeeds. */
 export function clonePlain (value) {
   try {
@@ -193,6 +218,7 @@ export function serializeSession (session) {
     id: session.projectId || uid(),
     cloudId: session.cloudId || '',
     name: session.projectName,
+    meta: session.projectMeta,
     tempo: session.bpm,
     bpm: session.bpm,
     timeSigNumerator: session.timeSigNum,

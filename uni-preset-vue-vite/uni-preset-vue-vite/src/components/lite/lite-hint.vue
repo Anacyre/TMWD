@@ -1,15 +1,18 @@
 <template>
   <view v-if="!session.liteHintDismissed" class="hint">
     <view class="lines">
-      <text class="main">{{ session.inputMode === 'touch' ? 'One finger scrolls · Pinch to zoom' : 'One finger edits · Two fingers move and zoom' }}</text>
-      <text class="sub">{{ session.inputMode === 'touch' ? 'Drag a clip to move it. Double-tap a clip to open it.' : 'Double-tap an empty lane to add a clip. Double-tap a clip to open it.' }}</text>
+      <text class="main">{{ touch ? 'One finger scrolls · Pinch to zoom' : 'Drag to select · Scroll wheel moves, Ctrl zooms' }}</text>
+      <text class="sub">{{ touch ? 'Drag a clip to move it. Double-tap a clip to open it.' : 'Double-click an empty lane to add a clip, or a clip to open it. Right-click a clip for more.' }}</text>
     </view>
     <view class="ok" @click.stop="dismissLiteHint">Got it</view>
   </view>
 </template>
 
 <script setup>
-import { session, dismissLiteHint } from '../../store/session.js'
+import { computed } from 'vue'
+import { session, dismissLiteHint, isTouchInput } from '../../store/session.js'
+
+const touch = computed(() => isTouchInput())
 </script>
 
 <style scoped>

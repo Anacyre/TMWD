@@ -2,11 +2,13 @@ import { defineConfig } from 'vite'
 import uni from '@dcloudio/vite-plugin-uni'
 import { dawFxWorkletPlugin } from './scripts/daw-fx-worklet-vite-plugin.mjs'
 import { dawOrchestraSamplesPlugin } from './scripts/daw-orchestra-samples-vite-plugin.mjs'
+import { dawPwaPlugin } from './scripts/daw-pwa-vite-plugin.mjs'
 
 export default defineConfig({
   plugins: [
     dawOrchestraSamplesPlugin(),
     dawFxWorkletPlugin(),
+    dawPwaPlugin(),
     uni(),
   ],
   build: {

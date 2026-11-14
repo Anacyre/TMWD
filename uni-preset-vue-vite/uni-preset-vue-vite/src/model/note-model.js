@@ -286,10 +286,25 @@ export function selectionBounds (notes) {
   return { startTick, endTick, lengthTick: Math.max(MIN_DURATION_TICKS, endTick - startTick), minPitch, maxPitch }
 }
 
-export function duplicateNotes (notes, offsetTick) {
+/** `firstGroup` (optional) renumbers note groups from that id, so a copied chord is its
+ * own group instead of joining the original. */
+export function duplicateNotes (notes, offsetTick, firstGroup) {
   const bounds = selectionBounds(notes)
   const shift = offsetTick != null ? offsetTick : bounds.lengthTick
-  return (notes || []).map((note) => cloneNote(note, { id: 0, startTick: Math.max(0, (note.startTick || 0) + shift) }))
+  const groups = new Map()
+  let next = Number(firstGroup) || 0
+  return (notes || []).map((note) => {
+    const patch = { id: 0, startTick: Math.max(0, (note.startTick || 0) + shift) }
+    if (next && note.group) {
+      if (!groups.has(note.group)) groups.set(note.group, next++)
+      patch.group = groups.get(note.group)
+    }
+    return cloneNote(note, patch)
+  })
+}
+
+export function nextNoteGroup (notes) {
+  return Math.max(0, ...((notes || []).map((note) => Number(note.group) || 0))) + 1
 }
 
 /**

@@ -12,6 +12,7 @@ node_modules
 dist
 *.local
 public/daw-fx-chain.js
+public/daw-cosmic.js
 
 # Encoded output of scripts/publish-sample-library.mjs. Rebuildable from the WAV originals.
 # sample-libraries/ is the copy Cloudflare CI actually ships; do not ignore it.

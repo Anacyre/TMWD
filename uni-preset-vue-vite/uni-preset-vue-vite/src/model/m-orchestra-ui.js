@@ -10,6 +10,9 @@ export const TEST_SYNTH_PLUGIN_ID = 'test_synth'
 export const WEB_SAMPLER_PLUGIN_ID = 'web_sampler'
 export const TWIN_PLUGIN_ID = 'twin'
 export const SF2_PLUGIN_ID = 'sf2_sampler'
+export const COSMIC_PLUGIN_ID = 'cosmic-2'
+export const COSMIC_LEGACY_IDS = ['cosmic-1']
+export const COSMIC_DISPLAY_NAME = 'Cosmic 2'
 
 export const FAMILIES = [
   { id: 'strings', label: 'Strings', icon: 'family-strings' },
@@ -157,6 +160,7 @@ export function insertablePlugins (options = {}) {
     },
     { id: TEST_SYNTH_PLUGIN_ID, displayName: 'Test Synth', detail: 'Built-in', available: true },
     { id: TWIN_PLUGIN_ID, displayName: 'Twin', detail: '3-osc synth, filters, modulation', available: true },
+    { id: COSMIC_PLUGIN_ID, displayName: COSMIC_DISPLAY_NAME, detail: 'Wavetable synth', available: true },
     { id: SF2_PLUGIN_ID, displayName: 'Sampler', detail: 'SoundFont and dropped samples', available: true }
   ]
   if (options.includeWebSampler !== false) {
@@ -168,6 +172,20 @@ export function insertablePlugins (options = {}) {
 export function isTwinTrack (track) {
   if (!track) return false
   return track.source === 'twin' || track.definitionId === TWIN_PLUGIN_ID
+}
+
+export function isCosmicTrack (track) {
+  if (!track) return false
+  return track.source === 'cosmic' || track.definitionId === COSMIC_PLUGIN_ID || COSMIC_LEGACY_IDS.includes(track.definitionId)
+}
+
+/** Cosmic 1 tracks open as Cosmic 2: same patch format, new engine. */
+export function upgradeCosmicTrack (track) {
+  if (!track || !COSMIC_LEGACY_IDS.includes(track.definitionId)) return track
+  track.definitionId = COSMIC_PLUGIN_ID
+  if (!track.instrument || track.instrument === 'Cosmic 1') track.instrument = COSMIC_DISPLAY_NAME
+  if (track.loadMessage === 'Cosmic 1') track.loadMessage = COSMIC_DISPLAY_NAME
+  return track
 }
 
 export function isSf2Track (track) {

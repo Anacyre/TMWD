@@ -2,15 +2,18 @@
   <view class="lt lite-app">
     <lite-topbar />
     <view class="work">
-      <lite-mixer v-if="view === 'mixer'" />
-      <lite-arrange v-else />
+      <view class="work-main">
+        <lite-mixer v-if="view === 'mixer'" />
+        <lite-arrange v-else />
+      </view>
+      <media-library v-if="session.libraryOpen && view !== 'mixer'" class="work-side" @close="session.libraryOpen = false" />
     </view>
     <lite-piano-roll v-if="view === 'piano'" />
     <lite-track-sheet />
     <lite-settings />
     <daw-instrument-browser />
     <plugin-host />
-    <daw-project-manager />
+    <project-hub />
     <lite-hint />
     <lite-toast />
   </view>
@@ -33,7 +36,8 @@ const LiteTrackSheet = defineAsyncComponent(() => import('./lite-track-sheet.vue
 const LiteSettings = defineAsyncComponent(() => import('./lite-settings.vue'))
 const DawInstrumentBrowser = defineAsyncComponent(() => import('../daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('../dsp/plugin-host.vue'))
-const DawProjectManager = defineAsyncComponent(() => import('../daw-project-manager.vue'))
+const ProjectHub = defineAsyncComponent(() => import('../projects/project-hub.vue'))
+const MediaLibrary = defineAsyncComponent(() => import('../library/media-library.vue'))
 
 const view = computed(() => session.workspaceView)
 </script>
@@ -54,11 +58,22 @@ const view = computed(() => session.workspaceView)
   flex: 1;
   min-height: 0;
   display: flex;
-  flex-direction: column;
   overflow: hidden;
   position: relative;
 }
-.work > * { flex: 1 1 auto; min-height: 0; width: 100%; }
+.work-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+}
+.work-main > * { flex: 1 1 auto; min-height: 0; width: 100%; }
+.work-side { width: 300px; flex: 0 0 auto; }
+@media (max-width: 900px) {
+  .work-side { width: 260px; }
+}
 </style>
 <style>
 html.daw-pointer-lock, html.daw-pointer-lock body {

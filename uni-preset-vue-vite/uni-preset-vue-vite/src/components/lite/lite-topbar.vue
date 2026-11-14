@@ -2,6 +2,7 @@
   <view class="bar">
     <view class="side left">
       <view class="project" aria-label="Projects" @click.stop="openProjects">
+        <view class="save-dot" :class="{ on: session.unsaved }" :title="session.unsaved ? 'Unsaved changes' : 'Saved'" />
         <text class="name">{{ session.projectName || 'Untitled' }}</text>
         <daw-icon name="chevron" :size="14" color="currentColor" />
       </view>
@@ -42,6 +43,16 @@
     </view>
 
     <view class="side right">
+      <view
+        v-if="view !== 'mixer' && view !== 'piano'"
+        class="lt-hit"
+        :class="{ on: session.libraryOpen }"
+        aria-label="Library"
+        title="Library"
+        @click.stop="session.libraryOpen = !session.libraryOpen"
+      >
+        <daw-icon name="library" :size="20" color="currentColor" />
+      </view>
       <view class="lt-hit" :class="{ dim: !session.canUndo }" aria-label="Undo" @click.stop="undoEdit">
         <daw-icon name="undo" :size="20" color="currentColor" />
       </view>
@@ -148,6 +159,15 @@ function commitBpm (e) {
   box-sizing: border-box;
 }
 .project:active { background: var(--lt-s2); }
+.save-dot {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border-radius: 50%;
+  background: transparent;
+  transition: background 0.2s;
+}
+.save-dot.on { background: #f0b44c; }
 .name {
   display: block;
   flex: none;

@@ -29,8 +29,9 @@ export function collectBounceEvents (session) {
     const orch = !orchestraV && isMOrchestraTrack(track)
     const sampler = track.source === 'web-sampler'
     const twin = track.source === 'twin' || track.definitionId === 'twin'
+    const cosmic = track.source === 'cosmic' || /^cosmic-\d$/.test(track.definitionId || '')
     const sf2 = track.source === 'sf2' || track.definitionId === 'sf2_sampler'
-    if (!orchestraV && !orch && !sampler && !twin && !sf2) return
+    if (!orchestraV && !orch && !sampler && !twin && !cosmic && !sf2) return
     ;(clip.notes || []).forEach((note) => {
       if (!note || note.muted) return
       expandRepeats(note).forEach((slice) => {
@@ -38,7 +39,7 @@ export function collectBounceEvents (session) {
         const duration = slice.duration != null ? slice.duration : ((slice.durationTick || 240) / TICKS_PER_BEAT)
         endBeat = Math.max(endBeat, start + duration)
         events.push({
-          kind: orchestraV ? 'orchestra-v' : (orch ? 'm-orchestra' : (twin ? 'twin' : (sf2 ? 'sf2' : 'web-sampler'))),
+          kind: orchestraV ? 'orchestra-v' : (orch ? 'm-orchestra' : (twin ? 'twin' : (cosmic ? 'cosmic' : (sf2 ? 'sf2' : 'web-sampler')))),
           track,
           pitch: slice.pitch,
           velocity: noteVelocity(slice),
@@ -162,6 +163,11 @@ export async function bounceSessionToWav (session, options = {}) {
   }
   if (events.some((event) => event.kind === 'twin')) {
     renderers.twin = (await import('../dsp/synth/engine.js')).renderNoteAt
+  }
+  if (events.some((event) => event.kind === 'cosmic')) {
+    const cosmic = await import('../dsp/cosmic/engine.js')
+    cosmic.setClock(bpm)
+    renderers.cosmic = cosmic.renderNoteAt
   }
   if (events.some((event) => event.kind === 'sf2')) {
     renderers.sf2 = (await import('./sf2/engine.js')).renderNoteAt

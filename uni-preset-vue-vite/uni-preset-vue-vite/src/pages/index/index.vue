@@ -10,6 +10,7 @@
         v-show="showArrangement"
         class="arrange"
       >
+        <media-library v-if="session.libraryOpen && !isPhone" class="library-wrap" @close="session.libraryOpen = false" />
         <daw-playlist />
         <view
           v-if="session.inspectorVisible && !isPhone"
@@ -53,7 +54,7 @@
     <daw-instrument-browser />
     <daw-diagnostics />
     <lite-settings />
-    <daw-project-manager />
+    <project-hub />
     <view v-if="session.toast" class="toast">{{ session.toast }}</view>
     </view>
     <plugin-host v-if="!lite" />
@@ -80,7 +81,8 @@ const DawDiagnostics = defineAsyncComponent(() => import('../../components/daw-d
 const DawInstrumentBrowser = defineAsyncComponent(() => import('../../components/daw-instrument-browser.vue'))
 const PluginHost = defineAsyncComponent(() => import('../../components/dsp/plugin-host.vue'))
 const LiteSettings = defineAsyncComponent(() => import('../../components/lite/lite-settings.vue'))
-const DawProjectManager = defineAsyncComponent(() => import('../../components/daw-project-manager.vue'))
+const ProjectHub = defineAsyncComponent(() => import('../../components/projects/project-hub.vue'))
+const MediaLibrary = defineAsyncComponent(() => import('../../components/library/media-library.vue'))
 import {
   session,
   engineModeClass,
@@ -262,6 +264,7 @@ onUnmounted(() => {
   display: flex;
   min-height: 0;
 }
+.library-wrap { width: 280px; flex-shrink: 0; height: 100%; }
 .inspector-wrap, .editor-wrap, .mixer-wrap {
   flex-shrink: 0;
   height: 100%;
