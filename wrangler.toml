@@ -4,10 +4,10 @@ name = "tech-media-sound-station"
 compatibility_date = "2026-08-28"
 workers_dev = true
 
-# Cloudflare Workers CI often runs `npx wrangler deploy` only. Wrangler runs this
-# before uploading static assets (same command as root `npm run build:web`).
+# Local deploy rebuilds the H5 app without `npm ci`. A clean install deletes
+# esbuild while the dev server is running, and this machine then runs out of memory.
 [build]
-command = "npm run build:web"
+command = "set NODE_OPTIONS=--max-old-space-size=2048&& npm run build:h5 --prefix uni-preset-vue-vite/uni-preset-vue-vite"
 
 [assets]
 directory = "./uni-preset-vue-vite/uni-preset-vue-vite/dist/build/h5"

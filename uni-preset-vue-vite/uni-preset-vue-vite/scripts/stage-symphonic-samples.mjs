@@ -1,17 +1,15 @@
 /**
- * Copy the VMS Symphonic cache into the H5 build so the Cloudflare site can serve it.
- *
- * The Supabase bucket for this library answers 400. Object paths spell sharps as `As4`;
- * the cache still has `A#4`, so the copy renames those to match the manifest.
+ * The Cloudflare site does not host this library. Production playback reads the public
+ * Supabase bucket, so the Worker build must not fail while looking for a local copy.
+ * `--vendor` still copies the disk cache into sample-libraries for a manual snapshot.
  */
-import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const appRoot = join(dirname(fileURLToPath(import.meta.url)), '..')
 const cache = join(appRoot, '.sample-cache', 'vms-symphonic')
 const tracked = join(appRoot, 'sample-libraries', 'vms-symphonic')
-const destRoot = join(appRoot, 'dist', 'build', 'h5', 'vms-symphonic')
 
 function urlName (name) {
   return name.replace(/([A-G])#(-?\d)/g, '$1s$2')
@@ -51,23 +49,4 @@ if (!existsSync(join(appRoot, 'dist', 'build', 'h5'))) {
   process.exit(1)
 }
 
-if (existsSync(join(tracked, 'samples'))) {
-  walk(tracked, destRoot, '', copied, false)
-} else if (existsSync(cache)) {
-  walk(cache, join(destRoot, 'samples'), '', copied, true)
-} else {
-  console.error('[stage-symphonic] no samples in sample-libraries/vms-symphonic or .sample-cache/vms-symphonic')
-  process.exit(1)
-}
-
-const probe = join(destRoot, 'samples', '1st Violins', '1st Violins Long', '1st Violins_As4_127.ogg')
-if (!existsSync(probe)) {
-  console.error('[stage-symphonic] expected sample missing after copy: ' + probe)
-  process.exit(1)
-}
-console.log('[stage-symphonic] copied ' + copied.count + ' files (' + (copied.bytes / 1048576).toFixed(1) + ' MB)')
-writeFileSync(join(appRoot, 'dist', 'build', 'h5', '_headers'), [
-  '/vms-symphonic/*.ogg',
-  '  Cache-Control: public, max-age=604800',
-  ''
-].join('\n'))
+console.log('[stage-symphonic] production samples stay on Supabase; not copying them into the Worker')

@@ -13,6 +13,9 @@ export default defineConfig({
   ],
   build: {
     chunkSizeWarningLimit: 1200,
+    // esbuild minify stays in one process. The default terser pool uses every
+    // CPU and this machine runs out of memory before the bundle is written.
+    minify: 'esbuild',
     rollupOptions: {
       output: {
         /*  The M Orchestra manifest alone is ~2.2 MB and is only reachable
