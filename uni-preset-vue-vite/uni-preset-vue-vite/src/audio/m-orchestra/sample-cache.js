@@ -33,6 +33,18 @@ export async function readEncodedSample (key) {
   })
 }
 
+export async function forgetEncodedSample (key) {
+  const database = await db()
+  if (!database || !key) return false
+  return new Promise((resolve) => {
+    const tx = database.transaction(STORE_NAME, 'readwrite')
+    tx.objectStore(STORE_NAME).delete(key)
+    tx.oncomplete = () => resolve(true)
+    tx.onerror = () => resolve(false)
+    tx.onabort = () => resolve(false)
+  })
+}
+
 export async function writeEncodedSample (key, bytes) {
   const database = await db()
   if (!database || !(bytes instanceof ArrayBuffer)) return false

@@ -11,13 +11,14 @@
 
 import { trackInputNode } from '../mixer-graph.js'
 import { SAMPLE_DEADLINE_MS } from './prepare-window.js'
-import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
+import { AsyncLimiter, AudioBufferLru, forgetEncodedSample, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
 import { findDefinition, libraryOf } from './catalog.js'
 import { articulationChain, compileRegions, selectZone, zonesForVelocity } from './sfz.js'
 import { ensureManifest, librarySamples, playbackRules, sampleCount, sampleUrl } from './library.js'
 import { releasePlan } from './release.js'
+import { isOggPayload, playableOffset, safeLoopRange } from './decode-format.js'
 
 export { ensureManifest, sampleCount } from './library.js'
 export { findDefinition } from './catalog.js'
@@ -31,7 +32,7 @@ const TECHNIQUE_ARTIC = {
   ov_hit: 'hit'
 }
 
-const DECODE_TAG = '|ov-v2'
+const DECODE_TAG = '|ov-v3'
 const PITCH_BEND_SEMITONES = 2
 /** Longest a sustain pedal may hold a released voice. */
 const HOLD_LIMIT_MS = 60000
@@ -235,6 +236,8 @@ function releaseVorbisDecoder (decoder) {
 }
 
 /** Safari cannot decode Ogg Vorbis with decodeAudioData. Decode to PCM instead.
+ *  decode() without flush keeps only the first pages, which drops the sustain
+ *  loop on a 2 s body. decodeFile reads the whole file.
  *  iPad stays silent when the buffer rate is not the context rate, and copyToChannel
  *  rejects a view into WASM memory, so the PCM is copied and resampled first. */
 async function decodeVorbis (context, bytes) {
@@ -242,7 +245,8 @@ async function decodeVorbis (context, bytes) {
   try {
     if (decoder._used) await decoder.reset()
     decoder._used = true
-    const decoded = await decoder.decode(new Uint8Array(bytes))
+    const decoded = await decoder.decodeFile(new Uint8Array(bytes))
+    decoder._used = false
     const channels = decoded.channelData || []
     const length = decoded.samplesDecoded || (channels[0] && channels[0].length) || 0
     const fileRate = decoded.sampleRate || context.sampleRate
@@ -275,11 +279,15 @@ async function decodeVorbis (context, bytes) {
 }
 
 async function decodeSampleBytes (context, bytes) {
-  try {
-    const audio = await context.decodeAudioData(bytes.slice(0))
-    if (audio && audio.length > 0 && audio.duration > 0) return audio
-  } catch (err) {
-    /* iPad / Safari rejects application/ogg */
+  // Ogg must not touch decodeAudioData. On iPad that call hangs for some files
+  // and rejects for others, so the note times out before the wasm decoder runs.
+  if (!isOggPayload(bytes)) {
+    try {
+      const audio = await context.decodeAudioData(bytes.slice(0))
+      if (audio && audio.length > 0 && audio.duration > 0) return audio
+    } catch (err) {
+      /* Safari rejects the odd compressed file. Fall through. */
+    }
   }
   return decodeVorbis(context, bytes)
 }
@@ -421,6 +429,7 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
     return decoded
     } catch (err) {
       failedDecodes.add(key)
+      forgetEncodedSample(cachePath(library, zone.sample)).catch(() => {})
       throw err
     } finally {
       clearTimeout(timer)
@@ -467,6 +476,9 @@ async function decodeRelease (context, library, zone, priority = false) {
       const decoded = { audio, loop: false, loopStart: 0, loopEnd: 0, releaseStart: 0, separate: true, key }
       bufferCache.set(key, decoded)
       return decoded
+    } catch (err) {
+      forgetEncodedSample(cachePath(library, zone.releaseSample)).catch(() => {})
+      throw err
     } finally {
       clearTimeout(timer)
     }
@@ -686,11 +698,17 @@ function playReleaseSegment (voice, context, at) {
   const from = split && split.audio ? 0 : (decoded.releaseStart || 0)
   const remaining = Math.max(0.05, buffer.duration - from)
 
+  const fromSample = playableOffset(from, buffer.duration)
+  if (fromSample < 0) {
+    const fade = damperSeconds(voice)
+    fadeOutEnvelope(voice, at, fade)
+    return fade
+  }
   const tail = context.createBufferSource()
   tail.buffer = buffer
   tail.playbackRate.value = rate
   tail.connect(voice.tail)
-  tail.start(at, from)
+  tail.start(at, fromSample)
   tail.stop(at + remaining / rate + 0.02)
   // Body-only. Putting the tail on `bodySources` would let `stopBody` kill it after ~80 ms.
   voice.sources.push(tail)
@@ -806,6 +824,39 @@ function seqStateFor (trackId) {
 
 // --- playback ------------------------------------------------------------------
 
+function applyLoop (source, decoded) {
+  const loop = decoded && decoded.loop
+    ? safeLoopRange(decoded.loopStart, decoded.loopEnd, decoded.audio && decoded.audio.duration)
+    : null
+  if (!loop) return
+  try {
+    source.loop = true
+    source.loopStart = loop.loopStart
+    source.loopEnd = loop.loopEnd
+  } catch (err) {
+    try { source.loop = false } catch (ignore) { /* WebKit */ }
+  }
+}
+
+/** WebKit throws IndexSizeError when a loop or offset sits past the buffer, which
+ * used to reject the whole note. Drop the loop and try once more. */
+function startBufferSource (source, when, offset) {
+  const at = Number.isFinite(when) ? when : 0
+  try {
+    if (offset > 0) source.start(at, offset)
+    else source.start(at)
+    return true
+  } catch (err) {
+    try {
+      source.loop = false
+      source.start(at)
+      return true
+    } catch (err2) {
+      return false
+    }
+  }
+}
+
 function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, detuneCents, when) {
   const source = context.createBufferSource()
   source.buffer = decoded.audio
@@ -814,11 +865,7 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
     : Math.max(-rules.maxStretchSemitones, Math.min(rules.maxStretchSemitones, pitch - item.zone.pitchKeycenter))
   const rate = Math.pow(2, (semitones + ctrl.bend * PITCH_BEND_SEMITONES + detuneCents / 100) / 12)
   source.playbackRate.value = rate
-  if (decoded.loop && decoded.loopEnd - decoded.loopStart > 0.4) {
-    source.loop = true
-    source.loopStart = decoded.loopStart
-    source.loopEnd = decoded.loopEnd
-  }
+  applyLoop(source, decoded)
 
   const panner = context.createStereoPanner()
   const width = (def.voiceModel && def.voiceModel.sectionSize) > 1 ? 0.3 : 0
@@ -831,7 +878,7 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
   panner.connect(gain)
   gain.connect(voice.body)
   const startAt = when == null ? context.currentTime : Math.max(context.currentTime, when)
-  source.start(startAt)
+  if (!startBufferSource(source, startAt)) return null
   voice.sources.push(source)
   if (!voice.bodySources) voice.bodySources = []
   voice.bodySources.push(source)
@@ -1329,11 +1376,7 @@ export async function renderNoteAt (context, dest, track, pitch, velocity, when,
       : Math.max(-rules.maxStretchSemitones, Math.min(rules.maxStretchSemitones, pitch - item.zone.pitchKeycenter))
     const rate = Math.pow(2, semitones / 12)
     source.playbackRate.value = rate
-    if (decoded.loop && decoded.loopEnd - decoded.loopStart > 0.4) {
-      source.loop = true
-      source.loopStart = decoded.loopStart
-      source.loopEnd = decoded.loopEnd
-    }
+    applyLoop(source, decoded)
     const peak = level * item.gain
     const gain = context.createGain()
     source.connect(gain)
@@ -1374,8 +1417,11 @@ export async function renderNoteAt (context, dest, track, pitch, velocity, when,
       crossfade(tailGain.gain, scaleCurve(FADE_IN, peak), start + hold, fade)
       tail.connect(tailGain)
       tailGain.connect(space.input)
-      tail.start(start + hold, tailFrom)
-      tail.stop(start + hold + remaining + 0.02)
+      const tailOffset = playableOffset(tailFrom, tailBuffer.duration)
+      if (tailOffset >= 0) {
+        tail.start(start + hold, tailOffset)
+        tail.stop(start + hold + remaining + 0.02)
+      }
       continue
     }
 
