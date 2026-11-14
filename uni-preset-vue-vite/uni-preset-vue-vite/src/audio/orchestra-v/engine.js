@@ -234,7 +234,9 @@ function releaseVorbisDecoder (decoder) {
   else vorbisIdle.push(decoder)
 }
 
-/** Safari cannot decode Ogg Vorbis with decodeAudioData. Decode to PCM instead. */
+/** Safari cannot decode Ogg Vorbis with decodeAudioData. Decode to PCM instead.
+ *  iPad stays silent when the buffer rate is not the context rate, and copyToChannel
+ *  rejects a view into WASM memory, so the PCM is copied and resampled first. */
 async function decodeVorbis (context, bytes) {
   const decoder = await takeVorbisDecoder()
   try {
@@ -243,11 +245,26 @@ async function decodeVorbis (context, bytes) {
     const decoded = await decoder.decode(new Uint8Array(bytes))
     const channels = decoded.channelData || []
     const length = decoded.samplesDecoded || (channels[0] && channels[0].length) || 0
-    const rate = decoded.sampleRate || context.sampleRate
+    const fileRate = decoded.sampleRate || context.sampleRate
+    const rate = context.sampleRate || fileRate
     if (!length) throw new Error('empty vorbis decode')
-    const audio = context.createBuffer(Math.max(1, channels.length), length, rate)
+    const ratio = rate / fileRate
+    const outLength = Math.max(1, Math.round(length * ratio))
+    const audio = context.createBuffer(Math.max(1, channels.length), outLength, rate)
     channels.forEach((channel, index) => {
-      audio.copyToChannel(channel.subarray(0, length), index)
+      const dest = audio.getChannelData(index)
+      const last = length - 1
+      if (Math.abs(ratio - 1) < 1e-6) {
+        for (let i = 0; i < length; i++) dest[i] = channel[i]
+        return
+      }
+      for (let i = 0; i < outLength; i++) {
+        const pos = i / ratio
+        const i0 = pos < last ? pos | 0 : last
+        const i1 = i0 < last ? i0 + 1 : last
+        const frac = pos - i0
+        dest[i] = channel[i0] + (channel[i1] - channel[i0]) * frac
+      }
     })
     return audio
   } finally {
