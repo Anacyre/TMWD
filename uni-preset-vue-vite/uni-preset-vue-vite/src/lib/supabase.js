@@ -38,6 +38,12 @@ export function publicAssetUrl (path, bucket = WEB_ASSET_BUCKET) {
   return data && data.publicUrl ? data.publicUrl : `${url}/storage/v1/object/public/${bucket}/${path}`
 }
 
+function encodeLibraryPath (path) {
+  return String(path || '').replace(/^\/+/, '').split('/').filter(Boolean).map((part) => {
+    try { return encodeURIComponent(decodeURIComponent(part)) } catch (err) { return encodeURIComponent(part) }
+  }).join('/')
+}
+
 export const ORCHESTRA_LOCAL_PREFIX = '/m-orchestra/'
 
 function envMeta () {
@@ -53,7 +59,7 @@ function localLibraryUrl (bucket, rel) {
 }
 
 export function publicOrchestraUrl (path) {
-  const rel = String(path || '').replace(/^\/+/, '')
+  const rel = encodeLibraryPath(path)
   const env = envMeta()
   const envBase = env && env.VITE_M_ORCHESTRA_BASE
   if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
@@ -68,7 +74,7 @@ export function publicOrchestraUrl (path) {
  * Supabase project no longer hosts these objects.
  */
 export function publicLibraryUrl (bucket, path) {
-  const rel = String(path || '').replace(/^\/+/, '')
+  const rel = encodeLibraryPath(path)
   if (!bucket || bucket === M_ORCHESTRA_BUCKET) return publicOrchestraUrl(path)
   const env = envMeta()
   const envKey = 'VITE_' + String(bucket).replace(/[^A-Za-z0-9]/g, '_').toUpperCase() + '_BASE'

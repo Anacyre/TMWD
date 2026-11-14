@@ -252,19 +252,21 @@ async function decodeVorbis (context, bytes) {
     const outLength = Math.max(1, Math.round(length * ratio))
     const audio = context.createBuffer(Math.max(1, channels.length), outLength, rate)
     channels.forEach((channel, index) => {
-      const dest = audio.getChannelData(index)
+      const copy = new Float32Array(outLength)
       const last = length - 1
       if (Math.abs(ratio - 1) < 1e-6) {
-        for (let i = 0; i < length; i++) dest[i] = channel[i]
-        return
+        for (let i = 0; i < length; i++) copy[i] = channel[i]
+      } else {
+        for (let i = 0; i < outLength; i++) {
+          const pos = i / ratio
+          const i0 = pos < last ? pos | 0 : last
+          const i1 = i0 < last ? i0 + 1 : last
+          const frac = pos - i0
+          copy[i] = channel[i0] + (channel[i1] - channel[i0]) * frac
+        }
       }
-      for (let i = 0; i < outLength; i++) {
-        const pos = i / ratio
-        const i0 = pos < last ? pos | 0 : last
-        const i1 = i0 < last ? i0 + 1 : last
-        const frac = pos - i0
-        dest[i] = channel[i0] + (channel[i1] - channel[i0]) * frac
-      }
+      if (typeof audio.copyToChannel === 'function') audio.copyToChannel(copy, index)
+      else audio.getChannelData(index).set(copy)
     })
     return audio
   } finally {
@@ -309,6 +311,14 @@ async function fetchSampleBytes (library, objectPath, signal) {
   }
 }
 
+function looksLikeHtml (bytes) {
+  if (!bytes || bytes.byteLength < 5) return false
+  const head = new Uint8Array(bytes, 0, Math.min(32, bytes.byteLength))
+  let text = ''
+  for (let i = 0; i < head.length; i++) text += String.fromCharCode(head[i])
+  return /^\s*</.test(text)
+}
+
 async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   let cached = null
   try {
@@ -316,7 +326,7 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   } catch (err) {
     cached = null
   }
-  if (cached) {
+  if (cached && !looksLikeHtml(cached)) {
     profile.idbHits += 1
     return cached
   }
@@ -327,10 +337,10 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     const response = await fetch(sampleUrl(library, objectPath), (signal || controller) ? { signal: signal || controller.signal } : undefined)
     if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
     const type = String(response.headers.get('content-type') || '')
+    const bytes = await response.arrayBuffer()
     // The Cloudflare site answers missing assets with index.html and status 200.
     // Decoding that page is what made every Orchestra V note silent.
-    if (type.includes('text/html')) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
-    const bytes = await response.arrayBuffer()
+    if (type.includes('text/html') || looksLikeHtml(bytes)) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
     profile.fetchMs += nowMs() - started
     profile.networkFetches += 1
     writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
