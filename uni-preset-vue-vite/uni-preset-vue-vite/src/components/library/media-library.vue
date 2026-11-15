@@ -10,18 +10,22 @@
       </view>
     </view>
 
-    <view v-if="media.sources.length" class="mlib-sources">
+    <view class="mlib-sources">
+      <view class="mlib-source" :class="{ on: instrumentsOn }" @click="showInstruments">
+        <daw-icon name="piano" :size="14" />
+        <text class="mlib-source-name">Instruments</text>
+      </view>
       <view
         v-for="source in media.sources"
         :key="source.id"
         class="mlib-source"
-        :class="{ on: media.sourceId === source.id }"
-        @click="openSource(source.id)"
+        :class="{ on: !instrumentsOn && media.sourceId === source.id }"
+        @click="pickSource(source.id)"
       >
         <daw-icon :name="source.kind === 'imported' ? 'download' : 'folder'" :size="14" />
         <text class="mlib-source-name">{{ source.name }}</text>
         <view
-          v-if="media.sourceId === source.id && source.kind !== 'imported'"
+          v-if="!instrumentsOn && media.sourceId === source.id && source.kind !== 'imported'"
           class="mlib-source-x"
           title="Remove from library"
           aria-label="Remove from library"
@@ -32,7 +36,7 @@
       </view>
     </view>
 
-    <view v-if="media.sources.length" class="mlib-tools">
+    <view v-if="media.sources.length && !instrumentsOn" class="mlib-tools">
       <view class="mlib-search">
         <daw-icon name="search" :size="14" />
         <input
@@ -50,7 +54,7 @@
       </view>
     </view>
 
-    <view v-if="crumbs.length && !media.search" class="mlib-crumbs">
+    <view v-if="crumbs.length && !media.search && !instrumentsOn" class="mlib-crumbs">
       <text class="mlib-crumb" @click="media.dir = ''">{{ sourceName }}</text>
       <template v-for="c in crumbs" :key="c.path">
         <daw-icon name="chevron-right" :size="12" />
@@ -58,7 +62,29 @@
       </template>
     </view>
 
-    <view ref="listEl" class="mlib-list mlib-scroll">
+    <view v-show="instrumentsOn" class="mlib-list mlib-scroll">
+      <view v-if="!instrumentDownloads || !instrumentDownloads.ready" class="mlib-empty">
+        <text class="mlib-muted">Reading instruments…</text>
+      </view>
+      <template v-else>
+        <template v-for="group in instrumentDownloads.groups" :key="group.id">
+          <text class="mlib-group">{{ group.name }}</text>
+          <view v-for="item in group.items" :key="item.id" class="mlib-row file">
+            <view class="mlib-text">
+              <text class="mlib-name">{{ item.name }}</text>
+              <text class="mlib-meta">{{ item.total }} files</text>
+              <text v-if="item.error" class="mlib-meta err">{{ item.error }}</text>
+            </view>
+            <view class="mlib-act" @click="onInstrument(item)">{{ instrumentAction(item) }}</view>
+          </view>
+        </template>
+        <view v-if="!instrumentDownloads.groups.length" class="mlib-empty">
+          <text class="mlib-muted">No instruments to download.</text>
+        </view>
+      </template>
+    </view>
+
+    <view v-show="!instrumentsOn" ref="listEl" class="mlib-list mlib-scroll">
       <view v-if="!media.sources.length" class="mlib-empty">
         <text class="mlib-empty-title">Your sounds, one tap away</text>
         <text class="mlib-muted">{{ canFolders
@@ -107,7 +133,10 @@
       </template>
     </view>
 
-    <view v-if="media.sources.length" class="mlib-foot">
+    <view v-if="instrumentsOn" class="mlib-foot">
+      <text class="mlib-muted">Saved in this browser. Playback reads a finished instrument from this device.</text>
+    </view>
+    <view v-else-if="media.sources.length" class="mlib-foot">
       <text class="mlib-muted">{{ footHint }}</text>
       <view class="mlib-link" @click="addFiles">Add files</view>
     </view>
@@ -125,7 +154,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import DawIcon from '../daw-icon.vue'
 import { setTyping, isTouchInput } from '../../store/session.js'
 import {
@@ -156,6 +185,30 @@ const kinds = [
   { id: 'midi', label: 'MIDI' }
 ]
 const canFolders = libraryCanPickFolders()
+const instrumentsOn = ref(false)
+const instrumentApi = shallowRef(null)
+const instrumentDownloads = computed(() => instrumentApi.value && instrumentApi.value.downloads)
+
+async function showInstruments () {
+  instrumentsOn.value = true
+  if (!instrumentApi.value) instrumentApi.value = await import('../../store/instrument-downloads.js')
+  await instrumentApi.value.refreshInstrumentDownloads()
+}
+
+function pickSource (id) {
+  instrumentsOn.value = false
+  openSource(id)
+}
+
+function instrumentAction (item) {
+  return instrumentApi.value ? instrumentApi.value.instrumentAction(item) : ''
+}
+
+function onInstrument (item) {
+  if (!instrumentApi.value || !item || item.state === 'downloading') return
+  if (item.state === 'ready') instrumentApi.value.removeInstrumentDownload(item.id)
+  else instrumentApi.value.startInstrumentDownload(item.id)
+}
 
 const sourceName = computed(() => {
   const source = media.sources.find((s) => s.id === media.sourceId)
@@ -399,6 +452,22 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .mlib-btn.primary { background: var(--ml-accent); color: #0a0d12; }
+.mlib-group {
+  display: block;
+  padding: 12px 14px 4px;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ml-ink-3);
+}
+.mlib-act {
+  flex: none;
+  padding: 6px 4px 6px 8px;
+  color: var(--ml-accent);
+  cursor: pointer;
+  font-size: 12px;
+}
+.mlib-meta.err { color: #e07070; }
 .mlib-foot {
   flex: 0 0 auto;
   display: flex;

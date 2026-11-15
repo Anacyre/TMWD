@@ -11,7 +11,7 @@
 
 import { trackInputNode } from '../mixer-graph.js'
 import { SAMPLE_DEADLINE_MS } from './prepare-window.js'
-import { AsyncLimiter, AudioBufferLru, forgetEncodedSample, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
+import { AsyncLimiter, AudioBufferLru, encodedCacheKey, forgetEncodedSample, noteFetchBegin, noteFetchEnd, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
 import { findDefinition, libraryOf } from './catalog.js'
@@ -208,7 +208,7 @@ export async function availableArticulations (definitionId) {
  * because only the bucket makes an object path unique.
  */
 function cachePath (library, objectPath) {
-  return library === 'vms-solo' ? objectPath : library + '/' + objectPath
+  return encodedCacheKey(library, objectPath)
 }
 
 const VORBIS_POOL = 2
@@ -341,6 +341,7 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   const controller = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), SAMPLE_DEADLINE_MS) : 0
   const started = nowMs()
+  noteFetchBegin()
   try {
     const response = await fetch(sampleUrl(library, objectPath), (signal || controller) ? { signal: signal || controller.signal } : undefined)
     if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
@@ -354,6 +355,7 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
     return bytes
   } finally {
+    noteFetchEnd()
     if (timer) clearTimeout(timer)
   }
 }

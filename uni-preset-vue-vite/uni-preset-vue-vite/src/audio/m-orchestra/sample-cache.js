@@ -1,6 +1,7 @@
 const DB_NAME = 'dawweb-m-orchestra-v2'
 const STORE_NAME = 'encoded-samples'
-const DB_VERSION = 1
+const STATUS_STORE = 'instrument-downloads'
+const DB_VERSION = 2
 
 function openDb () {
   if (typeof indexedDB === 'undefined') return Promise.resolve(null)
@@ -9,6 +10,7 @@ function openDb () {
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME)
+      if (!db.objectStoreNames.contains(STATUS_STORE)) db.createObjectStore(STATUS_STORE)
     }
     request.onsuccess = () => resolve(request.result)
     request.onerror = () => resolve(null)
@@ -43,6 +45,26 @@ export async function forgetEncodedSample (key) {
     tx.onerror = () => resolve(false)
     tx.onabort = () => resolve(false)
   })
+}
+
+/** Solo files are keyed by object path so M Orchestra can share them.
+ *  Other libraries prefix the library id, because only the bucket makes a path unique. */
+export function encodedCacheKey (library, objectPath) {
+  return library === 'vms-solo' ? objectPath : library + '/' + objectPath
+}
+
+let liveNoteFetches = 0
+
+export function noteFetchBegin () {
+  liveNoteFetches += 1
+}
+
+export function noteFetchEnd () {
+  liveNoteFetches = Math.max(0, liveNoteFetches - 1)
+}
+
+export function noteFetches () {
+  return liveNoteFetches
 }
 
 export async function writeEncodedSample (key, bytes) {
@@ -148,4 +170,48 @@ export class AudioBufferLru {
   setBudgetMb (value) {
     this.budgetBytes = Math.max(16, Number(value) || 96) * 1024 * 1024
   }
+}
+
+export async function readInstrumentStatus (id) {
+  const database = await db()
+  if (!database || !id || !database.objectStoreNames.contains(STATUS_STORE)) return null
+  return new Promise((resolve) => {
+    const request = database.transaction(STATUS_STORE, 'readonly').objectStore(STATUS_STORE).get(id)
+    request.onsuccess = () => resolve(request.result || null)
+    request.onerror = () => resolve(null)
+  })
+}
+
+export async function writeInstrumentStatus (id, record) {
+  const database = await db()
+  if (!database || !id || !database.objectStoreNames.contains(STATUS_STORE)) return false
+  return new Promise((resolve) => {
+    const tx = database.transaction(STATUS_STORE, 'readwrite')
+    tx.objectStore(STATUS_STORE).put(record, id)
+    tx.oncomplete = () => resolve(true)
+    tx.onerror = () => resolve(false)
+    tx.onabort = () => resolve(false)
+  })
+}
+
+export async function deleteInstrumentStatus (id) {
+  const database = await db()
+  if (!database || !id || !database.objectStoreNames.contains(STATUS_STORE)) return false
+  return new Promise((resolve) => {
+    const tx = database.transaction(STATUS_STORE, 'readwrite')
+    tx.objectStore(STATUS_STORE).delete(id)
+    tx.oncomplete = () => resolve(true)
+    tx.onerror = () => resolve(false)
+    tx.onabort = () => resolve(false)
+  })
+}
+
+export async function listInstrumentStatus () {
+  const database = await db()
+  if (!database || !database.objectStoreNames.contains(STATUS_STORE)) return []
+  return new Promise((resolve) => {
+    const request = database.transaction(STATUS_STORE, 'readonly').objectStore(STATUS_STORE).getAll()
+    request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : [])
+    request.onerror = () => resolve([])
+  })
 }

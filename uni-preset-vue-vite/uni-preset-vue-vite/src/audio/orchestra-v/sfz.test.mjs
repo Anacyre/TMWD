@@ -1,4 +1,4 @@
-import { compileRegions, toSfzText } from './sfz.js'
+import { compileRegions, instrumentSamplePaths, toSfzText } from './sfz.js'
 import { PLAYBACK } from '../m-orchestra/playback.js'
 
 function assert (ok, message) {
@@ -305,3 +305,19 @@ function zonesFor (map, artic = 'long') {
 }
 
 console.log('orchestra-v sfz ok')
+
+const pack = [
+  sample('violin', 'long/a.ogg', 60, 64, { releasePath: 'samples/violin/long/a.release.ogg' }),
+  sample('violin', 'long/b.ogg', 62, 64),
+  sample('viola', 'long/c.ogg', 60, 64),
+  { pack: 'violin', entry: 'perc/hit.ogg', objectPath: 'samples/violin/perc/hit.ogg' }
+]
+const paths = instrumentSamplePaths(pack, { sourcePack: 'violin' })
+assert(paths.length === 4, 'body files and one distinct release are listed')
+assert(paths.includes('samples/violin/long/a.ogg'), 'body path is kept')
+assert(paths.includes('samples/violin/long/a.release.ogg'), 'release path is kept')
+assert(!paths.some((path) => path.includes('viola')), 'other packs are excluded')
+const folderPaths = instrumentSamplePaths(pack, { sourcePack: 'violin', percFolder: 'perc' })
+assert(folderPaths.length === 1 && folderPaths[0] === 'samples/violin/perc/hit.ogg', 'percussion folder filter matches compileRegions')
+assert(instrumentSamplePaths(pack, {}).length === 0, 'an instrument without a pack has no files')
+console.log('orchestra-v instrument paths ok')

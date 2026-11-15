@@ -91,6 +91,26 @@ function samplePath (sample) {
   return sample.objectPath || `samples/${sample.pack}/${sample.entry}`
 }
 
+/** Every encoded file playback can request for one catalogue instrument.
+ *  The pool is the same pack and percussion-folder filter `compileRegions` uses.
+ *  Release tails are separate objects, so they are included beside the body. */
+export function instrumentSamplePaths (samples, def) {
+  if (!def || !def.sourcePack) return []
+  const seen = new Set()
+  const out = []
+  for (const sample of samples || []) {
+    if (!sample || sample.pack !== def.sourcePack || !inFolder(sample, def.percFolder)) continue
+    const body = samplePath(sample)
+    const release = sample.releasePath || ''
+    for (const path of [body, release]) {
+      if (!path || seen.has(path)) continue
+      seen.add(path)
+      out.push(path)
+    }
+  }
+  return out
+}
+
 /** Round-robin pool for one key/layer slot.
  *
  * Pitched articulations keep only the longest-sounding tier, because mixing a 1.5s and a

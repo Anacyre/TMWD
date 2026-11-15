@@ -1,0 +1,226 @@
+/** Download one catalogue instrument's encoded samples into IndexedDB.
+ *  Playback already reads that store first, so a finished instrument no longer
+ *  waits on the network. Decoded PCM is not stored. */
+
+import { reactive } from 'vue'
+import { availableDefinitions, libraryOf } from '../audio/orchestra-v/catalog.js'
+import { LIBRARIES } from '../audio/orchestra-v/libraries.js'
+import { ensureManifest, librarySamples, sampleUrl } from '../audio/orchestra-v/library.js'
+import { instrumentSamplePaths } from '../audio/orchestra-v/sfz.js'
+import {
+  deleteInstrumentStatus,
+  encodedCacheKey,
+  forgetEncodedSample,
+  listInstrumentStatus,
+  noteFetches,
+  readEncodedSample,
+  writeEncodedSample,
+  writeInstrumentStatus
+} from '../audio/m-orchestra/sample-cache.js'
+
+const MAX_FILES = 2
+
+export const downloads = reactive({
+  ready: false,
+  groups: []
+})
+
+let loading = null
+let running = 0
+
+function looksLikeHtml (bytes) {
+  if (!bytes || bytes.byteLength < 5) return false
+  const head = new Uint8Array(bytes, 0, Math.min(32, bytes.byteLength))
+  let text = ''
+  for (let i = 0; i < head.length; i++) text += String.fromCharCode(head[i])
+  return /^\s*</.test(text)
+}
+
+function takeSlot () {
+  return new Promise((resolve) => {
+    const attempt = () => {
+      if (noteFetches() > 0 || running >= MAX_FILES) {
+        setTimeout(attempt, 40)
+        return
+      }
+      running += 1
+      resolve()
+    }
+    attempt()
+  })
+}
+
+function releaseSlot () {
+  running = Math.max(0, running - 1)
+}
+
+function allItems () {
+  const items = []
+  for (const group of downloads.groups) items.push(...group.items)
+  return items
+}
+
+function findItem (id) {
+  return allItems().find((item) => item.id === id) || null
+}
+
+async function countCached (item) {
+  let done = 0
+  for (const path of item.paths) {
+    const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
+    if (bytes && !looksLikeHtml(bytes)) done += 1
+  }
+  return done
+}
+
+async function remember (item, complete, error) {
+  await writeInstrumentStatus(item.id, {
+    id: item.id,
+    library: item.library,
+    total: item.total,
+    complete: !!complete,
+    error: error || ''
+  })
+}
+
+async function fetchFile (item, path) {
+  const key = encodedCacheKey(item.library, path)
+  const url = sampleUrl(item.library, path)
+  const response = await fetch(url)
+  if (!response.ok) throw new Error('Download failed (' + response.status + ')')
+  const type = String(response.headers.get('content-type') || '')
+  const bytes = await response.arrayBuffer()
+  if (type.includes('text/html') || looksLikeHtml(bytes)) throw new Error('Download returned a page instead of audio')
+  const stored = await writeEncodedSample(key, bytes)
+  if (!stored) throw new Error('This browser does not have enough space for the rest of this instrument')
+}
+
+async function runDownload (item) {
+  const token = {}
+  item.token = token
+  item.state = 'downloading'
+  item.error = ''
+  try {
+    const missing = []
+    let done = 0
+    for (const path of item.paths) {
+      if (item.token !== token) return
+      const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
+      if (bytes && !looksLikeHtml(bytes)) done += 1
+      else missing.push(path)
+    }
+    item.done = done
+    if (!missing.length) {
+      item.state = 'ready'
+      await remember(item, true, '')
+      return
+    }
+    for (const path of missing) {
+      if (item.token !== token) return
+      await takeSlot()
+      try {
+        if (item.token !== token) return
+        await fetchFile(item, path)
+        if (item.token !== token) return
+        item.done += 1
+        await remember(item, false, '')
+      } finally {
+        releaseSlot()
+      }
+    }
+    if (item.token !== token) return
+    item.state = item.done >= item.total ? 'ready' : 'error'
+    if (item.state !== 'ready' && !item.error) item.error = 'Download stopped early'
+    await remember(item, item.state === 'ready', item.error)
+  } catch (err) {
+    if (item.token !== token) return
+    item.state = 'error'
+    item.error = (err && err.message) || 'Download failed'
+    await remember(item, false, item.error)
+  }
+}
+
+export function startInstrumentDownload (id) {
+  const item = findItem(id)
+  if (!item || item.state === 'downloading' || item.state === 'ready') return
+  runDownload(item)
+}
+
+export async function removeInstrumentDownload (id) {
+  const item = findItem(id)
+  if (!item) return
+  item.token = null
+  const keep = new Set()
+  for (const other of allItems()) {
+    if (other.id === item.id) continue
+    if (other.state !== 'ready' && other.state !== 'downloading' && other.done <= 0) continue
+    for (const path of other.paths) keep.add(encodedCacheKey(other.library, path))
+  }
+  for (const path of item.paths) {
+    const key = encodedCacheKey(item.library, path)
+    if (!keep.has(key)) await forgetEncodedSample(key)
+  }
+  await deleteInstrumentStatus(item.id)
+  item.done = 0
+  item.state = 'idle'
+  item.error = ''
+}
+
+async function loadGroups () {
+  const saved = new Map((await listInstrumentStatus()).map((record) => [record.id, record]))
+  const groups = []
+  for (const library of LIBRARIES) {
+    await ensureManifest(library.id)
+    const samples = librarySamples(library.id)
+    const items = []
+    for (const def of availableDefinitions()) {
+      if (libraryOf(def) !== library.id || !def.sourcePack) continue
+      const paths = instrumentSamplePaths(samples, def)
+      if (!paths.length) continue
+      const record = saved.get(def.id)
+      const item = {
+        id: def.id,
+        name: def.displayName,
+        library: library.id,
+        paths,
+        total: paths.length,
+        done: 0,
+        state: 'idle',
+        error: '',
+        token: null
+      }
+      if (record && record.complete && record.total === item.total) {
+        item.state = 'ready'
+        item.done = item.total
+      } else if (record) {
+        item.done = await countCached(item)
+        item.state = item.done >= item.total ? 'ready' : 'idle'
+        item.error = item.state === 'ready' ? '' : (record.error || '')
+        if (item.state === 'ready') await remember(item, true, '')
+      }
+      items.push(item)
+    }
+    if (items.length) groups.push({ id: library.id, name: library.displayName, items })
+  }
+  downloads.groups = groups
+  downloads.ready = true
+}
+
+export function refreshInstrumentDownloads () {
+  if (!loading) {
+    loading = loadGroups().catch((err) => {
+      loading = null
+      throw err
+    })
+  }
+  return loading
+}
+
+export function instrumentAction (item) {
+  if (!item) return ''
+  if (item.state === 'downloading') return item.done + ' / ' + item.total
+  if (item.state === 'ready') return 'Remove'
+  if (item.state === 'error') return 'Retry'
+  if (item.done > 0) return 'Resume'
+  return 'Download'
+}
