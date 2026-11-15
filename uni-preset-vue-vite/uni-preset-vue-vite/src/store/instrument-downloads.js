@@ -16,8 +16,9 @@ import {
   forgetEncodedSample,
   listInstrumentStatus,
   readEncodedSample,
+  readEncodedSampleOwn,
   releaseDatabase,
-  writeEncodedSample,
+  writeEncodedSampleOwn,
   writeInstrumentStatus
 } from '../audio/m-orchestra/sample-cache.js'
 
@@ -91,7 +92,7 @@ async function fetchFile (item, path) {
   const timer = controller ? setTimeout(() => controller.abort(), 20000) : 0
   try {
     const bytes = await fetchLibraryBytes(item.library, path, controller && controller.signal, true)
-    const stored = await writeEncodedSample(key, bytes)
+    const stored = await writeEncodedSampleOwn(key, bytes)
     if (!stored) throw new Error('This browser does not have enough space for the rest of this instrument')
   } catch (err) {
     if (err && err.name === 'AbortError') throw new Error('Download timed out')
@@ -108,11 +109,14 @@ async function runDownload (item) {
   item.error = ''
   beginInstrumentDownload()
   try {
-    await releaseDatabase()
+    await Promise.race([
+      releaseDatabase(),
+      new Promise((resolve) => setTimeout(resolve, 300))
+    ])
     item.done = 0
     for (const path of item.paths) {
       if (item.token !== token) return
-      const bytes = await readEncodedSample(encodedCacheKey(item.library, path), { duringDownload: true })
+      const bytes = await readEncodedSampleOwn(encodedCacheKey(item.library, path))
       if (cachedAudio(bytes)) {
         item.done += 1
         continue

@@ -48,6 +48,40 @@ async function db () {
   return database
 }
 
+/** A download must not wait on the shared connection. That open can stay pending
+ *  while a separate indexedDB.open for the same database still succeeds. */
+function openOwnDb () {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    let request
+    try {
+      request = indexedDB.open(DB_NAME, DB_VERSION)
+    } catch (err) {
+      finish(null)
+      return
+    }
+    const timer = setTimeout(() => finish(null), 1500)
+    request.onsuccess = () => {
+      clearTimeout(timer)
+      finish(request.result)
+    }
+    request.onerror = () => {
+      clearTimeout(timer)
+      finish(null)
+    }
+    request.onblocked = () => {
+      clearTimeout(timer)
+      finish(null)
+    }
+  })
+}
+
 export async function readEncodedSample (key, options) {
   // Playback cache checks time out and leave their reads queued. A download
   // stays at 0% until that queue is empty, so those checks stay off the database.
@@ -80,6 +114,54 @@ export async function readEncodedSample (key, options) {
       finish(null)
     }
   })
+}
+
+export async function readEncodedSampleOwn (key) {
+  const database = await openOwnDb()
+  if (!database) return null
+  try {
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(null), 1500)
+      const request = database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key)
+      request.onsuccess = () => {
+        clearTimeout(timer)
+        resolve(request.result instanceof ArrayBuffer ? request.result : null)
+      }
+      request.onerror = () => {
+        clearTimeout(timer)
+        resolve(null)
+      }
+    })
+  } finally {
+    database.close()
+  }
+}
+
+export async function writeEncodedSampleOwn (key, bytes) {
+  if (!(bytes instanceof ArrayBuffer)) return false
+  const database = await openOwnDb()
+  if (!database) return false
+  try {
+    return await new Promise((resolve) => {
+      const timer = setTimeout(() => resolve(false), 8000)
+      const tx = database.transaction(STORE_NAME, 'readwrite')
+      tx.objectStore(STORE_NAME).put(bytes, key)
+      tx.oncomplete = () => {
+        clearTimeout(timer)
+        resolve(true)
+      }
+      tx.onerror = () => {
+        clearTimeout(timer)
+        resolve(false)
+      }
+      tx.onabort = () => {
+        clearTimeout(timer)
+        resolve(false)
+      }
+    })
+  } finally {
+    database.close()
+  }
 }
 
 export async function forgetEncodedSample (key) {
