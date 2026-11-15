@@ -18,7 +18,7 @@ export const PUBLISH_LIMITS = {
   writesPerHour: 6
 }
 
-const LIST_FIELDS = 'id, title, description, creator_name, owner, tags, bpm, duration_sec, track_count, preview, size_bytes, storage_path, opens, created_at, updated_at'
+const LIST_FIELDS = 'id, title, description, creator_name, owner, tags, bpm, duration_sec, track_count, preview, size_bytes, storage_path, opens, created_at, updated_at, is_demo'
 const TOKENS_KEY = 'dawweb.publishTokens'
 const DEVICE_KEY = 'dawweb.device'
 
@@ -201,6 +201,25 @@ export async function reportPublic (id, reason) {
 
 /* ── public reads ────────────────────────────────────────────────── */
 
+function galleryError (error) {
+  const message = (error && error.message) || ''
+  if (/could not find the table|schema cache/i.test(message)) return 'Discover is still being set up. Try again in a moment.'
+  if (/fetch/i.test(message)) return 'No connection to the gallery. Try again later.'
+  return message || 'Could not load the gallery'
+}
+
+export async function curatorStatus () {
+  const { data, error } = await client.from('demo_curators').select('user_id').maybeSingle()
+  if (error) return false
+  return !!(data && data.user_id)
+}
+
+export async function featureProject (project, meta, id) {
+  const result = await call({ action: 'feature', id: id || '', ...payloadFor(project, meta) })
+  if (result.editToken) rememberToken(result.id, result.editToken)
+  return { id: result.id, demo: true, publishedAt: Date.parse(result.createdAt || result.updatedAt || '') || Date.now() }
+}
+
 function mapRow (row) {
   return {
     id: row.id,
@@ -216,6 +235,7 @@ function mapRow (row) {
     sizeBytes: Number(row.size_bytes) || 0,
     storagePath: row.storage_path,
     opens: Number(row.opens) || 0,
+    demo: !!row.is_demo,
     createdAt: row.created_at ? Date.parse(row.created_at) : 0,
     updatedAt: row.updated_at ? Date.parse(row.updated_at) : 0
   }
@@ -234,11 +254,12 @@ export async function listPublic (options = {}) {
   const pattern = searchPattern(options.search)
   if (pattern) query = query.or('title.ilike.' + pattern + ',creator_name.ilike.' + pattern + ',description.ilike.' + pattern)
   if (options.mine && options.userId) query = query.eq('owner', options.userId)
+  if (options.demo) query = query.eq('is_demo', true)
   query = options.sort === 'popular'
     ? query.order('opens', { ascending: false }).order('created_at', { ascending: false })
     : query.order('created_at', { ascending: false })
   const { data, error } = await query.range(offset, offset + limit - 1)
-  if (error) throw new Error(/fetch/i.test(error.message || '') ? 'No connection to the gallery. Try again later.' : (error.message || 'Could not load the gallery'))
+  if (error) throw new Error(galleryError(error))
   return (data || []).map(mapRow)
 }
 

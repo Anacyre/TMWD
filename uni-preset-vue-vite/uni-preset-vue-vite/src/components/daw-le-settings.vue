@@ -1,30 +1,5 @@
 <template>
   <daw-le-sheet :open="session.settingsOpen" title="Settings" @close="closeSettings">
-    <text class="cap">Interface Mode</text>
-    <view class="radios">
-      <view class="radio" :class="{ on: shell === 'professional' }" @click="setInterfaceMode('professional')">
-        <view class="dot" />
-        <view class="copy">
-          <text class="lab">Professional</text>
-          <text class="sub">Full desktop layout</text>
-        </view>
-      </view>
-      <view class="radio" :class="{ on: shell === 'lite' }" @click="setInterfaceMode('lite')">
-        <view class="dot" />
-        <view class="copy">
-          <text class="lab">Lite</text>
-          <text class="sub">Tablet layout</text>
-        </view>
-      </view>
-      <view class="radio" :class="{ on: shell === 'le' }" @click="setInterfaceMode('le')">
-        <view class="dot" />
-        <view class="copy">
-          <text class="lab">LE</text>
-          <text class="sub">Previous mobile layout</text>
-        </view>
-      </view>
-    </view>
-    <text class="note">All modes edit the same project. Switching does not reload.</text>
     <view class="row">
       <text>Snap</text>
       <view class="chip" @click="toggleSnap">{{ session.snap ? 'On' : 'Off' }}</view>
@@ -51,16 +26,16 @@
     >
     <text class="note">{{ hostHint }}</text>
   </daw-le-sheet>
+  <interface-mode-sheet />
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import DawLeSheet from './daw-le-sheet.vue'
+import InterfaceModeSheet from './interface-mode-sheet.vue'
 import {
   session,
   closeSettings,
-  setInterfaceMode,
-  interfaceShell,
   toggleSnap,
   toggleMetronome,
   engineState,
@@ -71,7 +46,6 @@ import {
 } from '../store/session.js'
 import { engineHostHintText, parseEngineHost } from '../bridge/engine.js'
 
-const shell = computed(() => interfaceShell())
 const host = ref(engineHostValue())
 const hostHint = computed(() => engineHostHintText({ parsed: parseEngineHost(host.value) }))
 const cloud = computed(() => isCloudMode())

@@ -59,7 +59,14 @@
       <view class="lt-hit" :class="{ dim: !session.canRedo }" aria-label="Redo" @click.stop="redoEdit">
         <daw-icon name="redo" :size="20" color="currentColor" />
       </view>
-      <view class="lt-hit" aria-label="Settings" @click.stop="openSettings">
+      <view
+        class="lt-hit"
+        aria-label="Settings"
+        @pointerdown.stop="beginSettingsHold"
+        @pointerup.stop="endSettingsHold"
+        @pointercancel.stop="endSettingsHold"
+        @click.stop="onSettingsPress"
+      >
         <daw-icon name="settings" :size="20" color="currentColor" />
       </view>
     </view>
@@ -87,7 +94,9 @@ import {
   setPositionFormat,
   setWorkspaceView,
   setTyping,
-  openSettings,
+  beginSettingsHold,
+  endSettingsHold,
+  onSettingsPress,
   openProjects,
   unlockAudioForUser
 } from '../../store/session.js'

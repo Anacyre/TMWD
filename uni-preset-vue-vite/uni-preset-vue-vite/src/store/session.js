@@ -251,6 +251,7 @@ export const session = reactive({
   liteHintDismissed: readLiteHintDismissed(),
   liteSheet: null,
   settingsOpen: false,
+  interfacePickerOpen: false,
   expressionOpen: false,
   expressionCc: 1,
   expressionLane: 'expression',
@@ -3066,6 +3067,7 @@ export function setInterfaceMode (mode) {
   session.interfaceMode = next
   writeInterfaceMode(next)
   session.settingsOpen = false
+  session.interfacePickerOpen = false
   session.liteSheet = null
   session.openMenu = ''
   if (next !== INTERFACE_PROFESSIONAL) {
@@ -3102,11 +3104,49 @@ export function closeLiteSheet () {
 
 export function openSettings () {
   session.settingsOpen = true
+  session.interfacePickerOpen = false
   session.openMenu = ''
 }
 
 export function closeSettings () {
   session.settingsOpen = false
+}
+
+let settingsHoldTimer = 0
+let settingsHoldFired = false
+
+/** Hold the settings control for 5 seconds to open the interface-mode page. */
+export function beginSettingsHold () {
+  settingsHoldFired = false
+  if (settingsHoldTimer) clearTimeout(settingsHoldTimer)
+  settingsHoldTimer = setTimeout(() => {
+    settingsHoldTimer = 0
+    settingsHoldFired = true
+    session.settingsOpen = false
+    session.openMenu = ''
+    session.interfacePickerOpen = true
+  }, 5000)
+}
+
+export function endSettingsHold () {
+  if (settingsHoldTimer) clearTimeout(settingsHoldTimer)
+  settingsHoldTimer = 0
+}
+
+export function consumeSettingsHold () {
+  const fired = settingsHoldFired
+  settingsHoldFired = false
+  return fired
+}
+
+/** Short tap opens settings. A completed 5 second hold does not. */
+export function onSettingsPress () {
+  if (consumeSettingsHold()) return
+  openSettings()
+}
+
+export function closeInterfacePicker () {
+  session.interfacePickerOpen = false
 }
 
 export function dismissLiteHint () {

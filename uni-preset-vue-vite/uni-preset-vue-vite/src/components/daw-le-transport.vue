@@ -50,7 +50,15 @@
       <view class="status" @click.stop="openSettings">
         <view class="led" :class="engineState()" />
       </view>
-      <view class="hit" title="Audio settings" aria-label="Audio settings" @click.stop="openSettings">
+      <view
+        class="hit"
+        title="Audio settings"
+        aria-label="Audio settings"
+        @pointerdown.stop="beginSettingsHold"
+        @pointerup.stop="endSettingsHold"
+        @pointercancel.stop="endSettingsHold"
+        @click.stop="onSettingsPress"
+      >
         <daw-icon name="settings" :size="24" />
       </view>
     </view>
@@ -95,7 +103,9 @@ import {
   undoEdit,
   redoEdit,
   setPositionFormat,
-  openSettings,
+  beginSettingsHold,
+  endSettingsHold,
+  onSettingsPress,
   engineState,
   saveProjectLocal,
   openProjects,

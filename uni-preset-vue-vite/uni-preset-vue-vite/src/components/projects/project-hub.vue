@@ -171,6 +171,7 @@
                   <text>{{ hub.busy === 'publish' ? 'Publishing…' : (published.published ? 'Update public copy' : 'Publish') }}</text>
                 </view>
                 <view v-if="published.published" class="btn danger-ghost" :class="{ off: !!hub.busy }" @click="unpublishCurrent">Unpublish</view>
+                <view v-if="hub.canCurate" class="btn" :class="{ off: !!hub.busy }" @click="addCurrentAsDemo">Add as demo</view>
               </view>
               <text class="fine">Up to 10 MB with audio · 20 published projects per person · title and creator name are shown publicly.</text>
             </view>
@@ -266,6 +267,7 @@
                       <view class="menu-item" @click="startRename(item)"><daw-icon name="pencil" :size="16" /><text>Rename</text></view>
                       <view v-if="item.id" class="menu-item" @click="menuDo(() => duplicateLibraryItem(item))"><daw-icon name="copy" :size="16" /><text>Duplicate</text></view>
                       <view v-if="item.id && cloudAuth.user" class="menu-item" @click="menuDo(() => uploadLibraryItem(item))"><daw-icon name="upload" :size="16" /><text>{{ item.cloudId ? 'Update cloud copy' : 'Upload to cloud' }}</text></view>
+                      <view v-if="item.id && hub.canCurate" class="menu-item" @click="menuDo(() => addLibraryItemAsDemo(item))"><daw-icon name="sparkle" :size="16" /><text>Add as demo</text></view>
                       <view v-if="item.id" class="menu-item danger" @click="menuDo(() => deleteLibraryItem(item, 'device'))"><daw-icon name="trash" :size="16" /><text>Delete from this device</text></view>
                       <view v-if="item.cloudId" class="menu-item danger" @click="menuDo(() => deleteLibraryItem(item, 'cloud'))"><daw-icon name="trash" :size="16" /><text>Delete cloud copy</text></view>
                     </view>
@@ -361,7 +363,7 @@
                     </svg>
                   </view>
                   <text class="tile-title">{{ row.title }}</text>
-                  <text class="tile-sub">{{ row.creator }}</text>
+                  <text class="tile-sub">{{ row.creator }}{{ row.demo ? ' · Demo' : '' }}</text>
                   <text class="tile-facts">{{ publicFacts(row) }}</text>
                 </view>
                 <template v-if="hub.discoverLoading && !hub.discover.length">
@@ -386,6 +388,20 @@
                 <text class="tile-title">Re-Time</text>
                 <text class="tile-sub">Orchestral demo</text>
                 <text class="tile-facts">Strings, winds and brass with phrasing lanes. Opens as a new, unsaved project.</text>
+              </view>
+              <view v-for="row in hub.demos" :key="row.id" class="tile" @click="openPublic(row)">
+                <view class="cover" :style="coverStyle(row.id)">
+                  <svg class="cover-notes" viewBox="0 0 100 60" preserveAspectRatio="none">
+                    <rect v-for="(bar, i) in row.preview" :key="i" :x="4 + bar[0] * 92" :y="6 + bar[1] * 46" :width="Math.max(1.6, bar[2] * 92)" height="3" rx="1.2" />
+                  </svg>
+                </view>
+                <text class="tile-title">{{ row.title }}</text>
+                <text class="tile-sub">{{ row.creator }}</text>
+                <text class="tile-facts">{{ publicFacts(row) }}</text>
+              </view>
+              <view v-if="hub.demosError" class="tile">
+                <text class="tile-title">Demos unavailable</text>
+                <text class="tile-facts">{{ hub.demosError }}</text>
               </view>
               <view class="tile" @click="startNewProject">
                 <view class="cover blank"><daw-icon name="plus" :size="28" /></view>
@@ -487,6 +503,10 @@ import {
   unpublishCurrent,
   copyText,
   loadDiscover,
+  loadDemos,
+  refreshCurator,
+  addCurrentAsDemo,
+  addLibraryItemAsDemo,
   canManagePublic,
   openPublic,
   reportDetail,
@@ -495,6 +515,7 @@ import {
   defaultCreator,
   setCreator
 } from '../../store/project-hub.js'
+import { bindLiveScroll } from '../../lib/touch-scroll.js'
 import { META_LIMITS } from '../../lib/project-io.js'
 import { formatBytes } from '../../lib/cloud-projects.js'
 import { projectSummary, coverHue, formatDuration, publicLink } from '../../lib/public-projects.js'
@@ -654,6 +675,8 @@ function go (section) {
   hub.detail = null
   menuKey.value = ''
   if (section === 'discover' && !hub.discover.length) loadDiscover()
+  if (section === 'examples') loadDemos()
+  if (cloudAuth.user) refreshCurator()
   if (section === 'library' || section === 'recovery') refreshLibrary()
   if (section === 'account') refreshCloudAuth()
 }
@@ -765,7 +788,9 @@ watch(() => session.projectManagerOpen, (open) => {
   hub.publishError = ''
   syncDraft()
   refreshLibrary()
+  refreshCurator()
   if (hub.section === 'discover' && !hub.discover.length) loadDiscover()
+  if (hub.section === 'examples') loadDemos()
 })
 
 watch(() => [session.projectName, session.projectMeta], () => {
@@ -777,7 +802,10 @@ watch(() => cloudAuth.user && cloudAuth.user.id, () => {
   if (hub.section === 'account' && cloudAuth.user) hub.section = 'current'
 })
 
+let unbindHubScroll = () => {}
+
 onMounted(() => {
+  unbindHubScroll = bindLiveScroll('.hub-scroll', 'y', 'input, textarea, uni-input, uni-textarea')
   if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true)
   if (session.projectManagerOpen) {
     syncDraft()
@@ -787,6 +815,7 @@ onMounted(() => {
 })
 
 onBeforeUnmount(() => {
+  unbindHubScroll()
   if (typeof window !== 'undefined') window.removeEventListener('keydown', onKey, true)
   clearTimeout(searchTimer)
 })
@@ -899,7 +928,7 @@ onBeforeUnmount(() => {
 .acct-name { font-weight: 600; }
 .acct-sub { font-size: 11px; color: var(--hub-ink-3); }
 
-.main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .top {
   height: 60px;
   flex: 0 0 auto;
@@ -911,7 +940,7 @@ onBeforeUnmount(() => {
 }
 .top-title { flex: 1; font-size: 17px; font-weight: 650; }
 .top-actions { display: flex; align-items: center; gap: 6px; }
-.body { flex: 1; min-height: 0; padding: 22px 24px 28px; }
+.body { flex: 1; min-height: 0; padding: 22px 24px 28px; overflow-x: hidden; overflow-y: auto; -webkit-overflow-scrolling: touch; touch-action: pan-y; }
 .stack { display: flex; flex-direction: column; gap: 16px; }
 .narrow-col { max-width: 460px; }
 

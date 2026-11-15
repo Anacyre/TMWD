@@ -99,6 +99,12 @@ Deno.serve(async (req) => {
     return false
   }
 
+  async function isCurator () {
+    if (!userId) return false
+    const { data } = await admin.from('demo_curators').select('user_id').eq('user_id', userId).maybeSingle()
+    return !!data
+  }
+
   async function loadOwned (id: string) {
     const { data: row } = await admin.from('public_projects').select('*').eq('id', id).maybeSingle()
     if (!row) return { error: fail(404, 'This published project no longer exists.') }
@@ -109,7 +115,20 @@ Deno.serve(async (req) => {
     return { row }
   }
 
-  if (action === 'publish' || action === 'update') {
+  if (action === 'feature' && !body.project) {
+    if (!(await isCurator())) return fail(403, 'Only the demo curator can add demo projects.')
+    const id = clean(body.id, 64)
+    const { data: row } = await admin.from('public_projects').select('id, owner').eq('id', id).maybeSingle()
+    if (!row) return fail(404, 'Publish the project first, then add it as a demo.')
+    if (row.owner !== userId) return fail(403, 'You can only add your own projects as demos.')
+    const { error } = await admin.from('public_projects').update({ is_demo: body.remove !== true, updated_at: new Date().toISOString() }).eq('id', id)
+    if (error) return fail(500, 'Could not update the demo.')
+    return reply(200, { id, demo: body.remove !== true })
+  }
+
+  if (action === 'publish' || action === 'update' || action === 'feature') {
+    const asDemo = action === 'feature'
+    if (asDemo && !(await isCurator())) return fail(403, 'Only the demo curator can add demo projects.')
     const meta = readMeta(body)
     if ('error' in meta) return fail(400, meta.error as string)
     const file = readProject(body.project)
@@ -117,7 +136,7 @@ Deno.serve(async (req) => {
     if (!userId && deviceId.length < 8) return fail(400, 'Missing device id.')
 
     let row: Record<string, unknown> | null = null
-    if (action === 'update') {
+    if (action === 'update' || (asDemo && body.id)) {
       const owned = await loadOwned(clean(body.id, 64))
       if (owned.error) return owned.error
       row = owned.row
@@ -154,9 +173,9 @@ Deno.serve(async (req) => {
       updated_at: new Date().toISOString()
     }
     if (row) {
-      const { error } = await admin.from('public_projects').update(fields).eq('id', id)
+      const { error } = await admin.from('public_projects').update(asDemo ? { ...fields, is_demo: true } : fields).eq('id', id)
       if (error) return fail(500, 'Update failed. Try again.')
-      return reply(200, { id, updatedAt: fields.updated_at })
+      return reply(200, { id, updatedAt: fields.updated_at, demo: asDemo })
     }
     const editToken = userId ? '' : crypto.randomUUID() + crypto.randomUUID()
     const { data, error } = await admin.from('public_projects').insert({
@@ -164,7 +183,8 @@ Deno.serve(async (req) => {
       ...fields,
       owner: userId,
       device_id: userId ? null : deviceId,
-      edit_token_hash: editToken ? await sha256(editToken) : null
+      edit_token_hash: editToken ? await sha256(editToken) : null,
+      is_demo: asDemo
     }).select('id, created_at').single()
     if (error) {
       await admin.storage.from(BUCKET).remove([path])

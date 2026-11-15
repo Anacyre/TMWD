@@ -99,7 +99,14 @@
             <daw-icon name="mixer" :color="session.mixerVisible ? '#e6e6e6' : ''" />
           </view>
         </view>
-        <view class="hit" title="More" @click.stop="toggleMenu('more')">
+        <view
+          class="hit"
+          title="More"
+          @pointerdown.stop="beginSettingsHold"
+          @pointerup.stop="endSettingsHold"
+          @pointercancel.stop="endSettingsHold"
+          @click.stop="onMore"
+        >
           <daw-icon name="more" />
         </view>
       </view>
@@ -155,7 +162,6 @@
       <view class="sep" />
       <view class="item" @click="run('sampler')">Orchestra Sampler</view>
       <view class="item" @click="run('diag')">Diagnostics</view>
-      <view class="item" @click="openInterfaceSettings">Interface Mode</view>
       <view class="item" @click="emit('audio-settings')">Audio Settings</view>
     </view>
 
@@ -218,7 +224,9 @@ import {
   toggleEditor,
   openPluginUI,
   restoreAutosave,
-  openSettings
+  beginSettingsHold,
+  endSettingsHold,
+  consumeSettingsHold
 } from '../store/session.js'
 
 const emit = defineEmits(['audio-settings'])
@@ -242,13 +250,13 @@ function toggleMenu (id) {
   session.openMenu = session.openMenu === id ? '' : id
 }
 
-function toggleFormat () {
-  setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
+function onMore () {
+  if (consumeSettingsHold()) return
+  toggleMenu('more')
 }
 
-function openInterfaceSettings () {
-  closeMenus()
-  openSettings()
+function toggleFormat () {
+  setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
 }
 
 function pickSig (sig) {

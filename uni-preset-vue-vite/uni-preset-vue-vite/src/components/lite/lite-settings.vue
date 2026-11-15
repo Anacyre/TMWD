@@ -28,18 +28,6 @@
       <text v-else-if="cloudAuth.notice" class="hint">{{ cloudAuth.notice }}</text>
     </view>
 
-    <text class="lt-cap">Interface</text>
-    <view class="lt-seg modes">
-      <view
-        v-for="mode in MODES"
-        :key="mode.id"
-        class="lt-seg-item"
-        :class="{ on: shell === mode.id }"
-        @click="setInterfaceMode(mode.id)"
-      >{{ mode.label }}</view>
-    </view>
-    <text class="hint">{{ modeHint }}</text>
-
     <text class="lt-cap">Pointer</text>
     <view class="lt-seg modes">
       <view
@@ -70,18 +58,18 @@
       <view class="switch" :class="{ on: session.metronome }"><view class="knob" /></view>
     </view>
   </lite-sheet>
+  <interface-mode-sheet />
 </template>
 
 <script setup>
 import { computed, onMounted } from 'vue'
 import LiteSheet from './lite-sheet.vue'
+import InterfaceModeSheet from '../interface-mode-sheet.vue'
 import {
   session,
   SNAP_OPTIONS,
   closeSettings,
-  setInterfaceMode,
   setInputMode,
-  interfaceShell,
   setSnapGrid,
   toggleMetronome,
   setTyping
@@ -97,11 +85,6 @@ import {
 } from '../../store/cloud-auth.js'
 import { formatBytes } from '../../lib/cloud-projects.js'
 
-const MODES = [
-  { id: 'lite', label: 'Lite', hint: 'Touch layout for tablets.' },
-  { id: 'le', label: 'LE', hint: 'The previous touch layout.' },
-  { id: 'professional', label: 'Pro', hint: 'Full desktop layout.' }
-]
 const INPUTS = [
   { id: 'auto', label: 'Auto', hint: 'Fingers scroll and pinch. Mouse and pen edit directly.' },
   { id: 'touch', label: 'Touch', hint: 'One finger scrolls. Drag a clip to move it. Pinch to zoom.' },
@@ -110,11 +93,6 @@ const INPUTS = [
 const SNAP_IDS = ['off', '1/4', '1/8', '1/16', '1/32']
 const SNAPS = SNAP_IDS.map((id) => SNAP_OPTIONS.find((option) => option.id === id)).filter(Boolean)
 
-const shell = computed(() => interfaceShell())
-const modeHint = computed(() => {
-  const mode = MODES.find((item) => item.id === shell.value)
-  return (mode ? mode.hint + ' ' : '') + 'All layouts edit the same project.'
-})
 const inputHint = computed(() => {
   const mode = INPUTS.find((item) => item.id === session.inputMode) || INPUTS[0]
   if (mode.id !== 'auto') return mode.hint

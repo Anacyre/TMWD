@@ -45,6 +45,8 @@ import {
   unpublishProject,
   reportPublic,
   listPublic,
+  featureProject,
+  curatorStatus,
   fetchPublicRow,
   fetchPublicProject,
   publicLink,
@@ -73,6 +75,9 @@ export const hub = reactive({
   discoverError: '',
   discoverLoading: false,
   discoverMore: false,
+  canCurate: false,
+  demos: [],
+  demosError: '',
   detail: null,
   publishError: ''
 })
@@ -103,6 +108,7 @@ export function openHub (section) {
   if (section) hub.section = section
   session.projectManagerOpen = true
   session.openMenu = ''
+  refreshCurator()
 }
 
 export function closeHub () {
@@ -500,6 +506,80 @@ export async function copyText (text, done = 'Link copied') {
 /* ── discover ─────────────────────────────────────────────────────── */
 
 const PAGE = 24
+
+export async function refreshCurator () {
+  if (!cloudAuth.user) {
+    hub.canCurate = false
+    return
+  }
+  hub.canCurate = await curatorStatus()
+}
+
+export async function loadDemos () {
+  try {
+    hub.demos = await listPublic({ demo: true, limit: 24 })
+    hub.demosError = ''
+  } catch (err) {
+    hub.demos = []
+    hub.demosError = err.message || 'Could not load demos'
+  }
+}
+
+export function addCurrentAsDemo () {
+  return run('demo', async () => {
+    hub.publishError = ''
+    const meta = publishMeta()
+    const problem = validatePublish(meta, 0)
+    if (problem) {
+      hub.publishError = problem
+      return null
+    }
+    const { project, bytes } = await publicFile()
+    const tooBig = validatePublish(meta, bytes)
+    if (tooBig) {
+      hub.publishError = tooBig
+      return null
+    }
+    const state = publishState()
+    try {
+      const result = await featureProject(project, meta, state.published ? state.id : '')
+      updateProjectMeta({ publishedId: result.id, publishedAt: result.publishedAt })
+      await saveCurrentProject({ quiet: true })
+      await loadDemos()
+      showToast('Added to Examples')
+      return result
+    } catch (err) {
+      hub.publishError = err.message || 'Could not add the demo'
+      return null
+    }
+  })
+}
+
+export async function addLibraryItemAsDemo (item) {
+  if (!hub.canCurate || !item || !item.id) return
+  await run('demo', async () => {
+    const row = hub.local.find((entry) => entry.id === item.id)
+    if (!row) {
+      showToast('Open the project on this device before adding it as a demo.')
+      return
+    }
+    const { project } = await packProjectAssets(row, getAsset)
+    const meta = {
+      title: row.name || 'Demo',
+      description: '',
+      creator: defaultCreator() || 'Midix',
+      tags: []
+    }
+    const problem = validatePublish(meta, new Blob([JSON.stringify(project)]).size)
+    if (problem) {
+      showToast(problem)
+      return
+    }
+    await featureProject({ ...project, id: '', cloudId: '' }, meta, '')
+    await loadDemos()
+    showToast('Added “' + meta.title + '” as a demo')
+  })
+}
 
 export async function loadDiscover (more = false) {
   hub.discoverLoading = true
