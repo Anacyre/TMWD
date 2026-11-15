@@ -791,7 +791,11 @@ export function stopEngineBridge () {
 }
 
 export function setBpm (value) {
+  const live = readAudioClock()
+  if (live != null && session.playing) clockBeats = live
   session.bpm = Math.min(300, Math.max(20, Math.round(value)))
+  anchorAudioClock(clockBeats)
+  if (session.playing) stampClock()
   fire('transport.setBpm', { bpm: session.bpm })
 }
 
@@ -801,7 +805,8 @@ function rebaseVisualClock (now) {
   const stamp = session.clockStamp
   if (!stamp || !session.playing) return
   const predicted = interpolateBeats(stamp, now, session.bpm)
-  if (Math.abs(predicted - clockBeats) < 0.12) return
+  // A twelfth of a beat is already a visible gap between the line and the attack.
+  if (Math.abs(predicted - clockBeats) < 0.02) return
   stamp.positionBeats = clockBeats
   stamp.playing = true
   stamp.bpm = session.bpm
@@ -822,6 +827,7 @@ export function setPositionBeats (beats) {
   const moved = Math.abs(next - (session.positionBeats || 0)) > 0.0001
   session.positionBeats = next
   clockBeats = session.positionBeats
+  anchorAudioClock(clockBeats)
   lastTime = typeof performance !== 'undefined' ? performance.now() : Date.now()
   lastPositionPush = lastTime
   stampClock()
@@ -943,7 +949,25 @@ let lastTime = 0
     canvases interpolate from session.clockStamp instead.
 */
 let clockBeats = 0
+let audioAnchorTime = null
+let audioAnchorBeat = 0
+let audioAnchorBpm = 120
 let lastPositionPush = 0
+
+/** Notes are scheduled on the audio context. The playhead has to use that same
+ *  clock, or the line drifts away from the attacks. */
+function anchorAudioClock (beat) {
+  const ctx = audioGraph && audioGraph.context
+  audioAnchorBeat = beat
+  audioAnchorBpm = Math.max(1, Number(session.bpm) || 120)
+  audioAnchorTime = ctx ? ctx.currentTime : null
+}
+
+function readAudioClock () {
+  const ctx = audioGraph && audioGraph.context
+  if (!ctx || audioAnchorTime == null) return null
+  return audioAnchorBeat + (ctx.currentTime - audioAnchorTime) * audioAnchorBpm / 60
+}
 const POSITION_PUSH_MS = 1000 / 15
 
 function publishClockBeats (now) {
@@ -961,12 +985,17 @@ function loop (now) {
   lastTime = now
   const remoteClock = isEngineConnected() && session.remoteAudioOn
   if (!remoteClock) {
-    const step = dt * session.bpm / 60
-    clockBeats = gateOrchestraClock(clockBeats, clockBeats + step)
+    if (audioAnchorTime == null && audioGraph && audioGraph.context) anchorAudioClock(clockBeats)
+    const audioBeat = readAudioClock()
+    const target = audioBeat == null ? clockBeats + dt * session.bpm / 60 : audioBeat
+    const gated = gateOrchestraClock(clockBeats, target)
+    if (gated < target - 0.0005) anchorAudioClock(clockBeats)
+    else clockBeats = gated
     rebaseVisualClock(now)
     if (session.looping && clockBeats >= session.loopEnd) {
     const length = Math.max(0.25, session.loopEnd - session.loopStart)
       clockBeats = session.loopStart + ((clockBeats - session.loopStart) % length)
+      anchorAudioClock(clockBeats)
       publishClockBeats(now)
       stampClock()
       allLocalNotesOff()
@@ -1233,6 +1262,7 @@ function startLocalClock () {
   ensureClickBuffer()
   lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now())
   clockBeats = session.positionBeats
+  anchorAudioClock(clockBeats)
   lastPositionPush = lastTime
   session.clockStamp = {
     positionBeats: session.positionBeats,
@@ -1249,6 +1279,7 @@ export function pause () {
   sampleWaits.clear()
   if (!preparingSamples) session.sampleLoad.active = false
   session.playing = false
+  audioAnchorTime = null
   session.clockStamp = {
     positionBeats: session.positionBeats,
     playing: false,
@@ -4669,7 +4700,7 @@ function tickLocalNotes (nowBeats) {
         if (isOrchestraVTrack(track) && audioGraph && !orchestraVCloud.noteReady(audioGraph, track, item.pitch, velocity)) {
           return
         }
-        const when = ctx && isOrchestraVTrack(track)
+        const when = ctx
           ? ctx.currentTime + Math.max(0, (start - nowBeats) * 60 / Math.max(20, Number(session.bpm) || 120))
           : undefined
         const voiceKey = isCloudSamplerTrack(track)
