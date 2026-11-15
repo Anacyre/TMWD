@@ -38,8 +38,12 @@ export function publicAssetUrl (path, bucket = WEB_ASSET_BUCKET) {
   return data && data.publicUrl ? data.publicUrl : `${url}/storage/v1/object/public/${bucket}/${path}`
 }
 
+function libraryObjectPath (path) {
+  return String(path || '').replace(/^\/+/, '')
+}
+
 function encodeLibraryPath (path) {
-  return String(path || '').replace(/^\/+/, '').split('/').filter(Boolean).map((part) => {
+  return libraryObjectPath(path).split('/').filter(Boolean).map((part) => {
     try { return encodeURIComponent(decodeURIComponent(part)) } catch (err) { return encodeURIComponent(part) }
   }).join('/')
 }
@@ -65,7 +69,8 @@ export function publicOrchestraUrl (path) {
   if (envBase) return String(envBase).replace(/\/?$/, '/') + rel
   const local = localLibraryUrl(M_ORCHESTRA_BUCKET, rel)
   if (local) return local
-  return publicAssetUrl(rel, M_ORCHESTRA_BUCKET)
+  // getPublicUrl encodes the path. A path that is already encoded becomes %2520 and 400.
+  return publicAssetUrl(libraryObjectPath(path), M_ORCHESTRA_BUCKET)
 }
 
 /**
@@ -83,6 +88,6 @@ export function publicLibraryUrl (bucket, path) {
   const local = localLibraryUrl(bucket, rel)
   if (local) return local
   // Cloudflare has no /vms-symphonic files; that path is the app HTML and stays silent.
-  // Production reads the public bucket, which serves the real Ogg objects.
-  return publicAssetUrl(rel, bucket)
+  // Pass the raw object key. getPublicUrl encodes spaces once; pre-encoding them 400s.
+  return publicAssetUrl(libraryObjectPath(path), bucket)
 }
