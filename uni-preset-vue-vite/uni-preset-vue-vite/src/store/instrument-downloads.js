@@ -22,39 +22,15 @@ import {
   writeInstrumentStatus
 } from '../audio/m-orchestra/sample-cache.js'
 
-const MAX_FILES = 2
-
 export const downloads = reactive({
   ready: false,
   groups: []
 })
 
 let loading = null
-let running = 0
 
 function cachedAudio (bytes) {
   return !!(bytes && isAudioPayload(bytes) && !isHtmlPayload(bytes))
-}
-
-function takeSlot () {
-  return new Promise((resolve) => {
-    const attempt = () => {
-      // A cold playback keeps its own fetch slots full for the whole piece.
-      // Waiting on those slots left the instrument percent at 0. Download uses
-      // its own two connections and does not take a note slot.
-      if (running >= MAX_FILES) {
-        setTimeout(attempt, 40)
-        return
-      }
-      running += 1
-      resolve()
-    }
-    attempt()
-  })
-}
-
-function releaseSlot () {
-  running = Math.max(0, running - 1)
 }
 
 function allItems () {
@@ -114,23 +90,36 @@ async function runDownload (item) {
       new Promise((resolve) => setTimeout(resolve, 300))
     ])
     item.done = 0
-    for (const path of item.paths) {
-      if (item.token !== token) return
-      const bytes = await readEncodedSampleOwn(encodedCacheKey(item.library, path))
-      if (cachedAudio(bytes)) {
-        item.done += 1
-        continue
-      }
-      await takeSlot()
-      try {
-        if (item.token !== token) return
+    // The file slots are local to this download. A shared counter stayed full
+    // when an earlier read never returned, so every later download waited at 0%.
+    let cursor = 0
+    let failed = null
+    const worker = async () => {
+      while (item.token === token && !failed) {
+        const index = cursor
+        cursor += 1
+        if (index >= item.paths.length) return
+        const path = item.paths[index]
+        const bytes = await readEncodedSampleOwn(encodedCacheKey(item.library, path))
+        if (item.token !== token || failed) return
+        if (cachedAudio(bytes)) {
+          item.done += 1
+          continue
+        }
         await fetchFile(item, path)
-        if (item.token !== token) return
+        if (item.token !== token || failed) return
         item.done += 1
-        await remember(item, false, '')
-      } finally {
-        releaseSlot()
+        await Promise.race([
+          remember(item, false, ''),
+          new Promise((resolve) => setTimeout(resolve, 500))
+        ])
       }
+    }
+    try {
+      await Promise.all([worker(), worker()])
+    } catch (err) {
+      failed = err
+      throw err
     }
     if (item.token !== token) return
     item.state = item.done >= item.total ? 'ready' : 'error'
