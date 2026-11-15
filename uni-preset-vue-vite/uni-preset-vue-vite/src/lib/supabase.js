@@ -54,11 +54,9 @@ function envMeta () {
   return typeof import.meta !== 'undefined' ? import.meta.env : null
 }
 
-function localLibraryUrl (bucket, rel) {
-  const env = envMeta()
-  if (env && env.DEV && typeof location !== 'undefined' && location.origin) {
-    return location.origin + '/' + bucket + '/' + rel
-  }
+function localLibraryUrl () {
+  // Dev and Cloudflare both read the public bucket. The Vite disk path is not used,
+  // so a silent cloud sample fails the same way on localhost.
   return ''
 }
 
@@ -74,9 +72,8 @@ export function publicOrchestraUrl (path) {
 }
 
 /**
- * Object URL for a sample library bucket. In H5 dev the Vite plugin serves each bucket
- * from disk. Outside dev, VMS Symphonic is read from the public Supabase bucket.
- * The Cloudflare site does not contain those files, so a same-origin path is HTML.
+ * Object URL for a sample library bucket. Dev and production both use the public
+ * Supabase bucket. A same-origin /vms-symphonic path on Cloudflare is the app HTML.
  */
 export function publicLibraryUrl (bucket, path) {
   const rel = encodeLibraryPath(path)

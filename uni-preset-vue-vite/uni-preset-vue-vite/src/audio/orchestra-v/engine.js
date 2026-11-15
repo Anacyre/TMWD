@@ -326,7 +326,8 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   } catch (err) {
     cached = null
   }
-  if (cached && isAudioPayload(cached) && !isHtmlPayload(cached)) {
+  const cacheAudio = !!(cached && isAudioPayload(cached) && !isHtmlPayload(cached))
+  if (cacheAudio) {
     profile.idbHits += 1
     return cached
   }
@@ -1011,8 +1012,8 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
     .forEach((existing) => releaseVoice(existing, { force: true }))
 
   const detune = (def.voiceModel && def.voiceModel.detuneCents) || 0
-  attachLayer(voice, context, decodedPrimary, primary, def, pitch, ctrl, rules, 0, when)
-  if (noteEpoch !== epoch) {
+  const started = !!attachLayer(voice, context, decodedPrimary, primary, def, pitch, ctrl, rules, 0, when)
+  if (!started || noteEpoch !== epoch) {
     disposeVoice(voice)
     return null
   }

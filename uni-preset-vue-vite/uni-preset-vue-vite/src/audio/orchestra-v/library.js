@@ -66,12 +66,11 @@ function cloudSampleUrl (libraryId, objectPath) {
 
 async function readAudioResponse (url, signal) {
   const response = await fetch(url, signal ? { signal } : undefined)
-  if (!response.ok) throw new Error('Download failed (' + response.status + ')')
   const type = String(response.headers.get('content-type') || '')
   const bytes = await response.arrayBuffer()
-  if (type.includes('text/html') || isHtmlPayload(bytes) || !isAudioPayload(bytes)) {
-    throw new Error('Download returned a page instead of audio')
-  }
+  const audio = isAudioPayload(bytes) && !isHtmlPayload(bytes) && !type.includes('text/html')
+  if (!response.ok) throw new Error('Download failed (' + response.status + ')')
+  if (!audio) throw new Error('Download returned a page instead of audio')
   return bytes
 }
 
