@@ -86,7 +86,24 @@ function abortable (promise, signal) {
 async function readAudioResponse (url, signal) {
   const response = await fetch(url, signal ? { signal } : undefined)
   const type = String(response.headers.get('content-type') || '')
-  const bytes = await response.arrayBuffer()
+  // Aborting the fetch does not stop a body read that has already started.
+  const bytes = await new Promise((resolve, reject) => {
+    const onAbort = () => {
+      const abort = new Error('aborted')
+      abort.name = 'AbortError'
+      reject(abort)
+    }
+    if (signal) {
+      if (signal.aborted) {
+        onAbort()
+        return
+      }
+      signal.addEventListener('abort', onAbort, { once: true })
+    }
+    response.arrayBuffer().then(resolve, reject).finally(() => {
+      if (signal) signal.removeEventListener('abort', onAbort)
+    })
+  })
   const audio = isAudioPayload(bytes) && !isHtmlPayload(bytes) && !type.includes('text/html')
   if (!response.ok) throw new Error('Download failed (' + response.status + ')')
   if (!audio) throw new Error('Download returned a page instead of audio')

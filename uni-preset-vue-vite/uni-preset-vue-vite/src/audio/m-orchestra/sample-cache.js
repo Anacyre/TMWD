@@ -55,9 +55,30 @@ export async function readEncodedSample (key, options) {
   const database = await db()
   if (!database) return null
   return new Promise((resolve) => {
-    const request = database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key)
-    request.onsuccess = () => resolve(request.result instanceof ArrayBuffer ? request.result : null)
-    request.onerror = () => resolve(null)
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    // A read stuck behind playback must not keep the download at 0%.
+    const timer = setTimeout(() => finish(null), options && options.duringDownload ? 1500 : 8000)
+    let request
+    try {
+      request = database.transaction(STORE_NAME, 'readonly').objectStore(STORE_NAME).get(key)
+    } catch (err) {
+      clearTimeout(timer)
+      finish(null)
+      return
+    }
+    request.onsuccess = () => {
+      clearTimeout(timer)
+      finish(request.result instanceof ArrayBuffer ? request.result : null)
+    }
+    request.onerror = () => {
+      clearTimeout(timer)
+      finish(null)
+    }
   })
 }
 

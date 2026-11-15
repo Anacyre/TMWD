@@ -237,7 +237,10 @@ export function refreshInstrumentDownloads () {
 export function instrumentProgress (item) {
   if (!item || !item.total) return '0%'
   if (item.state === 'ready') return '100%'
-  const pct = Math.round(Math.max(0, Math.min(1, item.done / item.total)) * 100)
+  const ratio = Math.max(0, Math.min(1, item.done / item.total))
+  let pct = Math.round(ratio * 100)
+  // A violin has about 900 files, so the first finished files round back to 0.
+  if (item.state === 'downloading' && item.done > 0) pct = Math.max(1, pct)
   return pct + '%'
 }
 
