@@ -4,23 +4,26 @@ import { dawFxWorkletPlugin } from './scripts/daw-fx-worklet-vite-plugin.mjs'
 import { dawOrchestraSamplesPlugin } from './scripts/daw-orchestra-samples-vite-plugin.mjs'
 import { dawPwaPlugin } from './scripts/daw-pwa-vite-plugin.mjs'
 
+function safeChunkFileName (chunkInfo) {
+  // A name that starts with ".." is emitted as import("..-node_modules-@...").
+  // That is not a relative specifier, so the Ogg decoder never loads on Cloudflare.
+  const raw = String(chunkInfo && chunkInfo.name || 'chunk')
+  const name = raw.replace(/@/g, '_').replace(/\./g, '_').replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^_+/, '') || 'chunk'
+  return 'assets/' + name + '.[hash].js'
+}
+
 function dawSafeChunkNames () {
   return {
     name: 'daw-safe-chunk-names',
     enforce: 'post',
-    options (opts) {
-      const output = opts && opts.output
-      if (!output) return null
-      const list = Array.isArray(output) ? output : [output]
-      for (const item of list) {
-        if (!item || typeof item !== 'object') continue
-        const prev = item.sanitizeFileName
-        item.sanitizeFileName = (name) => {
-          const base = typeof prev === 'function' ? prev(name) : String(name)
-          return String(base).replace(/\0/g, '_').replace(/@/g, '_')
-        }
+    outputOptions (options) {
+      options.chunkFileNames = safeChunkFileName
+      const prev = options.sanitizeFileName
+      options.sanitizeFileName = (name) => {
+        const base = typeof prev === 'function' ? prev(name) : String(name)
+        return String(base).replace(/@/g, '_').replace(/\.\./g, '_')
       }
-      return null
+      return options
     }
   }
 }
@@ -52,9 +55,7 @@ export default defineConfig({
             expensive, and a library the session never touches should not be
             part of the engine download.
         */
-        sanitizeFileName (name) {
-          return String(name).replace(/\0/g, '_').replace(/@/g, '_')
-        },
+        chunkFileNames: safeChunkFileName,
         manualChunks (id) {
           const path = id.split('\\').join('/')
           if (path.includes('/audio/m-orchestra/manifest.json')) return 'm-orchestra-manifest'
