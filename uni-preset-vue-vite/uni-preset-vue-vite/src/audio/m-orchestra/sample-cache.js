@@ -48,7 +48,10 @@ async function db () {
   return database
 }
 
-export async function readEncodedSample (key) {
+export async function readEncodedSample (key, options) {
+  // Playback cache checks time out and leave their reads queued. A download
+  // stays at 0% until that queue is empty, so those checks stay off the database.
+  if (instrumentDownloadActive() && !(options && options.duringDownload)) return null
   const database = await db()
   if (!database) return null
   return new Promise((resolve) => {
@@ -91,6 +94,15 @@ export function endInstrumentDownload () {
 
 export function instrumentDownloadActive () {
   return instrumentDownloadsActive > 0
+}
+
+/** Drop the shared connection so a download is not stuck behind playback reads. */
+export async function releaseDatabase () {
+  const pending = dbPromise
+  dbPromise = null
+  if (!pending) return
+  const database = await pending
+  if (database) database.close()
 }
 
 export function noteFetchBegin () {

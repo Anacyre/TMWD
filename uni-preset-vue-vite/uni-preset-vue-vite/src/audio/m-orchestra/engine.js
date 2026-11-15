@@ -3,7 +3,7 @@ import { publicOrchestraUrl } from '../../lib/supabase.js'
 import bundled from './manifest.json'
 import { playbackFrom, acceptManifestLoop as acceptPublishedLoop } from './playback.js'
 import { bakeLoopSeam, pickLayer, pickSample as pickFromManifest, splitSustainRelease } from './pick.js'
-import { AsyncLimiter, AudioBufferLru, readEncodedSample, writeEncodedSample } from './sample-cache.js'
+import { AsyncLimiter, AudioBufferLru, instrumentDownloadActive, readEncodedSample, writeEncodedSample } from './sample-cache.js'
 import { trackInputNode } from '../mixer-graph.js'
 
 const TECHNIQUE_ARTIC = {
@@ -149,7 +149,7 @@ async function fetchSampleBytes (sample) {
       const bytes = await response.arrayBuffer()
       profile.fetchMs += nowMs() - started
       profile.networkFetches += 1
-      writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
+      if (!instrumentDownloadActive()) writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
       return bytes
     }
   }
@@ -160,7 +160,7 @@ async function fetchSampleBytes (sample) {
   if (!file) throw new Error('missing ' + sample.entry)
   const bytes = await file.async('arraybuffer')
   profile.fetchMs += nowMs() - started
-  writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
+  if (!instrumentDownloadActive()) writeEncodedSample(cacheKey, bytes.slice(0)).catch(() => {})
   return bytes
 }
 

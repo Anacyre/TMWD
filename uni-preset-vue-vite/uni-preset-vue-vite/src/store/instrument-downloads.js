@@ -16,6 +16,7 @@ import {
   forgetEncodedSample,
   listInstrumentStatus,
   readEncodedSample,
+  releaseDatabase,
   writeEncodedSample,
   writeInstrumentStatus
 } from '../audio/m-orchestra/sample-cache.js'
@@ -68,7 +69,7 @@ function findItem (id) {
 async function countCached (item) {
   let done = 0
   for (const path of item.paths) {
-    const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
+    const bytes = await readEncodedSample(encodedCacheKey(item.library, path), { duringDownload: true })
     if (cachedAudio(bytes)) done += 1
   }
   return done
@@ -107,10 +108,11 @@ async function runDownload (item) {
   item.error = ''
   beginInstrumentDownload()
   try {
+    await releaseDatabase()
     item.done = 0
     for (const path of item.paths) {
       if (item.token !== token) return
-      const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
+      const bytes = await readEncodedSample(encodedCacheKey(item.library, path), { duringDownload: true })
       if (cachedAudio(bytes)) {
         item.done += 1
         continue
