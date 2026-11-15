@@ -68,7 +68,7 @@ const regionMaps = new Map()
 const bufferCache = new AudioBufferLru(96 * 1024 * 1024)
 const windowPins = new Set()
 const livePins = new Set()
-const decodeQueue = new AsyncLimiter(4)
+const decodeQueue = new AsyncLimiter(8)
 const decodePromises = new Map()
 const failedDecodes = new Set()
 const voices = new Map()
@@ -319,6 +319,25 @@ async function fetchSampleBytes (library, objectPath, signal) {
   }
 }
 
+const SAMPLE_FETCH_LIMIT = 8
+const SAMPLE_FETCH_MS = 20000
+let sampleFetchActive = 0
+const sampleFetchWaiters = []
+
+function acquireSampleFetch () {
+  if (sampleFetchActive < SAMPLE_FETCH_LIMIT) {
+    sampleFetchActive += 1
+    return Promise.resolve()
+  }
+  return new Promise((resolve) => { sampleFetchWaiters.push(resolve) })
+}
+
+function releaseSampleFetch () {
+  const next = sampleFetchWaiters.shift()
+  if (next) next()
+  else sampleFetchActive = Math.max(0, sampleFetchActive - 1)
+}
+
 async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   let cached = null
   try {
@@ -332,12 +351,19 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     return cached
   }
   if (cached) forgetEncodedSample(stored).catch(() => {})
-  const controller = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null
-  const timer = controller ? setTimeout(() => controller.abort(), SAMPLE_DEADLINE_MS) : 0
+  // The 8s note deadline was aborting Supabase downloads that were only waiting for a
+  // free connection. Take a slot first, then allow the transfer itself 20s.
+  await acquireSampleFetch()
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), SAMPLE_FETCH_MS) : 0
   const started = nowMs()
   noteFetchBegin()
+  if (signal) {
+    if (signal.aborted && controller) controller.abort()
+    else if (controller) signal.addEventListener('abort', () => controller.abort(), { once: true })
+  }
   try {
-    const bytes = await fetchLibraryBytes(library, objectPath, signal || (controller && controller.signal))
+    const bytes = await fetchLibraryBytes(library, objectPath, controller && controller.signal)
     profile.fetchMs += nowMs() - started
     profile.networkFetches += 1
     writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
@@ -345,6 +371,7 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   } finally {
     noteFetchEnd()
     if (timer) clearTimeout(timer)
+    releaseSampleFetch()
   }
 }
 
@@ -371,13 +398,9 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
     return decoded
   }
 
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const promise = decodeQueue.run(async () => {
-    const timer = setTimeout(() => {
-      if (controller) controller.abort()
-    }, SAMPLE_DEADLINE_MS)
     try {
-    const bytes = await fetchSampleBytes(library, zone.sample, controller && controller.signal)
+    const bytes = await fetchSampleBytes(library, zone.sample, null)
     const started = nowMs()
     const audio = await withDeadline(
       decodeSampleBytes(context, bytes),
@@ -421,8 +444,6 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
       failedDecodes.add(key)
       forgetEncodedSample(cachePath(library, zone.sample)).catch(() => {})
       throw err
-    } finally {
-      clearTimeout(timer)
     }
   }, priority)
 
@@ -449,13 +470,9 @@ async function decodeRelease (context, library, zone, priority = false) {
   }
   if (decodePromises.has(key)) return decodePromises.get(key)
 
-  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const promise = decodeQueue.run(async () => {
-    const timer = setTimeout(() => {
-      if (controller) controller.abort()
-    }, SAMPLE_DEADLINE_MS)
     try {
-      const bytes = await fetchSampleBytes(library, zone.releaseSample, controller && controller.signal)
+      const bytes = await fetchSampleBytes(library, zone.releaseSample, null)
       const started = nowMs()
       const audio = await withDeadline(
         decodeSampleBytes(context, bytes),
@@ -469,8 +486,6 @@ async function decodeRelease (context, library, zone, priority = false) {
     } catch (err) {
       forgetEncodedSample(cachePath(library, zone.releaseSample)).catch(() => {})
       throw err
-    } finally {
-      clearTimeout(timer)
     }
   }, priority)
 
@@ -1162,10 +1177,11 @@ export function decodeBacklog () {
   return decodeQueue.active + decodeQueue.pending
 }
 
-export async function decodePinned (graph, item) {
+export async function decodePinned (graph, item, priority = true) {
   if (!graph || !item || !item.zone) return null
   const rules = playbackRules(item.library)
-  return decodeZone(graph.context, item.library, item.zone, rules, true, true)
+  const pin = priority === true || priority === 'now'
+  return decodeZone(graph.context, item.library, item.zone, rules, priority, pin)
 }
 
 /** Keep PCM only for the zones the playhead is about to use. */

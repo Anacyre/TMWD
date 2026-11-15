@@ -1119,16 +1119,31 @@ async function prepareOrchestraSamples (graph, fromBeat) {
     zones.push(...list)
   }
   const split = selectPrepareZones(zones)
+  let firstStart = Infinity
+  for (const item of split.immediate) {
+    const start = Number(item.start) || 0
+    if (start >= fromBeat && start < firstStart) firstStart = start
+  }
+  const horizon = (firstStart === Infinity ? fromBeat : firstStart) + 8
+  const lead = []
+  const rest = []
+  for (const item of split.immediate) {
+    if ((Number(item.start) || 0) <= horizon) lead.push(item)
+    else rest.push(item)
+  }
   session.sampleLoad.total = split.immediate.length
   session.sampleLoad.done = 0
   session.sampleLoad.active = split.immediate.length > 0
-  await Promise.all(split.immediate.map(async (item) => {
+  const decodeOne = async (item, priority) => {
     if (token !== samplePrepareToken) return
     try {
-      await orchestraVCloud.decodePinned(graph, item)
+      await orchestraVCloud.decodePinned(graph, item, priority)
       if (token === samplePrepareToken) session.sampleLoad.done += 1
     } catch (err) { /* note-on retries; a failed decode is not progress */ }
-  }))
+  }
+  const leadJobs = lead.map((item) => decodeOne(item, 'now'))
+  rest.forEach((item) => { decodeOne(item, true) })
+  await Promise.all(leadJobs)
   session.sampleLoad.active = false
   if (token !== samplePrepareToken) return false
   orchestraVCloud.replaceWindowPins(graph.context, split.immediate)
@@ -1139,7 +1154,7 @@ async function prepareOrchestraSamples (graph, fromBeat) {
 function maybeOrchestraLookahead () {
   if (!audioGraph) return
   if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat) lastLookaheadBeat = -100
-  if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat + 2) return
+  if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat + 0.5) return
   lastLookaheadBeat = clockBeats
   prefetchOrchestraWindow(audioGraph, clockBeats, PREPARE_WINDOW_BEATS, false).catch(() => {})
 }
