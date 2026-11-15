@@ -27,6 +27,26 @@
       <view class="readout" @click.stop="toggleFormat">
         <text class="pos">{{ positionDisplay }}</text>
       </view>
+      <view class="meter-wrap">
+        <view
+          class="meter"
+          :class="{ on: sigOpen }"
+          aria-label="Time signature"
+          @click.stop="toggleSignature"
+        >
+          <text>{{ session.timeSigNum }}/{{ session.timeSigDen }}</text>
+        </view>
+        <view v-if="sigOpen" class="meter-back" @click.stop="sigOpen = false" />
+        <view v-if="sigOpen" class="meter-menu" @click.stop>
+          <view
+            v-for="sig in TIME_SIGNATURES"
+            :key="sig"
+            class="meter-item"
+            :class="{ on: sig === session.timeSigNum + '/' + session.timeSigDen }"
+            @click.stop="pickSignature(sig)"
+          >{{ sig }}</view>
+        </view>
+      </view>
       <view v-if="!editingBpm" class="bpm" aria-label="Tempo" @click.stop="editBpm">
         <text class="bpm-val">{{ Math.round(session.bpm) }}</text>
         <text class="bpm-unit">BPM</text>
@@ -91,6 +111,8 @@ import {
   undoEdit,
   redoEdit,
   setBpm,
+  setTimeSignature,
+  TIME_SIGNATURES,
   setPositionFormat,
   setWorkspaceView,
   setTyping,
@@ -103,6 +125,7 @@ import {
 import { cloudAuth } from '../../store/cloud-auth.js'
 
 const editingBpm = ref(false)
+const sigOpen = ref(false)
 const view = computed(() => session.workspaceView)
 const positionDisplay = computed(() => (session.positionFormat === 'time' ? secondsText.value : positionText.value))
 const busyBar = computed(() => {
@@ -125,8 +148,20 @@ function toggleFormat () {
   setPositionFormat(session.positionFormat === 'time' ? 'musical' : 'time')
 }
 
+function toggleSignature () {
+  sigOpen.value = !sigOpen.value
+  if (sigOpen.value) editingBpm.value = false
+}
+
+function pickSignature (sig) {
+  const parts = String(sig).split('/')
+  setTimeSignature(Number(parts[0]), Number(parts[1]))
+  sigOpen.value = false
+}
+
 function editBpm () {
   editingBpm.value = true
+  sigOpen.value = false
   setTyping(true)
 }
 
@@ -215,6 +250,47 @@ function commitBpm (e) {
   cursor: pointer;
 }
 .pos { font-size: var(--lt-fs-m); font-variant-numeric: tabular-nums; letter-spacing: 0.02em; }
+.meter-wrap { position: relative; flex: none; }
+.meter {
+  min-width: 56px;
+  height: 40px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--lt-radius);
+  background: var(--lt-s1);
+  color: var(--lt-ink);
+  font-size: var(--lt-fs-m);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  box-sizing: border-box;
+}
+.meter.on { box-shadow: inset 0 0 0 1px var(--lt-accent); }
+.meter-back { position: fixed; inset: 0; z-index: 20; }
+.meter-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 21;
+  min-width: 96px;
+  padding: 4px;
+  border-radius: var(--lt-radius);
+  background: var(--lt-bg);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.28), inset 0 0 0 1px var(--lt-line);
+}
+.meter-item {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  color: var(--lt-ink-2);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+}
+.meter-item.on { color: var(--lt-accent); background: var(--lt-s1); }
 .bpm, .bpm-input {
   width: 72px;
   height: 40px;
@@ -264,8 +340,13 @@ function commitBpm (e) {
 @media (max-width: 900px) {
   .readout { min-width: 92px; }
   .views .lt-seg-item { min-width: 60px; padding: 0 10px; }
+  .center { gap: 6px; }
 }
 @media (max-width: 760px) {
   .bpm { display: none; }
+  .views .lt-seg-item { min-width: 0; padding: 0 8px; }
+}
+@media (max-width: 560px) {
+  .readout { display: none; }
 }
 </style>

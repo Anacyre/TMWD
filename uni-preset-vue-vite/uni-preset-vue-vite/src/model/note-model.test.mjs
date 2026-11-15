@@ -21,6 +21,7 @@ import {
   snapPitchToScale
 } from './note-model.js'
 import { hitNote, xToTick, defaultView, viewportTicks, iterateGridLines } from './piano-roll-engine.js'
+import { formatMusical, quarterBeatsPerBar } from './timeline.js'
 
 function assert (ok, message) {
   if (!ok) throw new Error(message)
@@ -66,6 +67,11 @@ assert(repeated.length === 4, '1/16 repeats inside a quarter')
 
 assert(ticksPerBar(4, 4) === PPQ * 4, '4/4 bar')
 assert(ticksPerBar(6, 8) === PPQ * 3, '6/8 bar in quarter ticks')
+assert(quarterBeatsPerBar(4, 4) === 4, '4/4 is four quarters')
+assert(quarterBeatsPerBar(6, 8) === 3, '6/8 is three quarters')
+assert(quarterBeatsPerBar(7, 8) === 3.5, '7/8 is three and a half quarters')
+assert(formatMusical(0, 6, 8) === '1 : 1 : 000', '6/8 starts at beat 1')
+assert(formatMusical(1.5, 6, 8) === '1 : 4 : 000', '6/8 counts eighths')
 const sig = timeSignatureAtTick([
   { timeTick: 0, numerator: 4, denominator: 4 },
   { timeTick: PPQ * 8, numerator: 3, denominator: 4 }

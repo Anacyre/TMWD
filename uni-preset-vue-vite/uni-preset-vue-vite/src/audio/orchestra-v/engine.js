@@ -915,7 +915,7 @@ function attachLayer (voice, context, decoded, item, def, pitch, ctrl, rules, de
   return source
 }
 
-export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
+export async function noteOn (graph, track, pitch, velocity = 0.8, id, when, preview = false) {
   if (!graph || !track) return null
   profile.noteCount += 1
   // Register synchronously, before the first await: a note-off that lands while the
@@ -943,15 +943,23 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
   const velocityMidi = Math.round(Math.max(0.05, Math.min(1, velocity)) * 127)
   const layerVelocity = targetDynamics(Math.round(ctrl.dynamics * 127), velocityMidi, rules.dynamicsVelocityMix)
   const contextForCache = graph.context
+  const cachedZone = (zone) => zoneHasBuffer(contextForCache, library, zone)
   const selection = selectZone(
     map,
     pitch,
     layerVelocity,
     articulationChain(artic),
     seqStateFor(track.id),
-    true,
-    (zone) => zoneHasBuffer(contextForCache, library, zone)
+    !preview,
+    cachedZone
   )
+  if (preview) {
+    // A pencil preview lasts a fraction of a second. Fetching the file now
+    // only stalls the next note, so an uncached zone stays silent.
+    for (let i = selection.length - 1; i >= 0; i--) {
+      if (!cachedZone(selection[i].zone)) selection.splice(i, 1)
+    }
+  }
   if (!selection.length) {
     pending.delete(key)
     return null
@@ -1055,7 +1063,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when) {
     return null
   }
   voices.set(key, voice)
-  warmRelease(context, library, primary.zone, voice, key)
+  if (!preview) warmRelease(context, library, primary.zone, voice, key)
   if (releasedEarly) releaseVoice(key)
 
   // A take that rings out on its own is never released, so its only end is the end of the
@@ -1139,6 +1147,55 @@ function uniqueBankZones (bank) {
     }
   }
   return list
+}
+
+let articulationWarmToken = 0
+let articulationWarmPaused = false
+
+export function pauseArticulationWarm () {
+  articulationWarmPaused = true
+}
+
+export function resumeArticulationWarm () {
+  articulationWarmPaused = false
+}
+
+export function cancelArticulationWarm () {
+  articulationWarmToken += 1
+  articulationWarmPaused = false
+}
+
+function yieldToInput () {
+  return new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+/** One nearby zone at a time, and only while the user is not drawing. */
+export async function warmArticulationIdle (graph, definitionId, techniqueId) {
+  const token = ++articulationWarmToken
+  const map = await loadInstrument(definitionId)
+  if (!map || !graph || token !== articulationWarmToken) return
+  const def = findDefinition(definitionId)
+  const artic = TECHNIQUE_ARTIC[techniqueId] || articForTrack({ techniqueId }, def)
+  const bank = map.byArticulation[artic] || map.byArticulation[map.articulations[0]]
+  if (!bank) return
+  const library = map.library
+  const rules = playbackRules(library)
+  const middle = Math.round((bank.keyLo + bank.keyHi) / 2)
+  const ordered = uniqueBankZones(bank).sort((a, b) => Math.abs(a.key - middle) - Math.abs(b.key - middle))
+  const near = ordered.filter((item) => Math.abs(item.key - middle) <= 12).slice(0, 8)
+  for (const item of near) {
+    while (articulationWarmPaused && token === articulationWarmToken) {
+      await new Promise((resolve) => setTimeout(resolve, 40))
+    }
+    if (token !== articulationWarmToken) return
+    if (zoneHasBuffer(graph.context, library, item.zone)) continue
+    try {
+      const decoded = await decodeZone(graph.context, library, item.zone, rules, false, true)
+      if (decoded && decoded.key) pinLive(decoded.key)
+    } catch (err) { /* the next pencil note can still miss */ }
+    if (token !== articulationWarmToken) return
+    await yieldToInput()
+  }
 }
 
 /** Decode one articulation's bodies from the middle of the range outward and pin them. */

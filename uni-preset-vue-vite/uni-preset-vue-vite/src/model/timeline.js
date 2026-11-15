@@ -24,18 +24,28 @@ export function snapBeat (beat, snap, gridBeats) {
   return Math.max(0, Math.round(beat / gridBeats) * gridBeats)
 }
 
-export function barBeatTick (positionBeats, timeSigNum, ticksPerBeat = TICKS_PER_BEAT) {
-  const beatsPerBar = Math.max(1, timeSigNum || 4)
-  const total = Math.max(0, positionBeats || 0)
-  const bar = Math.floor(total / beatsPerBar) + 1
-  const beatInBar = total - (bar - 1) * beatsPerBar
-  const beat = Math.floor(beatInBar) + 1
-  const tick = Math.floor((beatInBar % 1) * ticksPerBeat)
-  return { bar, beat, tick }
+/** Quarter-note length of one bar. 6/8 is three quarters, not six. */
+export function quarterBeatsPerBar (numerator, denominator) {
+  const num = Math.max(1, Number(numerator) || 4)
+  const den = Math.max(1, Number(denominator) || 4)
+  return (num * 4) / den
 }
 
-export function formatMusical (positionBeats, timeSigNum) {
-  const { bar, beat, tick } = barBeatTick(positionBeats, timeSigNum)
+export function barBeatTick (positionBeats, timeSigNum, ticksPerBeat = TICKS_PER_BEAT, timeSigDen = 4) {
+  const den = Math.max(1, Number(timeSigDen) || 4)
+  const beatUnit = 4 / den
+  const beatsPerBar = quarterBeatsPerBar(timeSigNum, den)
+  const total = Math.max(0, positionBeats || 0)
+  const barIndex = Math.floor(total / beatsPerBar + 1e-9)
+  const into = total - barIndex * beatsPerBar
+  const beat = Math.floor(into / beatUnit + 1e-9) + 1
+  const frac = into / beatUnit - (beat - 1)
+  const tick = Math.floor(frac * ticksPerBeat + 1e-9)
+  return { bar: barIndex + 1, beat, tick }
+}
+
+export function formatMusical (positionBeats, timeSigNum, timeSigDen = 4) {
+  const { bar, beat, tick } = barBeatTick(positionBeats, timeSigNum, TICKS_PER_BEAT, timeSigDen)
   return bar + ' : ' + beat + ' : ' + String(tick).padStart(3, '0')
 }
 

@@ -64,7 +64,7 @@ import {
 } from '../audio/orchestra-v/prepare-window.js'
 import { createInsert } from '../dsp/plugin.js'
 import { plugins, listPlugins } from '../dsp/registry.js'
-import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats } from '../model/timeline.js'
+import { SNAP_OPTIONS as TIMELINE_SNAP, TICKS_PER_BEAT as PPQ, formatMusical, formatTime, interpolateBeats, quarterBeatsPerBar } from '../model/timeline.js'
 import { isGroupTrack, isPlayableTrack, buildCollapsedGroupClip, invalidateClipPreview, clearClipPreviewCache, clipPlaybackNotes, reorderTrackList, subtreeIndexes, nextBarLength, mergeClipPlan } from '../model/playlist-model.js'
 import { normalizeNote, engineNotePayload, defaultScore, normalizeMarker } from '../model/note-model.js'
 import { parseMidiBlob } from '../lib/midi-import.js'
@@ -335,7 +335,8 @@ export const session = reactive({
 
 export { engineLink }
 
-export const positionText = computed(() => formatMusical(session.positionBeats, session.timeSigNum))
+export const positionText = computed(() => formatMusical(session.positionBeats, session.timeSigNum, session.timeSigDen))
+export const barLengthBeats = computed(() => quarterBeatsPerBar(session.timeSigNum, session.timeSigDen))
 
 export const secondsText = computed(() => formatTime(session.positionBeats, session.bpm))
 
@@ -484,7 +485,7 @@ function applyProject (project) {
     session.selectedTrack = nextSelected >= 0 ? nextSelected : Math.min(session.selectedTrack, session.tracks.length - 1)
     session.tracks.forEach((track) => syncTrackMixLane(track))
   }
-  if (project.clips) {
+  if (project.clips && !keepLocalNotes()) {
     const selectedClipId = (session.clips[session.selectedClip] || {}).id
     clearClipPreviewCache()
     session.clips = data.clips.map(mapClip)
@@ -500,6 +501,13 @@ function applyProject (project) {
     session.timeSignatures = project.timeSignatures
   } else if (project.score && project.score.timeSignatures) {
     session.timeSignatures = project.score.timeSignatures
+  } else {
+    session.timeSignatures = [{ timeTick: 0, numerator: session.timeSigNum || 4, denominator: session.timeSigDen || 4 }]
+  }
+  const origin = (session.timeSignatures || []).slice().sort((a, b) => (a.timeTick || 0) - (b.timeTick || 0))[0]
+  if (origin && origin.numerator && (project.timeSignatures || (project.score && project.score.timeSignatures))) {
+    session.timeSigNum = origin.numerator
+    session.timeSigDen = origin.denominator || 4
   }
   session.score = defaultScore({
     ...(project.score || {}),
@@ -614,6 +622,11 @@ function bumpClipPreview (clipId) {
   }, 16)
 }
 
+/** Playback echoes the engine's notes. Keep the copy under the fingers while a note is being edited. */
+function keepLocalNotes () {
+  return !!pianoDragClipId || editOpen || (session.playing && session.pianoRollFocus)
+}
+
 function applyNoteDelta (delta) {
   if (!delta || (pianoDragClipId && delta.clipId === pianoDragClipId)) return
   const clip = session.clips.find((item) => item.id === delta.clipId)
@@ -640,7 +653,7 @@ function applyNoteDelta (delta) {
 }
 
 function applyNotesState (payload) {
-  if (!payload || !payload.clips) return
+  if (!payload || !payload.clips || keepLocalNotes()) return
   payload.clips.forEach((entry) => {
     const clip = session.clips.find((item) => item.id === entry.clipId)
     if (!clip) return
@@ -1352,9 +1365,17 @@ export function setSnapGrid (beats) {
 }
 
 export function setTimeSignature (numerator, denominator) {
-  session.timeSigNum = numerator
-  session.timeSigDen = denominator
-  fire('transport.setTimeSignature', { numerator, denominator })
+  const allowed = [1, 2, 4, 8, 16]
+  const num = Math.max(1, Math.min(16, Math.round(Number(numerator) || 4)))
+  const den = allowed.includes(Number(denominator)) ? Number(denominator) : 4
+  if (session.timeSigNum === num && session.timeSigDen === den) return
+  session.timeSigNum = num
+  session.timeSigDen = den
+  const change = { timeTick: 0, numerator: num, denominator: den }
+  session.timeSignatures = [change]
+  if (session.score) session.score = { ...session.score, timeSignatures: [change] }
+  markDirty()
+  fire('transport.setTimeSignature', { numerator: num, denominator: den })
 }
 
 export function setLoopRange (startBeats, endBeats) {
@@ -1921,7 +1942,7 @@ function contentEndBeats (clip) {
 export function growClipToContent (clip) {
   if (!clip || clip.virtual || isAudioClip(clip) || clip.midi === false) return
   const current = Number(clip.lengthBeats) || 0
-  const next = nextBarLength(current, contentEndBeats(clip), session.timeSigNum)
+  const next = nextBarLength(current, contentEndBeats(clip), quarterBeatsPerBar(session.timeSigNum, session.timeSigDen))
   if (next <= current + 0.001) return
   if (clip.loopLengthBeats > 0.01) clip.loopLengthBeats = next
   if (clip.loopCount > 1) clip.loopCount = 1
@@ -2763,10 +2784,10 @@ export function previewNoteOn (track, pitch, velocity = 0.8) {
     armedNotes.add(previewId)
   }
   unlockAudio().then(async () => {
-    await ensureMixerAttached()
-    refreshMixerGraph()
+    const graph = await ensureMixerAttached()
+    if (graph && !graph.mixerNodes) refreshMixerGraph()
     if (isCloudSamplerTrack(track)) {
-      previewCloudSampler(track, pitch, velocity, previewId)
+      previewCloudSampler(track, pitch, velocity, previewId, undefined, true)
       startBrowserMeterLoop()
       return
     }
@@ -2939,6 +2960,35 @@ export function flushNotePatches () {
 
 export function setPianoDragActive (clipId) {
   pianoDragClipId = clipId || 0
+  if (pianoDragClipId) pausePianoRollWarm()
+  else resumePianoRollWarm()
+}
+
+let rollWarmToken = 0
+
+/** Decode the current articulation while the piano roll is open and idle.
+ *  Drawing a note pauses it, so a cloud fetch never runs on the pointer frame. */
+export function beginPianoRollWarm () {
+  const token = ++rollWarmToken
+  const track = session.tracks[session.selectedTrack]
+  if (!track || !isOrchestraVTrack(track)) return
+  unlockAudio().then((graph) => {
+    if (token !== rollWarmToken || !graph) return
+    return orchestraVCloud.warmArticulationIdle(graph, track.definitionId, track.techniqueId)
+  }).catch(() => {})
+}
+
+export function pausePianoRollWarm () {
+  orchestraVCloud.pauseArticulationWarm()
+}
+
+export function resumePianoRollWarm () {
+  orchestraVCloud.resumeArticulationWarm()
+}
+
+export function endPianoRollWarm () {
+  rollWarmToken += 1
+  orchestraVCloud.cancelArticulationWarm()
 }
 
 export function showToast (text) {
@@ -3359,6 +3409,8 @@ function stopExpressionPlayback () {
   lastExpressionAt = 0
 }
 
+let mixerToggleAt = 0
+
 export function setWorkspaceView (view) {
   if (view === 'piano') {
     if (!isLite() && session.workspaceView === 'piano' && session.editorVisible) {
@@ -3383,6 +3435,9 @@ export function setWorkspaceView (view) {
     return
   }
   if (view === 'mixer') {
+    const now = Date.now()
+    if (now - mixerToggleAt < 450) return
+    mixerToggleAt = now
     if (!isLite() && session.workspaceView === 'mixer' && session.mixerVisible) {
       session.mixerVisible = false
       session.workspaceView = 'arrangement'
@@ -4364,7 +4419,8 @@ function tickLocalMetronome (positionBeats) {
   lastMetroBeat = beat
   const src = audioGraph.context.createBufferSource()
   src.buffer = clickBuffer
-  if (beat % Math.max(1, session.timeSigNum || 4) === 0) src.playbackRate.value = 1.5
+  const bar = quarterBeatsPerBar(session.timeSigNum, session.timeSigDen)
+  if (Math.abs(beat / bar - Math.round(beat / bar)) < 1e-4) src.playbackRate.value = 1.5
   const dest = clickBus(audioGraph) || audioGraph.context.destination
   src.connect(dest)
   try { src.start() } catch (err) { /* already started */ }
@@ -4761,7 +4817,7 @@ function tickLocalAudio (nowBeats) {
   })
 }
 
-function previewCloudSampler (track, pitch, velocity, id, when) {
+function previewCloudSampler (track, pitch, velocity, id, when, preview = false) {
   const logicalId = id || ('preview-' + track.id + '-' + pitch)
   const cloud = cloudSamplerFor(track)
   if (!cloud) return logicalId
@@ -4772,7 +4828,7 @@ function previewCloudSampler (track, pitch, velocity, id, when) {
       return
     }
     await graph.context.resume()
-    const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when)
+    const engineKey = await cloud.noteOn(graph, track, pitch, velocity, logicalId, when, preview)
     const stillArmed = armedNotes.has(logicalId)
     const releasedAt = previewReleased.get(logicalId) || 0
     armedNotes.delete(logicalId)

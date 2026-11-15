@@ -72,7 +72,7 @@ export function tickToX (tick, view) {
 export function xToTick (x, view, { snap = true, free = false } = {}) {
   const tick = Math.max(0, Math.round(((x + view.scrollX) / view.pixelsPerBeat) * PPQ))
   if (!snap) return tick
-  return snapTick(tick, gridTicksForView(view), free || view.freeSnap)
+  return snapTick(tick, gridTicksForView(view, view.barBeats || 4), free || view.freeSnap)
 }
 
 export function noteRect (note, view) {

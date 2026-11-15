@@ -145,6 +145,7 @@ import DawIcon from '../daw-icon.vue'
 import DawClipPreview from '../daw-clip-preview.vue'
 import {
   session,
+  barLengthBeats,
   snapBeat,
   setPositionBeats,
   setPixelsPerBeat,
@@ -219,7 +220,7 @@ const menuOpen = ref(false)
 const rowH = ROW_H
 const ppb = computed(() => session.pixelsPerBeat)
 const headW = computed(() => (viewportW.value < 900 ? 176 : 200))
-const beatsPerBar = computed(() => Math.max(1, session.timeSigNum || 4))
+const beatsPerBar = computed(() => Math.max(0.25, barLengthBeats.value || 4))
 const rows = computed(() => visibleTrackRows(session.tracks))
 const rowByTrack = computed(() => {
   const map = new Map()

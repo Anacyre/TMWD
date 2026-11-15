@@ -379,7 +379,7 @@
           <!-- Examples -->
           <view v-else-if="hub.section === 'examples'" class="stack">
             <view class="grid">
-              <view class="tile" @click="openExample">
+              <view v-if="!hub.builtinHidden" class="tile" @click="openExample">
                 <view class="cover" :style="coverStyle('Re-Time')">
                   <svg class="cover-notes" viewBox="0 0 100 60" preserveAspectRatio="none">
                     <rect v-for="(bar, i) in demoSummary.preview" :key="i" :x="4 + bar[0] * 92" :y="6 + bar[1] * 46" :width="Math.max(1.6, bar[2] * 92)" height="3" rx="1.2" />
@@ -388,6 +388,9 @@
                 <text class="tile-title">Re-Time</text>
                 <text class="tile-sub">Orchestral demo</text>
                 <text class="tile-facts">Strings, winds and brass with phrasing lanes. Opens as a new, unsaved project.</text>
+                <view v-if="hub.canCurate" class="row-actions-main" @click.stop>
+                  <view class="btn small danger-ghost" :class="{ off: !!hub.busy }" @click="deleteBuiltinDemo">Delete</view>
+                </view>
               </view>
               <view v-for="row in hub.demos" :key="row.id" class="tile" @click="openPublic(row)">
                 <view class="cover" :style="coverStyle(row.id)">
@@ -398,6 +401,10 @@
                 <text class="tile-title">{{ row.title }}</text>
                 <text class="tile-sub">{{ row.creator }}</text>
                 <text class="tile-facts">{{ publicFacts(row) }}</text>
+                <view v-if="hub.canCurate" class="row-actions-main" @click.stop>
+                  <view class="btn small" :class="{ off: !!hub.busy }" @click="updateDemo(row)">Update</view>
+                  <view class="btn small danger-ghost" :class="{ off: !!hub.busy }" @click="deleteDemo(row)">Delete</view>
+                </view>
               </view>
               <view v-if="hub.demosError" class="tile">
                 <text class="tile-title">Demos unavailable</text>
@@ -507,6 +514,9 @@ import {
   refreshCurator,
   addCurrentAsDemo,
   addLibraryItemAsDemo,
+  updateDemo,
+  deleteDemo,
+  deleteBuiltinDemo,
   canManagePublic,
   openPublic,
   reportDetail,

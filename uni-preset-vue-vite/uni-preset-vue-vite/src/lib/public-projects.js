@@ -214,6 +214,17 @@ export async function curatorStatus () {
   return !!(data && data.user_id)
 }
 
+export async function builtinDemoHidden () {
+  const { data, error } = await client.from('app_flags').select('value').eq('key', 'builtin-retime').maybeSingle()
+  if (error || !data) return false
+  return data.value === true
+}
+
+export async function hideBuiltinDemo () {
+  await call({ action: 'hide-builtin' })
+  return true
+}
+
 export async function featureProject (project, meta, id) {
   const result = await call({ action: 'feature', id: id || '', ...payloadFor(project, meta) })
   if (result.editToken) rememberToken(result.id, result.editToken)

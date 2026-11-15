@@ -36,6 +36,33 @@ export async function armArticulation (...args) {
   return mod.armArticulation(...args)
 }
 
+let articulationWarmPaused = false
+let articulationWarmGen = 0
+
+export function pauseArticulationWarm () {
+  articulationWarmPaused = true
+  if (engine) engine.pauseArticulationWarm()
+}
+
+export function resumeArticulationWarm () {
+  articulationWarmPaused = false
+  if (engine) engine.resumeArticulationWarm()
+}
+
+export function cancelArticulationWarm () {
+  articulationWarmGen += 1
+  if (engine) engine.cancelArticulationWarm()
+}
+
+export async function warmArticulationIdle (...args) {
+  const gen = articulationWarmGen
+  const mod = await loadOrchestraVEngine()
+  if (gen !== articulationWarmGen) return
+  if (articulationWarmPaused) mod.pauseArticulationWarm()
+  else mod.resumeArticulationWarm()
+  return mod.warmArticulationIdle(...args)
+}
+
 export async function preloadNotes (...args) {
   const mod = await loadOrchestraVEngine()
   return mod.preloadNotes(...args)

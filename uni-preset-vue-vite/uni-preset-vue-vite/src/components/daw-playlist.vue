@@ -88,7 +88,7 @@
             v-for="bar in bars"
             :key="'bar' + bar"
             class="bar"
-            :style="{ left: (bar * session.timeSigNum * session.pixelsPerBeat) + 'px' }"
+            :style="{ left: (bar * barLengthBeats * session.pixelsPerBeat) + 'px' }"
           >
             <text v-if="bar % barStep === 0">{{ bar + 1 }}</text>
           </view>
@@ -295,6 +295,7 @@ import DawIcon from './daw-icon.vue'
 import DawClipPreview from './daw-clip-preview.vue'
 import {
   session,
+  barLengthBeats,
   SNAP_OPTIONS,
   snapBeat,
   setPositionBeats,
@@ -399,7 +400,7 @@ const contentBeats = computed(() => {
 const canvasStyle = computed(() => ({
   width: Math.ceil(contentBeats.value * session.pixelsPerBeat) + 'px',
   height: tracksHeight.value + 'px',
-  '--bar': (session.timeSigNum * session.pixelsPerBeat) + 'px',
+  '--bar': (barLengthBeats.value * session.pixelsPerBeat) + 'px',
   '--beat': session.pixelsPerBeat + 'px'
 }))
 
@@ -408,12 +409,12 @@ const gridStyle = computed(() => ({
 }))
 
 const bars = computed(() => {
-  const count = Math.ceil(contentBeats.value / session.timeSigNum) + 1
+  const count = Math.ceil(contentBeats.value / barLengthBeats.value) + 1
   return Array.from({ length: count }, (_, i) => i)
 })
 
 const barStep = computed(() => {
-  const width = session.pixelsPerBeat * session.timeSigNum
+  const width = session.pixelsPerBeat * barLengthBeats.value
   return Math.max(1, Math.ceil(48 / Math.max(1, width)))
 })
 
@@ -1333,7 +1334,7 @@ onMounted(async () => {
       const track = row && row.track
       const fits = track && (entry.kind === 'midi' ? track.type === 'midi' : (track.type === 'audio' || track.source === 'audio'))
       const name = fits ? track.name : 'New ' + (entry.kind === 'midi' ? 'MIDI' : 'audio') + ' track'
-      return name + ' · bar ' + (Math.floor(beat / Math.max(1, session.timeSigNum || 4)) + 1)
+      return name + ' · bar ' + (Math.floor(beat / barLengthBeats.value) + 1)
     },
     leave: onDragLeave,
     drop: async (x, y, file) => {

@@ -138,6 +138,7 @@ import DawIcon from '../daw-icon.vue'
 import LiteSheet from './lite-sheet.vue'
 import {
   session,
+  barLengthBeats,
   getSelectedClip,
   getSelectedTrack,
   createNote,
@@ -148,6 +149,10 @@ import {
   setPianoDragActive,
   previewNoteOn,
   previewNoteOff,
+  beginPianoRollWarm,
+  pausePianoRollWarm,
+  resumePianoRollWarm,
+  endPianoRollWarm,
   beginEdit,
   endEdit,
   setPositionBeats,
@@ -425,7 +430,7 @@ function syncSnap () {
 }
 
 function gridTicks () {
-  return view.snapId === 'off' ? 0 : gridTicksForView(view, session.timeSigNum || 4)
+  return view.snapId === 'off' ? 0 : gridTicksForView(view, barLengthBeats.value || 4)
 }
 
 function paint () {
@@ -434,6 +439,7 @@ function paint () {
   const width = parent.clientWidth || 1
   const height = parent.clientHeight || 1
   syncSnap()
+  view.barBeats = barLengthBeats.value || 4
   view.keyboardWidth = width < 700 ? 44 : 56
   const gridW = Math.max(1, width - view.keyboardWidth)
   const gridH = Math.max(1, height - view.timelineHeight)
@@ -529,21 +535,21 @@ function capture (ids) {
 }
 
 function onRollDown (e) {
+  pausePianoRollWarm()
   if (!clip.value) return
   // The first finger of a new touch sequence invalidates any pointer we never saw lift,
   // otherwise one stale entry turns every later one-finger drag into a pinch.
   if (e.isPrimary) pointers.clear()
   capturePointer(rollCanvas, e.pointerId)
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
   markDirty()
   const p = local(e, rollCanvas)
-  if (pointers.size >= 1 && p.x >= layout.gridX && p.y >= layout.gridY) {
-    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY })
-    if (pointers.size === 2) {
-      cancelSingle()
-      gesture = { type: 'pinch', start: pinchStart() }
-    }
+  if (pointers.size >= 2 && p.x >= layout.gridX && p.y >= layout.gridY) {
+    cancelSingle()
+    gesture = { type: 'pinch', start: pinchStart() }
     return
   }
+  if (pointers.size >= 2) return
   if (p.y < layout.gridY) {
     gesture = { type: 'seek' }
     seekTo(p.x)
@@ -734,6 +740,7 @@ function onRollLost (e) {
 
 function onRollUp (e) {
   pointers.delete(e.pointerId)
+  if (!pointers.size) resumePianoRollWarm()
   markDirty()
   clearRollHold()
   if (!gesture) return
@@ -1216,6 +1223,7 @@ function drawEighths (cc, fromBeat, toBeat, fromValue, toValue) {
 }
 
 function onLaneDown (e) {
+  pausePianoRollWarm()
   if (!clip.value) return
   capturePointer(laneCanvas, e.pointerId)
   const p = local(e, laneCanvas)
@@ -1520,6 +1528,7 @@ function onLaneMove (e) {
 }
 
 function onLaneUp () {
+  resumePianoRollWarm()
   if (!laneGesture || !clip.value) {
     laneGesture = null
     return
@@ -1624,12 +1633,14 @@ function onKey (e) {
 onMounted(() => {
   mount()
   session.pianoRollFocus = true
+  beginPianoRollWarm()
   window.addEventListener('keydown', onKey)
 })
 
 onUnmounted(() => {
   if (raf) cancelAnimationFrame(raf)
   raf = 0
+  endPianoRollWarm()
   stopPreview()
   flushNotePatches()
   unmount()

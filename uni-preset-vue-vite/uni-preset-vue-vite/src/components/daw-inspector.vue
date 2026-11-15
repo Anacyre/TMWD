@@ -89,6 +89,7 @@ import { computed } from 'vue'
 import DawFader from './daw-fader.vue'
 import {
   session,
+  barLengthBeats,
   engineLink,
   getSelectedTrack,
   getSelectedClip,
@@ -179,8 +180,8 @@ const clipTrackName = computed(() => {
   const t = session.tracks[clip.value.trackIndex]
   return t ? t.name : '-'
 })
-const clipStart = computed(() => clip.value ? `Bar ${(clip.value.startBeat / session.timeSigNum + 1).toFixed(2)}` : '-')
-const clipLength = computed(() => clip.value ? `${(clip.value.lengthBeats / session.timeSigNum).toFixed(2)} bars` : '-')
+const clipStart = computed(() => clip.value ? `Bar ${(clip.value.startBeat / barLengthBeats.value + 1).toFixed(2)}` : '-')
+const clipLength = computed(() => clip.value ? `${(clip.value.lengthBeats / barLengthBeats.value).toFixed(2)} bars` : '-')
 const samplerHint = computed(() => {
   if (!track.value) return ''
   if (track.value.source === 'web-sampler') {

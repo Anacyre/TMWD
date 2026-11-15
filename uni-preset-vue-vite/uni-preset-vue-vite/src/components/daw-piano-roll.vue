@@ -113,6 +113,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 import DawExpressionPanel from './daw-expression-panel.vue'
 import {
   session,
+  barLengthBeats,
   getSelectedClip,
   getSelectedTrack,
   closeEditor,
@@ -124,6 +125,10 @@ import {
   setPianoDragActive,
   previewNoteOn,
   previewNoteOff,
+  beginPianoRollWarm,
+  pausePianoRollWarm,
+  resumePianoRollWarm,
+  endPianoRollWarm,
   beginEdit,
   endEdit,
   undoEdit,
@@ -407,6 +412,7 @@ function paint () {
   const width = parent.clientWidth || 1
   const height = parent.clientHeight || 1
   view.snapId = snapId.value
+  view.barBeats = barLengthBeats.value || 4
   view.lastDurationTicks = session.lastNoteDurationTicks || PPQ
   view.keyboardWidth = isPhone.value ? (keyboardOpen.value ? 48 : 12) : (isTablet.value ? 60 : 68)
   view.velocityHeight = velocityOpen.value ? (isPhone.value ? 44 : 56) : 0
@@ -459,6 +465,7 @@ function gridPoint (p) {
 }
 
 function onPointerDown (e) {
+  pausePianoRollWarm()
   markDirty()
   if (!clip.value) return
   canvasEl.setPointerCapture(e.pointerId)
@@ -494,15 +501,6 @@ function onPointerDown (e) {
       setPositionBeats(Math.max(0, beat))
       gesture = { type: 'seek' }
     }
-    return
-  }
-  const playheadBeat = currentPlayhead()
-  const playheadX = layout.gridX + ((playheadBeat - (clip.value.startBeat || 0)) * view.pixelsPerBeat) - view.scrollX
-  const playheadHit = e.pointerType === 'touch' ? 18 : 8
-  if (p.x >= layout.gridX && p.y >= layout.gridY && Math.abs(p.x - playheadX) <= playheadHit) {
-    const beat = (clip.value.startBeat || 0) + xToTick(p.x - layout.gridX, view, { snap: false }) / PPQ
-    setPositionBeats(Math.max(0, beat))
-    gesture = { type: 'seek' }
     return
   }
   if (p.x < layout.gridX) {
@@ -678,7 +676,7 @@ function onPointerMove (e) {
   }
   if (gesture.type === 'create' && gesture.note) {
     const tick = xToTick(p.x - layout.gridX, view, { snap: true, free: gesture.free })
-    const durationTick = Math.max(MIN_DURATION_TICKS, snapTick(tick, gridTicksForView(view), gesture.free) - gesture.startTick)
+    const durationTick = Math.max(MIN_DURATION_TICKS, snapTick(tick, gridTicksForView(view, barLengthBeats.value || 4), gesture.free) - gesture.startTick)
     ;(gesture.notes || [gesture.note]).forEach((item) => setNote(clip.value, item, { durationTick }))
     return
   }
@@ -689,7 +687,7 @@ function onPointerMove (e) {
       const live = (clip.value.notes || []).find((item) => item.id === orig.id)
       if (!live) return
       if (gesture.type === 'resize') {
-        const grid = gridTicksForView(view)
+        const grid = gridTicksForView(view, barLengthBeats.value || 4)
         const end = snapTick(orig.startTick + orig.durationTick + dTick, grid, gesture.free)
         setNote(clip.value, live, {
           durationTick: Math.max(MIN_DURATION_TICKS, end - orig.startTick),
@@ -697,7 +695,7 @@ function onPointerMove (e) {
         })
       } else {
         const delta = groupMoveDelta(gesture.originals, dTick, dPitch, {
-          gridTicks: gridTicksForView(view),
+          gridTicks: gridTicksForView(view, barLengthBeats.value || 4),
           free: gesture.free
         })
         setNote(clip.value, live, {
@@ -721,6 +719,7 @@ function onPointerMove (e) {
 function onPointerUp (e) {
   markDirty()
   pointers.delete(e.pointerId)
+  if (!pointers.size) resumePianoRollWarm()
   clearTimeout(longPressTimer)
   const p = canvasEl ? localPoint(e) : { x: 0, y: 0 }
   if (gesture && gesture.type === 'lite-empty' && !gesture.cancelled && !gesture.panning && clip.value) {
@@ -1077,6 +1076,7 @@ onMounted(() => {
   if (typeof window !== 'undefined') window.addEventListener('keydown', onKey, true)
   if (typeof document !== 'undefined') document.addEventListener('visibilitychange', onPianoVisibility)
   session.pianoRollFocus = true
+  beginPianoRollWarm()
   if (session.score) {
     if (session.score.key) session.scaleKey = session.score.key
     if (session.score.scale) session.scaleName = session.score.scale
@@ -1085,6 +1085,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   session.pianoRollFocus = false
+  endPianoRollWarm()
   cancelAnimationFrame(raf)
   raf = 0
   if (resizeObs) {

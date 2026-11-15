@@ -490,7 +490,7 @@ function attachLayerWhenReady (context, key, layer, track, spec, pitch, rules) {
   }).catch(() => {})
 }
 
-export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
+export async function noteOn (graph, track, pitch, velocity = 0.8, id, when, preview = false) {
   if (!graph || !track) return null
   const noteStarted = nowMs()
   profile.noteCount += 1
@@ -523,6 +523,13 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   const secondaryLayer = layer && layer.entry !== primary.entry ? layer : null
   const dual = false
   const refs = [primary]
+  if (preview) {
+    const cacheKey = primary.pack + '|' + primary.entry + DECODE_CACHE_TAG + '|' + (graph.context.sampleRate || 0)
+    if (!bufferCache.get(cacheKey)) {
+      pending.delete(key)
+      return null
+    }
+  }
   const decodedList = []
   for (const ref of refs) {
     try {
@@ -543,7 +550,7 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id) {
   }
   pending.delete(key)
 
-  prefetchSilent(graph.context, spec, artic, pitch, velocityMidi, dynamics)
+  if (!preview) prefetchSilent(graph.context, spec, artic, pitch, velocityMidi, dynamics)
   const maxVoices = (manifest && manifest.globalMaxVoices) || 64
   while (voices.size >= maxVoices) {
     const oldest = voices.keys().next().value

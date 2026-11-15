@@ -46,6 +46,8 @@ import {
   reportPublic,
   listPublic,
   featureProject,
+  builtinDemoHidden,
+  hideBuiltinDemo,
   curatorStatus,
   fetchPublicRow,
   fetchPublicProject,
@@ -78,6 +80,7 @@ export const hub = reactive({
   canCurate: false,
   demos: [],
   demosError: '',
+  builtinHidden: false,
   detail: null,
   publishError: ''
 })
@@ -518,11 +521,26 @@ export async function refreshCurator () {
 export async function loadDemos () {
   try {
     hub.demos = await listPublic({ demo: true, limit: 24 })
+    hub.builtinHidden = await builtinDemoHidden()
     hub.demosError = ''
   } catch (err) {
     hub.demos = []
     hub.demosError = err.message || 'Could not load demos'
   }
+}
+
+export function deleteBuiltinDemo () {
+  if (!hub.canCurate) return
+  if (!confirmAction('Delete the built-in demo “Re-Time”? It will disappear from Examples for everyone.')) return
+  return run('demo', async () => {
+    try {
+      await hideBuiltinDemo()
+      hub.builtinHidden = true
+      showToast('Deleted “Re-Time”')
+    } catch (err) {
+      showToast(err.message || 'Could not delete the built-in demo')
+    }
+  })
 }
 
 export function addCurrentAsDemo () {
@@ -551,6 +569,52 @@ export function addCurrentAsDemo () {
     } catch (err) {
       hub.publishError = err.message || 'Could not add the demo'
       return null
+    }
+  })
+}
+
+export function updateDemo (row) {
+  if (!hub.canCurate || !row || !row.id) return
+  if (!confirmAction('Replace the demo “' + row.title + '” with the project that is open now?')) return
+  return run('demo', async () => {
+    const meta = {
+      title: row.title,
+      description: row.description || '',
+      creator: row.creator || defaultCreator() || 'Midix',
+      tags: row.tags || []
+    }
+    const problem = validatePublish(meta, 0)
+    if (problem) {
+      showToast(problem)
+      return
+    }
+    const { project, bytes } = await publicFile()
+    const tooBig = validatePublish(meta, bytes)
+    if (tooBig) {
+      showToast(tooBig)
+      return
+    }
+    try {
+      await featureProject(project, meta, row.id)
+      await loadDemos()
+      showToast('Updated “' + row.title + '”')
+    } catch (err) {
+      showToast(err.message || 'Could not update the demo')
+    }
+  })
+}
+
+export function deleteDemo (row) {
+  if (!hub.canCurate || !row || !row.id) return
+  if (!confirmAction('Delete the demo “' + row.title + '”? This cannot be undone.')) return
+  return run('demo', async () => {
+    try {
+      await unpublishProject(row.id)
+      hub.demos = hub.demos.filter((item) => item.id !== row.id)
+      if (hub.detail && hub.detail.id === row.id) hub.detail = null
+      showToast('Deleted “' + row.title + '”')
+    } catch (err) {
+      showToast(err.message || 'Could not delete the demo')
     }
   })
 }

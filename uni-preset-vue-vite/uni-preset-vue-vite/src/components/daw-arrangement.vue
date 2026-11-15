@@ -15,7 +15,7 @@
           v-for="bar in bars"
           :key="bar"
           class="bar-mark"
-          :style="{ left: (bar * session.timeSigNum * session.pixelsPerBeat) + 'px' }"
+          :style="{ left: (bar * barLengthBeats * session.pixelsPerBeat) + 'px' }"
         >
           <text>{{ bar + 1 }}</text>
         </view>
@@ -55,7 +55,7 @@
           v-for="beat in beats"
           :key="'b'+beat"
           class="vline"
-          :class="{ bar: beat % session.timeSigNum === 0 }"
+          :class="{ bar: isBarLine(beat) }"
           :style="{ left: (beat * session.pixelsPerBeat) + 'px' }"
         />
         <view
@@ -112,6 +112,7 @@ import { computed, ref } from 'vue'
 import DawIcon from './daw-icon.vue'
 import {
   session,
+  barLengthBeats,
   snapBeat,
   setPositionBeats,
   setPixelsPerBeat,
@@ -159,8 +160,13 @@ const canvasStyle = computed(() => ({
   height: Math.max(session.tracks.length * session.trackHeight, 400) + 'px'
 }))
 
+function isBarLine (beat) {
+  const bar = barLengthBeats.value || 4
+  return Math.abs(beat / bar - Math.round(beat / bar)) < 1e-4
+}
+
 const bars = computed(() => {
-  const count = Math.ceil(contentBeats.value / session.timeSigNum) + 1
+  const count = Math.ceil(contentBeats.value / barLengthBeats.value) + 1
   return Array.from({ length: count }, (_, i) => i)
 })
 const beats = computed(() => Array.from({ length: Math.ceil(contentBeats.value) + 1 }, (_, i) => i))

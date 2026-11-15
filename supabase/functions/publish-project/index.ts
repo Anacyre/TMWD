@@ -137,9 +137,17 @@ Deno.serve(async (req) => {
 
     let row: Record<string, unknown> | null = null
     if (action === 'update' || (asDemo && body.id)) {
-      const owned = await loadOwned(clean(body.id, 64))
-      if (owned.error) return owned.error
-      row = owned.row
+      const id = clean(body.id, 64)
+      if (asDemo) {
+        const { data: existing } = await admin.from('public_projects').select('*').eq('id', id).maybeSingle()
+        if (!existing) return fail(404, 'This demo no longer exists.')
+        if (!existing.is_demo) return fail(400, 'This project is not a demo.')
+        row = existing
+      } else {
+        const owned = await loadOwned(id)
+        if (owned.error) return owned.error
+        row = owned.row
+      }
     } else {
       const live = userId
         ? admin.from('public_projects').select('id', { count: 'exact', head: true }).eq('owner', userId)
@@ -193,8 +201,24 @@ Deno.serve(async (req) => {
     return reply(200, { id: data.id, createdAt: data.created_at, editToken })
   }
 
+  if (action === 'hide-builtin') {
+    if (!(await isCurator())) return fail(403, 'Only the demo curator can remove built-in demos.')
+    const { error } = await admin.from('app_flags').upsert({ key: 'builtin-retime', value: true })
+    if (error) return fail(500, 'Could not remove the built-in demo.')
+    return reply(200, { ok: true })
+  }
+
   if (action === 'unpublish') {
-    const owned = await loadOwned(clean(body.id, 64))
+    const id = clean(body.id, 64)
+    if (await isCurator()) {
+      const { data: demo } = await admin.from('public_projects').select('*').eq('id', id).eq('is_demo', true).maybeSingle()
+      if (demo) {
+        await admin.storage.from(BUCKET).remove([String(demo.storage_path)])
+        await admin.from('public_projects').delete().eq('id', demo.id)
+        return reply(200, { ok: true })
+      }
+    }
+    const owned = await loadOwned(id)
     if (owned.error) return owned.error
     await admin.storage.from(BUCKET).remove([String(owned.row.storage_path)])
     await admin.from('public_projects').delete().eq('id', owned.row.id)
