@@ -201,7 +201,7 @@ const SOLO_ORCHESTRA = [
     id: 'ov_piccolo',
     displayName: 'Piccolo',
     family: 'woodwinds',
-    icon: 'flute',
+    icon: 'piccolo',
     mirrors: 'bbcso_piccolo',
     available: false,
     unavailableReason: NO_SAMPLES
@@ -555,7 +555,7 @@ const SYMPHONIC_ORCHESTRA = [
     id: 'ov_sym_piccolo',
     displayName: 'Piccolo',
     family: 'woodwinds',
-    icon: 'flute',
+    icon: 'piccolo',
     available: true,
     sourcePack: 'Piccolo',
     keyRange: [74, 108],

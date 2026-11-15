@@ -5,7 +5,8 @@
 import { reactive } from 'vue'
 import { availableDefinitions, libraryOf } from '../audio/orchestra-v/catalog.js'
 import { LIBRARIES } from '../audio/orchestra-v/libraries.js'
-import { ensureManifest, librarySamples, sampleUrl } from '../audio/orchestra-v/library.js'
+import { isAudioPayload, isHtmlPayload } from '../audio/orchestra-v/decode-format.js'
+import { ensureManifest, fetchLibraryBytes, librarySamples } from '../audio/orchestra-v/library.js'
 import { instrumentSamplePaths } from '../audio/orchestra-v/sfz.js'
 import {
   deleteInstrumentStatus,
@@ -28,12 +29,8 @@ export const downloads = reactive({
 let loading = null
 let running = 0
 
-function looksLikeHtml (bytes) {
-  if (!bytes || bytes.byteLength < 5) return false
-  const head = new Uint8Array(bytes, 0, Math.min(32, bytes.byteLength))
-  let text = ''
-  for (let i = 0; i < head.length; i++) text += String.fromCharCode(head[i])
-  return /^\s*</.test(text)
+function cachedAudio (bytes) {
+  return !!(bytes && isAudioPayload(bytes) && !isHtmlPayload(bytes))
 }
 
 function takeSlot () {
@@ -68,7 +65,7 @@ async function countCached (item) {
   let done = 0
   for (const path of item.paths) {
     const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
-    if (bytes && !looksLikeHtml(bytes)) done += 1
+    if (cachedAudio(bytes)) done += 1
   }
   return done
 }
@@ -85,14 +82,18 @@ async function remember (item, complete, error) {
 
 async function fetchFile (item, path) {
   const key = encodedCacheKey(item.library, path)
-  const url = sampleUrl(item.library, path)
-  const response = await fetch(url)
-  if (!response.ok) throw new Error('Download failed (' + response.status + ')')
-  const type = String(response.headers.get('content-type') || '')
-  const bytes = await response.arrayBuffer()
-  if (type.includes('text/html') || looksLikeHtml(bytes)) throw new Error('Download returned a page instead of audio')
-  const stored = await writeEncodedSample(key, bytes)
-  if (!stored) throw new Error('This browser does not have enough space for the rest of this instrument')
+  const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+  const timer = controller ? setTimeout(() => controller.abort(), 20000) : 0
+  try {
+    const bytes = await fetchLibraryBytes(item.library, path, controller && controller.signal)
+    const stored = await writeEncodedSample(key, bytes)
+    if (!stored) throw new Error('This browser does not have enough space for the rest of this instrument')
+  } catch (err) {
+    if (err && err.name === 'AbortError') throw new Error('Download timed out')
+    throw err
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 async function runDownload (item) {
@@ -101,22 +102,14 @@ async function runDownload (item) {
   item.state = 'downloading'
   item.error = ''
   try {
-    const missing = []
-    let done = 0
+    item.done = 0
     for (const path of item.paths) {
       if (item.token !== token) return
       const bytes = await readEncodedSample(encodedCacheKey(item.library, path))
-      if (bytes && !looksLikeHtml(bytes)) done += 1
-      else missing.push(path)
-    }
-    item.done = done
-    if (!missing.length) {
-      item.state = 'ready'
-      await remember(item, true, '')
-      return
-    }
-    for (const path of missing) {
-      if (item.token !== token) return
+      if (cachedAudio(bytes)) {
+        item.done += 1
+        continue
+      }
       await takeSlot()
       try {
         if (item.token !== token) return
@@ -169,8 +162,13 @@ export async function removeInstrumentDownload (id) {
 async function loadGroups () {
   const saved = new Map((await listInstrumentStatus()).map((record) => [record.id, record]))
   const groups = []
+  const pending = []
   for (const library of LIBRARIES) {
-    await ensureManifest(library.id)
+    try {
+      await ensureManifest(library.id)
+    } catch (err) {
+      console.warn('[instruments] manifest', library.id, err)
+    }
     const samples = librarySamples(library.id)
     const items = []
     for (const def of availableDefinitions()) {
@@ -193,17 +191,28 @@ async function loadGroups () {
         item.state = 'ready'
         item.done = item.total
       } else if (record) {
-        item.done = await countCached(item)
-        item.state = item.done >= item.total ? 'ready' : 'idle'
-        item.error = item.state === 'ready' ? '' : (record.error || '')
-        if (item.state === 'ready') await remember(item, true, '')
+        item.error = record.error || ''
+        pending.push(item)
       }
       items.push(item)
     }
-    if (items.length) groups.push({ id: library.id, name: library.displayName, items })
+    if (items.length) {
+      groups.push({ id: library.id, name: library.displayName, items })
+      downloads.groups = groups.slice()
+      downloads.ready = true
+    }
   }
-  downloads.groups = groups
   downloads.ready = true
+  for (const raw of pending) {
+    const item = findItem(raw.id) || raw
+    if (item.state === 'downloading' || item.state === 'ready') continue
+    item.done = await countCached(item)
+    item.state = item.done >= item.total ? 'ready' : 'idle'
+    if (item.state === 'ready') {
+      item.error = ''
+      await remember(item, true, '')
+    }
+  }
 }
 
 export function refreshInstrumentDownloads () {
@@ -216,9 +225,15 @@ export function refreshInstrumentDownloads () {
   return loading
 }
 
+export function instrumentProgress (item) {
+  if (!item || !item.total) return '0%'
+  if (item.state === 'ready') return '100%'
+  const pct = Math.round(Math.max(0, Math.min(1, item.done / item.total)) * 100)
+  return pct + '%'
+}
+
 export function instrumentAction (item) {
-  if (!item) return ''
-  if (item.state === 'downloading') return item.done + ' / ' + item.total
+  if (!item || item.state === 'downloading') return ''
   if (item.state === 'ready') return 'Remove'
   if (item.state === 'error') return 'Retry'
   if (item.done > 0) return 'Resume'

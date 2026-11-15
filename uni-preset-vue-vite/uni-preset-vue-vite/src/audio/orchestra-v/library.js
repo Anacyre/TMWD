@@ -9,7 +9,8 @@
 import soloBundled from '../m-orchestra/manifest.json'
 import symphonicBundled from './vms-symphonic-manifest.json'
 import { playbackFrom } from '../m-orchestra/playback.js'
-import { publicLibraryUrl } from '../../lib/supabase.js'
+import { publicAssetUrl, publicLibraryUrl } from '../../lib/supabase.js'
+import { isAudioPayload, isHtmlPayload } from './decode-format.js'
 import { DEFAULT_LIBRARY_ID, findLibrary } from './libraries.js'
 
 const BUNDLED = {
@@ -55,6 +56,48 @@ export function sampleCount (libraryId) {
 export function sampleUrl (libraryId, objectPath) {
   const library = findLibrary(libraryId) || findLibrary(DEFAULT_LIBRARY_ID)
   return publicLibraryUrl(library && library.bucket, objectPath)
+}
+
+function cloudSampleUrl (libraryId, objectPath) {
+  const library = findLibrary(libraryId) || findLibrary(DEFAULT_LIBRARY_ID)
+  const bucket = library && library.bucket
+  return publicAssetUrl(String(objectPath || '').replace(/^\/+/, ''), bucket)
+}
+
+async function readAudioResponse (url, signal) {
+  const response = await fetch(url, signal ? { signal } : undefined)
+  if (!response.ok) throw new Error('Download failed (' + response.status + ')')
+  const type = String(response.headers.get('content-type') || '')
+  const bytes = await response.arrayBuffer()
+  if (type.includes('text/html') || isHtmlPayload(bytes) || !isAudioPayload(bytes)) {
+    throw new Error('Download returned a page instead of audio')
+  }
+  return bytes
+}
+
+/** Encoded sample bytes. A local dev miss, or a page served in place of audio, is
+ *  retried against the public bucket. The same URL is not requested twice. */
+export async function fetchLibraryBytes (libraryId, objectPath, signal) {
+  const primary = sampleUrl(libraryId, objectPath)
+  const cloud = cloudSampleUrl(libraryId, objectPath)
+  const urls = []
+  if (primary) urls.push(primary)
+  if (cloud && cloud !== primary) urls.push(cloud)
+  let last = null
+  for (const url of urls) {
+    if (signal && signal.aborted) {
+      const abort = new Error('aborted')
+      abort.name = 'AbortError'
+      throw abort
+    }
+    try {
+      return await readAudioResponse(url, signal)
+    } catch (err) {
+      if (err && err.name === 'AbortError') throw err
+      last = err
+    }
+  }
+  throw last || new Error('Download failed')
 }
 
 /** Prefer the published manifest when it is at least as complete as the bundled one. */

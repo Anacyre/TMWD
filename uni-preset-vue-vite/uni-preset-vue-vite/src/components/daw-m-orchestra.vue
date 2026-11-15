@@ -95,7 +95,7 @@
             :class="{ on: selectedId === item.id, dim: !item.available }"
             @click="selectInstrument(item)"
           >
-            <text class="card-ico">{{ iconMark(item.icon) }}</text>
+            <image v-if="iconOf(item)" class="card-ico" :src="iconOf(item)" mode="aspectFit" />
             <text class="card-name">{{ item.name }}</text>
             <text v-if="!item.available" class="card-miss">No sample</text>
           </view>
@@ -109,6 +109,7 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import DspKnob from './dsp/dsp-knob.vue'
 import DawIcon from './daw-icon.vue'
+import { instrumentIconUrl } from '../assets/instrument-icons.js'
 import {
   FAMILIES,
   INSTRUMENTS,
@@ -276,15 +277,7 @@ function familyMark (id) {
   return ({ strings: '🎻', woodwinds: '🎶', brass: '📯', percussion: '🥁', solo: '◇', keyboard: '🎹' })[id] || '•'
 }
 
-function iconMark (icon) {
-  return ({
-    violin: '🎻', viola: '🎻', cello: '🎻', bass: '🎻', harp: '🎼',
-    flute: '♫', oboe: '♫', clarinet: '♫', bassoon: '♫',
-    horn: '📯', trumpet: '📯', trombone: '📯', tuba: '📯',
-    timpani: '🥁', snare: '🥁', bassdrum: '🥁', cymbal: '♧', tom: '🥁', triangle: '△', glock: '✦',
-    piano: '🎹', bells: '🔔'
-  })[icon] || '•'
-}
+function iconOf (item) { return instrumentIconUrl(item) }
 
 function controllerValue (ctrl) {
   if (!ctrl || !track.value) return 0
@@ -499,7 +492,7 @@ function changePlugin () {
 }
 .card.on { border-color: #c9a46c; }
 .card.dim { opacity: 0.38; cursor: default; }
-.card-ico { font-size: 18px; }
+.card-ico { width: 28px; height: 28px; flex: none; }
 .card-name { font-size: 10px; letter-spacing: 0.04em; text-align: center; color: #e6e6e6; }
 .card-miss { font-size: 9px; color: #8d8d8d; }
 .more {

@@ -264,7 +264,7 @@ onUnmounted(() => {
   display: flex;
   min-height: 0;
 }
-.library-wrap { width: 280px; flex-shrink: 0; height: 100%; }
+.library-wrap { width: 280px; flex-shrink: 0; height: 100%; min-height: 0; overflow: hidden; }
 .inspector-wrap, .editor-wrap, .mixer-wrap {
   flex-shrink: 0;
   height: 100%;

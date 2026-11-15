@@ -16,9 +16,9 @@ import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
 import { findDefinition, libraryOf } from './catalog.js'
 import { articulationChain, compileRegions, selectZone, zonesForVelocity } from './sfz.js'
-import { ensureManifest, librarySamples, playbackRules, sampleCount, sampleUrl } from './library.js'
+import { ensureManifest, fetchLibraryBytes, librarySamples, playbackRules, sampleCount } from './library.js'
 import { releasePlan } from './release.js'
-import { isOggPayload, playableOffset, safeLoopRange } from './decode-format.js'
+import { isAudioPayload, isHtmlPayload, isOggPayload, playableOffset, safeLoopRange } from './decode-format.js'
 
 export { ensureManifest, sampleCount } from './library.js'
 export { findDefinition } from './catalog.js'
@@ -319,14 +319,6 @@ async function fetchSampleBytes (library, objectPath, signal) {
   }
 }
 
-function looksLikeHtml (bytes) {
-  if (!bytes || bytes.byteLength < 5) return false
-  const head = new Uint8Array(bytes, 0, Math.min(32, bytes.byteLength))
-  let text = ''
-  for (let i = 0; i < head.length; i++) text += String.fromCharCode(head[i])
-  return /^\s*</.test(text)
-}
-
 async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   let cached = null
   try {
@@ -334,22 +326,17 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
   } catch (err) {
     cached = null
   }
-  if (cached && !looksLikeHtml(cached)) {
+  if (cached && isAudioPayload(cached) && !isHtmlPayload(cached)) {
     profile.idbHits += 1
     return cached
   }
+  if (cached) forgetEncodedSample(stored).catch(() => {})
   const controller = !signal && typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), SAMPLE_DEADLINE_MS) : 0
   const started = nowMs()
   noteFetchBegin()
   try {
-    const response = await fetch(sampleUrl(library, objectPath), (signal || controller) ? { signal: signal || controller.signal } : undefined)
-    if (!response.ok) throw new Error('orchestra-v sample ' + objectPath + ' ' + response.status)
-    const type = String(response.headers.get('content-type') || '')
-    const bytes = await response.arrayBuffer()
-    // The Cloudflare site answers missing assets with index.html and status 200.
-    // Decoding that page is what made every Orchestra V note silent.
-    if (type.includes('text/html') || looksLikeHtml(bytes)) throw new Error('orchestra-v sample ' + objectPath + ' returned HTML')
+    const bytes = await fetchLibraryBytes(library, objectPath, signal || (controller && controller.signal))
     profile.fetchMs += nowMs() - started
     profile.networkFetches += 1
     writeEncodedSample(stored, bytes.slice(0)).catch(() => {})

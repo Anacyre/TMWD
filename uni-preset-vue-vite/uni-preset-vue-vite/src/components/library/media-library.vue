@@ -72,7 +72,9 @@
           <view v-for="item in group.items" :key="item.id" class="mlib-row file">
             <view class="mlib-text">
               <text class="mlib-name">{{ item.name }}</text>
-              <text class="mlib-meta">{{ item.total }} files</text>
+              <view v-if="showInstrumentBar(item)" class="mlib-bar">
+                <view class="mlib-bar-fill" :style="{ width: instrumentProgress(item) }" />
+              </view>
               <text v-if="item.error" class="mlib-meta err">{{ item.error }}</text>
             </view>
             <view class="mlib-act" @click="onInstrument(item)">{{ instrumentAction(item) }}</view>
@@ -204,6 +206,14 @@ function instrumentAction (item) {
   return instrumentApi.value ? instrumentApi.value.instrumentAction(item) : ''
 }
 
+function instrumentProgress (item) {
+  return instrumentApi.value ? instrumentApi.value.instrumentProgress(item) : '0%'
+}
+
+function showInstrumentBar (item) {
+  return !!(item && (item.state === 'downloading' || item.state === 'ready' || item.state === 'error' || item.done > 0))
+}
+
 function onInstrument (item) {
   if (!instrumentApi.value || !item || item.state === 'downloading') return
   if (item.state === 'ready') instrumentApi.value.removeInstrumentDownload(item.id)
@@ -327,6 +337,7 @@ onUnmounted(() => {
   flex-direction: column;
   min-height: 0;
   height: 100%;
+  overflow: hidden;
   background: var(--ml-bg);
   color: var(--ml-ink);
   font-size: 13px;
@@ -355,7 +366,7 @@ onUnmounted(() => {
   cursor: pointer;
 }
 .mlib-icon:hover { background: var(--ml-s2); color: var(--ml-ink); }
-.mlib-sources { display: flex; gap: 6px; padding: 0 12px 8px; flex-wrap: wrap; }
+.mlib-sources { display: flex; gap: 6px; padding: 0 12px 8px; flex: 0 0 auto; flex-wrap: nowrap; overflow-x: auto; }
 .mlib-source {
   max-width: 100%;
   height: 30px;
@@ -393,7 +404,15 @@ onUnmounted(() => {
 .mlib-crumbs { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 0 14px 6px; color: var(--ml-ink-3); font-size: 12px; }
 .mlib-crumb { cursor: pointer; color: var(--ml-ink-2); }
 .mlib-crumb:hover { color: var(--ml-ink); }
-.mlib-list { flex: 1; min-height: 0; padding: 0 6px 8px; }
+.mlib-list {
+  flex: 1;
+  min-height: 0;
+  padding: 0 6px 8px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
 .mlib-row {
   min-height: 40px;
   display: flex;
@@ -468,6 +487,8 @@ onUnmounted(() => {
   font-size: 12px;
 }
 .mlib-meta.err { color: #e07070; }
+.mlib-bar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--ml-s2); overflow: hidden; }
+.mlib-bar-fill { height: 100%; width: 0; background: var(--ml-accent); }
 .mlib-foot {
   flex: 0 0 auto;
   display: flex;

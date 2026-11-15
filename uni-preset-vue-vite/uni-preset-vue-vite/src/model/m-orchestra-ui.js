@@ -31,7 +31,7 @@ export const INSTRUMENTS = [
   { id: 'm_orch_bass', name: 'Double Basses', family: 'strings', available: true, icon: 'bass' },
   { id: 'm_orch_harp', name: 'Harp', family: 'strings', available: false, icon: 'harp' },
 
-  { id: 'm_orch_piccolo', name: 'Piccolo', family: 'woodwinds', available: false, icon: 'flute' },
+  { id: 'm_orch_piccolo', name: 'Piccolo', family: 'woodwinds', available: false, icon: 'piccolo' },
   { id: 'm_orch_flute', name: 'Flute', family: 'woodwinds', available: true, icon: 'flute' },
   { id: 'm_orch_oboe', name: 'Oboe', family: 'woodwinds', available: true, icon: 'oboe' },
   { id: 'm_orch_clarinet', name: 'Clarinet', family: 'woodwinds', available: true, icon: 'clarinet' },

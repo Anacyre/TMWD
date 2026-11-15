@@ -70,7 +70,7 @@ const view = computed(() => session.workspaceView)
   position: relative;
 }
 .work-main > * { flex: 1 1 auto; min-height: 0; width: 100%; }
-.work-side { width: 300px; flex: 0 0 auto; }
+.work-side { width: 300px; flex: 0 0 auto; min-height: 0; height: 100%; overflow: hidden; align-self: stretch; }
 @media (max-width: 900px) {
   .work-side { width: 260px; }
 }

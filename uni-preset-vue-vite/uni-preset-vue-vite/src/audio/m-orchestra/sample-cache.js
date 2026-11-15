@@ -6,23 +6,46 @@ const DB_VERSION = 2
 function openDb () {
   if (typeof indexedDB === 'undefined') return Promise.resolve(null)
   return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
     const request = indexedDB.open(DB_NAME, DB_VERSION)
     request.onupgradeneeded = () => {
       const db = request.result
       if (!db.objectStoreNames.contains(STORE_NAME)) db.createObjectStore(STORE_NAME)
       if (!db.objectStoreNames.contains(STATUS_STORE)) db.createObjectStore(STATUS_STORE)
     }
-    request.onsuccess = () => resolve(request.result)
-    request.onerror = () => resolve(null)
-    request.onblocked = () => resolve(null)
+    request.onsuccess = () => {
+      const database = request.result
+      database.onversionchange = () => {
+        database.close()
+        dbPromise = null
+      }
+      finish(database)
+    }
+    request.onerror = () => finish(null)
+    // Another open connection can block the upgrade. Resolving null here used to
+    // be cached forever, so later downloads and playback thought there was no database.
+    request.onblocked = () => {}
+    setTimeout(() => finish(null), 4000)
   })
 }
 
 let dbPromise = null
 
 async function db () {
-  if (!dbPromise) dbPromise = openDb()
-  return dbPromise
+  if (dbPromise) {
+    const existing = await dbPromise
+    if (existing) return existing
+    dbPromise = null
+  }
+  dbPromise = openDb()
+  const database = await dbPromise
+  if (!database) dbPromise = null
+  return database
 }
 
 export async function readEncodedSample (key) {

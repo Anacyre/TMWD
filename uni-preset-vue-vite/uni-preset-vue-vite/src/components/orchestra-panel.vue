@@ -41,6 +41,7 @@
             :class="{ on: item.id === selectedId, off: !item.available }"
             @click="item.available && $emit('select', item.id)"
           >
+            <image v-if="iconOf(item)" class="inst-ico" :src="iconOf(item)" mode="aspectFit" />
             <text class="inst-name">{{ item.name }}</text>
             <daw-icon v-if="item.id === selectedId" name="check" :size="16" color="currentColor" />
             <text v-else-if="!item.available" class="inst-miss">No samples</text>
@@ -109,6 +110,7 @@
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from './daw-icon.vue'
+import { instrumentIconUrl } from '../assets/instrument-icons.js'
 import { beginPointerDrag, pointerCoord, trackRatio } from '../lib/pointer-drag.js'
 
 const props = defineProps({
@@ -139,6 +141,7 @@ const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 
 const root = ref(null)
 const sounding = ref(-1)
 const familyInstruments = computed(() => props.instruments.filter((item) => item.family === props.familyId))
+function iconOf (item) { return instrumentIconUrl(item) }
 const sliders = computed(() => [
   { id: 'dynamics', label: 'Dynamics', value: clamp01(props.dynamics) },
   { id: 'expression', label: 'Expression', value: clamp01(props.expression) }
@@ -486,6 +489,7 @@ function onSlider (id, event) {
 .inst.on { background: var(--o-accent-soft); color: var(--o-accent); }
 .inst.off { opacity: 0.4; cursor: default; }
 .inst .icon { width: auto; height: auto; }
+.inst-ico { width: 28px; height: 28px; flex: none; }
 .inst-name {
   flex: 1;
   min-width: 0;

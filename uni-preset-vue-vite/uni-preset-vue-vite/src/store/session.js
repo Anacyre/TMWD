@@ -1124,8 +1124,10 @@ async function prepareOrchestraSamples (graph, fromBeat) {
   session.sampleLoad.active = split.immediate.length > 0
   await Promise.all(split.immediate.map(async (item) => {
     if (token !== samplePrepareToken) return
-    try { await orchestraVCloud.decodePinned(graph, item) } catch (err) { /* note-on retries */ }
-    if (token === samplePrepareToken) session.sampleLoad.done += 1
+    try {
+      await orchestraVCloud.decodePinned(graph, item)
+      if (token === samplePrepareToken) session.sampleLoad.done += 1
+    } catch (err) { /* note-on retries; a failed decode is not progress */ }
   }))
   session.sampleLoad.active = false
   if (token !== samplePrepareToken) return false
@@ -4010,10 +4012,19 @@ export async function switchLibraryOwner (owner) {
   session.libraryOwner = next
   loadRecentProjects()
   if (prev === GUEST_OWNER && next !== GUEST_OWNER) {
-    session.projectId = ''
-    session.cloudId = ''
-    session.unsaved = true
-    showToast('Signed in. Saving now goes to your account.')
+    if (session.unsaved) {
+      session.projectId = ''
+      session.cloudId = ''
+      showToast('Signed in. Saving now goes to your account.')
+      return true
+    }
+    const restored = await restoreLastSession()
+    if (!restored) {
+      newProject()
+      await addTrack('midi')
+      session.unsaved = false
+    }
+    showToast('Signed in')
     return true
   }
   const restored = await restoreLastSession()
@@ -4049,27 +4060,70 @@ export async function keepUnsavedInRecovery () {
   return true
 }
 
-/** Bring back whatever the user was working on when the page was last open: the active
- * stored project first, then the last autosave. Returns false when there is nothing to
- * restore and the starter demo stays. */
+async function importAutosaveQuiet (row) {
+  if (!isAutosaveRecord(row)) return false
+  const sourceId = row.sourceId || ('p_' + Date.now().toString(36))
+  const data = { ...row, id: sourceId, name: row.sourceName || row.name || 'Untitled' }
+  delete data.kind
+  delete data.sourceId
+  delete data.sourceName
+  const ok = await importProjectJson(data, { quiet: true })
+  if (!ok) return false
+  session.projectId = sourceId
+  session.unsaved = true
+  return true
+}
+
+/** Bring back whatever the user was working on when the page was last open.
+ * A newer autosave wins over the last explicit save, so a refresh keeps unsaved edits
+ * instead of the starter demo. */
+let restoreSerial = 0
 export async function restoreLastSession () {
-  if (session.restoring) return false
+  const serial = ++restoreSerial
   session.restoring = true
+  const owner = getLibraryOwner()
+  let retry = false
   try {
+    let saved = null
     const id = await getActiveProjectId()
     if (id && !isAutosaveRecord({ id })) {
       const row = await getProject(id)
-      if (row && !isAutosaveRecord(row) && await importProjectJson(row, { quiet: true })) return true
+      if (row && !isAutosaveRecord(row)) saved = row
     }
-    if (typeof localStorage !== 'undefined') {
-      const json = localStorage.getItem(FALLBACK_KEYS.LS_LAST)
-      if (json && await importProjectJson(json, { quiet: true })) return true
+    if (serial !== restoreSerial) return false
+    if (getLibraryOwner() !== owner) {
+      retry = true
+    } else {
+      const autos = await listStoredAutosaves()
+      const latest = autos.slice().sort((a, b) => (Number(b.updatedAt) || 0) - (Number(a.updatedAt) || 0))[0]
+      const savedAt = saved ? (Number(saved.updatedAt) || 0) : 0
+      const autoAt = latest ? (Number(latest.updatedAt) || 0) : 0
+      if (serial !== restoreSerial) return false
+      if (getLibraryOwner() !== owner) retry = true
+      else if (latest && autoAt >= savedAt && await importAutosaveQuiet(latest)) {
+        if (serial !== restoreSerial) return false
+        if (getLibraryOwner() !== owner) retry = true
+        else return true
+      } else if (serial !== restoreSerial) return false
+      else if (getLibraryOwner() !== owner) retry = true
+      else if (saved && await importProjectJson(saved, { quiet: true })) {
+        if (serial !== restoreSerial) return false
+        if (getLibraryOwner() !== owner) retry = true
+        else return true
+      } else if (typeof localStorage !== 'undefined') {
+        const json = localStorage.getItem(FALLBACK_KEYS.LS_LAST)
+        if (json && await importProjectJson(json, { quiet: true })) {
+          if (serial === restoreSerial && getLibraryOwner() === owner) return true
+          if (serial === restoreSerial && getLibraryOwner() !== owner) retry = true
+        }
+      }
     }
   } catch (err) {
     console.warn('[project] restore failed', err)
   } finally {
-    session.restoring = false
+    if (serial === restoreSerial) session.restoring = false
   }
+  if (retry && serial === restoreSerial) return restoreLastSession()
   return false
 }
 
@@ -4096,6 +4150,7 @@ export function flushSessionSnapshot () {
 
 if (typeof window !== 'undefined') {
   window.addEventListener('pagehide', flushSessionSnapshot)
+  window.addEventListener('beforeunload', flushSessionSnapshot)
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) flushSessionSnapshot()
   })
