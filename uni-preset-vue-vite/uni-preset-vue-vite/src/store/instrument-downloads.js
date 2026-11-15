@@ -36,7 +36,11 @@ function cachedAudio (bytes) {
 function takeSlot () {
   return new Promise((resolve) => {
     const attempt = () => {
-      if (noteFetches() > 0 || running >= MAX_FILES) {
+      const busy = noteFetches()
+      // Notes and the page preload share the network. Wait only when they are
+      // already using most of it; waiting for complete silence keeps the
+      // instrument percent at 0 for the whole piece.
+      if (running >= MAX_FILES || busy >= 6) {
         setTimeout(attempt, 40)
         return
       }
@@ -233,7 +237,8 @@ export function instrumentProgress (item) {
 }
 
 export function instrumentAction (item) {
-  if (!item || item.state === 'downloading') return ''
+  if (!item) return ''
+  if (item.state === 'downloading') return instrumentProgress(item)
   if (item.state === 'ready') return 'Remove'
   if (item.state === 'error') return 'Retry'
   if (item.done > 0) return 'Resume'

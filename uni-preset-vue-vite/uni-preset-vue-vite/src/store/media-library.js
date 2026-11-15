@@ -216,6 +216,7 @@ function previewTrack () {
 /** Toggle: tapping the playing file stops it. MIDI plays its first 12 seconds on the
  * selected instrument track. */
 export async function previewEntry (entry) {
+  if (!entry) return
   if (media.previewId === entry.id) {
     stopFilePreview()
     return

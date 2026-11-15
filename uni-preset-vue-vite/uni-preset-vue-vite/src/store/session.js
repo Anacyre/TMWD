@@ -57,10 +57,9 @@ import { defaultCosmicState, normalizeCosmicState } from '../dsp/cosmic/dsp.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
+import { noteFetches } from '../audio/m-orchestra/sample-cache.js'
 import {
   PREPARE_WINDOW_BEATS,
-  STALL_GIVE_UP_MS,
-  gatePlayhead,
   selectPrepareZones
 } from '../audio/orchestra-v/prepare-window.js'
 import { createInsert } from '../dsp/plugin.js'
@@ -1081,31 +1080,12 @@ function upcomingUnready (fromBeat, toBeat) {
 }
 
 function gateOrchestraClock (fromBeat, toBeat) {
-  const waiting = upcomingUnready(fromBeat, toBeat)
-  const gated = gatePlayhead(fromBeat, toBeat, waiting.starts)
-  const held = waiting.starts.length > 0 && gated <= fromBeat + 1e-4
-  if (held) {
-    const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
-    if (!stallSince) {
-      stallSince = now
-      console.info('[orchestra-v] holding playhead for samples', {
-        beat: Number(fromBeat.toFixed(2)),
-        waiting: waiting.starts.length,
-        ready: waiting.ready
-      })
-    }
-    session.sampleLoad.active = true
-    session.sampleLoad.total = waiting.ready + waiting.starts.length
-    session.sampleLoad.done = waiting.ready
-    if (now - stallSince <= STALL_GIVE_UP_MS) return fromBeat
-    stallSince = 0
-    session.sampleLoad.active = false
-    console.info('[orchestra-v] gave up waiting for samples', { beat: Number(fromBeat.toFixed(2)), waiting: waiting.starts.length })
-    return toBeat
-  }
+  // One desk waiting on a new instrument used to freeze every other desk. Notes
+  // that are not decoded yet start late on their own; the clock keeps moving.
+  upcomingUnready(fromBeat, toBeat)
   stallSince = 0
   if (session.playing && session.sampleLoad.active && !preparingSamples) session.sampleLoad.active = false
-  return gated
+  return toBeat
 }
 
 async function prepareOrchestraSamples (graph, fromBeat) {
@@ -1147,7 +1127,7 @@ async function prepareOrchestraSamples (graph, fromBeat) {
   session.sampleLoad.active = false
   if (token !== samplePrepareToken) return false
   orchestraVCloud.replaceWindowPins(graph.context, split.immediate)
-  startEncodedWarm(fromBeat)
+  startEncodedWarm(fromBeat, true)
   return true
 }
 
@@ -1159,7 +1139,7 @@ function maybeOrchestraLookahead () {
   prefetchOrchestraWindow(audioGraph, clockBeats, PREPARE_WINDOW_BEATS, false).catch(() => {})
 }
 
-function startEncodedWarm (fromBeat) {
+function startEncodedWarm (fromBeat, skipNear = false) {
   const token = ++warmToken
   const soon = new Set()
   orchestraNoteEvents(fromBeat, fromBeat + PREPARE_WINDOW_BEATS).forEach((events, track) => {
@@ -1174,7 +1154,7 @@ function startEncodedWarm (fromBeat) {
     clipPlaybackNotes(clip).forEach((item) => {
       const start = (clip.startBeat || 0) + item.start
       const pitch = Math.round(item.pitch)
-      if (soon.has(track.id + ':' + pitch)) return
+      if (skipNear && soon.has(track.id + ':' + pitch)) return
       const bucket = start < fromBeat ? earlier : later
       bucket.push({ track, pitch, start })
     })
@@ -1186,7 +1166,7 @@ function startEncodedWarm (fromBeat) {
     const seen = new Set()
     for (const slot of ordered) {
       if (token !== warmToken) return
-      while (token === warmToken && orchestraVCloud.decodeBacklog() > 0) {
+      while (token === warmToken && (orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
         await new Promise((resolve) => setTimeout(resolve, 40))
       }
       if (token !== warmToken) return
@@ -1197,9 +1177,10 @@ function startEncodedWarm (fromBeat) {
         const zones = await orchestraVCloud.zonesForPitches(slot.track, [slot.pitch])
         for (const zone of zones) {
           if (token !== warmToken) return
-          while (token === warmToken && orchestraVCloud.decodeBacklog() > 0) {
+          while (token === warmToken && (orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
             await new Promise((resolve) => setTimeout(resolve, 40))
           }
+          if (token !== warmToken) return
           if (seen.has(zone.library + '/' + zone.sample)) continue
           seen.add(zone.library + '/' + zone.sample)
           await orchestraVCloud.warmEncoded(zone.library, zone.sample)
@@ -2557,6 +2538,12 @@ export function loadOrchestraV (track, definitionId) {
   })
   unlockAudio().then((graph) => {
     if (!graph) return
+    // A full articulation preload during playback fills the two Ogg decoders and
+    // the notes under the playhead wait. Load only the notes that are about to sound.
+    if (session.playing) {
+      prefetchOrchestraWindow(graph, session.positionBeats || 0, 8, 'now').catch(() => {})
+      return
+    }
     return orchestraVCloud.preloadInstrument(graph, id, track.techniqueId)
   }).catch((err) => {
     console.warn('[orchestra-v] preload failed', err)
@@ -2695,6 +2682,10 @@ export function setTechnique (track, techniqueId) {
   if (isOrchestraVTrack(track)) {
     unlockAudio().then((graph) => {
       if (!graph) return
+      if (session.playing) {
+        prefetchOrchestraWindow(graph, session.positionBeats || 0, 8, 'now').catch(() => {})
+        return
+      }
       return orchestraVCloud.armArticulation(graph, track.definitionId, techniqueId)
     }).catch((err) => {
       console.warn('[orchestra-v] arm failed', err)
@@ -4003,6 +3994,7 @@ export async function importProjectJson (json, options = {}) {
     setActiveProject(session.projectId).catch(() => {})
   }
   if (!options.quiet) showToast(options.asCopy ? 'Opened as a copy' : 'Project loaded')
+  startEncodedWarm(0)
   return true
 }
 

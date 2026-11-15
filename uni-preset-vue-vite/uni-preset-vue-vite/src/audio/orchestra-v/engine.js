@@ -1131,19 +1131,13 @@ export async function armArticulation (graph, definitionId, techniqueId) {
   const rules = playbackRules(library)
   const middle = Math.round((bank.keyLo + bank.keyHi) / 2)
   const ordered = uniqueBankZones(bank).sort((a, b) => Math.abs(a.key - middle) - Math.abs(b.key - middle))
-  const near = ordered.filter((item) => Math.abs(item.key - middle) <= 6)
-  const rest = ordered.filter((item) => Math.abs(item.key - middle) > 6)
+  const near = ordered.filter((item) => Math.abs(item.key - middle) <= 6).slice(0, 4)
   for (const item of near) {
     try {
       const decoded = await decodeZone(graph.context, library, item.zone, rules, true, false)
       if (decoded && decoded.key) pinLive(decoded.key)
     } catch (err) { /* note-on retries */ }
   }
-  rest.forEach((item) => {
-    decodeZone(graph.context, library, item.zone, rules, false, false).then((decoded) => {
-      if (decoded && decoded.key) pinLive(decoded.key)
-    }).catch(() => {})
-  })
 }
 
 export async function preloadInstrument (graph, definitionId, techniqueId) {

@@ -64,6 +64,7 @@ function cloudSampleUrl (libraryId, objectPath) {
   return publicAssetUrl(String(objectPath || '').replace(/^\/+/, ''), bucket)
 }
 
+const inflightAudio = new Map()
 async function readAudioResponse (url, signal) {
   const response = await fetch(url, signal ? { signal } : undefined)
   const type = String(response.headers.get('content-type') || '')
@@ -76,27 +77,36 @@ async function readAudioResponse (url, signal) {
 
 /** Encoded sample bytes. A local dev miss, or a page served in place of audio, is
  *  retried against the public bucket. The same URL is not requested twice. */
-export async function fetchLibraryBytes (libraryId, objectPath, signal) {
+export function fetchLibraryBytes (libraryId, objectPath, signal) {
   const primary = sampleUrl(libraryId, objectPath)
   const cloud = cloudSampleUrl(libraryId, objectPath)
   const urls = []
   if (primary) urls.push(primary)
   if (cloud && cloud !== primary) urls.push(cloud)
-  let last = null
-  for (const url of urls) {
-    if (signal && signal.aborted) {
-      const abort = new Error('aborted')
-      abort.name = 'AbortError'
-      throw abort
+  const key = urls[0] || ''
+  const existing = key && inflightAudio.get(key)
+  if (existing) return existing
+  const promise = (async () => {
+    let last = null
+    for (const url of urls) {
+      if (signal && signal.aborted) {
+        const abort = new Error('aborted')
+        abort.name = 'AbortError'
+        throw abort
+      }
+      try {
+        return await readAudioResponse(url, signal)
+      } catch (err) {
+        if (err && err.name === 'AbortError') throw err
+        last = err
+      }
     }
-    try {
-      return await readAudioResponse(url, signal)
-    } catch (err) {
-      if (err && err.name === 'AbortError') throw err
-      last = err
-    }
-  }
-  throw last || new Error('Download failed')
+    throw last || new Error('Download failed')
+  })()
+  if (key) inflightAudio.set(key, promise)
+  return promise.finally(() => {
+    if (key && inflightAudio.get(key) === promise) inflightAudio.delete(key)
+  })
 }
 
 /** Prefer the published manifest when it is at least as complete as the bundled one. */

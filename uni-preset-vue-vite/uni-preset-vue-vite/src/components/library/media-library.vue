@@ -69,7 +69,7 @@
       <template v-else>
         <template v-for="group in instrumentDownloads.groups" :key="group.id">
           <text class="mlib-group">{{ group.name }}</text>
-          <view v-for="item in group.items" :key="item.id" class="mlib-row file">
+          <view v-for="item in group.items" :key="item.id" class="mlib-row file" @click="onInstrument(item)">
             <view class="mlib-text">
               <text class="mlib-name">{{ item.name }}</text>
               <view v-if="showInstrumentBar(item)" class="mlib-bar">
@@ -77,7 +77,7 @@
               </view>
               <text v-if="item.error" class="mlib-meta err">{{ item.error }}</text>
             </view>
-            <view class="mlib-act" @click="onInstrument(item)">{{ instrumentAction(item) }}</view>
+            <view class="mlib-act"><text>{{ instrumentAction(item) }}</text></view>
           </view>
         </template>
         <view v-if="!instrumentDownloads.groups.length" class="mlib-empty">
@@ -254,9 +254,10 @@ const listEl = ref(null)
 let listNode = null
 
 function onListDown (e) {
-  if (e.button !== 0 || !e.target || !e.target.closest) return
-  if (e.target.closest('.mlib-add')) return
-  const row = e.target.closest('[data-entry]')
+  const target = e && e.target
+  if (e.button !== 0 || !target || !target.closest) return
+  if (target.closest('.mlib-add')) return
+  const row = target.closest('[data-entry]')
   if (!row) return
   const entry = view.value.files.find((f) => f.id === row.getAttribute('data-entry'))
   if (entry) onRowDown(e, entry)
@@ -481,10 +482,12 @@ onUnmounted(() => {
 }
 .mlib-act {
   flex: none;
+  min-width: 36px;
   padding: 6px 4px 6px 8px;
   color: var(--ml-accent);
   cursor: pointer;
   font-size: 12px;
+  text-align: right;
 }
 .mlib-meta.err { color: #e07070; }
 .mlib-bar { height: 4px; margin-top: 6px; border-radius: 2px; background: var(--ml-s2); overflow: hidden; }
