@@ -65,6 +65,24 @@ function cloudSampleUrl (libraryId, objectPath) {
 }
 
 const inflightAudio = new Map()
+
+function abortable (promise, signal) {
+  if (!signal) return promise
+  if (signal.aborted) {
+    const abort = new Error('aborted')
+    abort.name = 'AbortError'
+    return Promise.reject(abort)
+  }
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      const abort = new Error('aborted')
+      abort.name = 'AbortError'
+      reject(abort)
+    }
+    signal.addEventListener('abort', onAbort, { once: true })
+    promise.then(resolve, reject).finally(() => signal.removeEventListener('abort', onAbort))
+  })
+}
 async function readAudioResponse (url, signal) {
   const response = await fetch(url, signal ? { signal } : undefined)
   const type = String(response.headers.get('content-type') || '')
@@ -77,15 +95,18 @@ async function readAudioResponse (url, signal) {
 
 /** Encoded sample bytes. A local dev miss, or a page served in place of audio, is
  *  retried against the public bucket. The same URL is not requested twice. */
-export function fetchLibraryBytes (libraryId, objectPath, signal) {
+export function fetchLibraryBytes (libraryId, objectPath, signal, own = false) {
   const primary = sampleUrl(libraryId, objectPath)
   const cloud = cloudSampleUrl(libraryId, objectPath)
   const urls = []
   if (primary) urls.push(primary)
   if (cloud && cloud !== primary) urls.push(cloud)
   const key = urls[0] || ''
-  const existing = key && inflightAudio.get(key)
-  if (existing) return existing
+  // A download must not sit on a playback request that never finishes.
+  if (!own) {
+    const existing = key && inflightAudio.get(key)
+    if (existing) return abortable(existing, signal)
+  }
   const promise = (async () => {
     let last = null
     for (const url of urls) {

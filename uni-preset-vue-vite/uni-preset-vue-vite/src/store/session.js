@@ -57,7 +57,7 @@ import { defaultCosmicState, normalizeCosmicState } from '../dsp/cosmic/dsp.js'
 import { publicAssetUrl } from '../lib/supabase.js'
 import * as mOrchestraCloud from '../audio/m-orchestra/cloud.js'
 import * as orchestraVCloud from '../audio/orchestra-v/cloud.js'
-import { noteFetches } from '../audio/m-orchestra/sample-cache.js'
+import { instrumentDownloadActive, noteFetches } from '../audio/m-orchestra/sample-cache.js'
 import {
   PREPARE_WINDOW_BEATS,
   selectPrepareZones
@@ -1175,7 +1175,7 @@ function startEncodedWarm (fromBeat, skipNear = false) {
     const seen = new Set()
     for (const slot of ordered) {
       if (token !== warmToken) return
-      while (token === warmToken && (orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
+      while (token === warmToken && (instrumentDownloadActive() || orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
         await new Promise((resolve) => setTimeout(resolve, 40))
       }
       if (token !== warmToken) return
@@ -1186,7 +1186,7 @@ function startEncodedWarm (fromBeat, skipNear = false) {
         const zones = await orchestraVCloud.zonesForPitches(slot.track, [slot.pitch])
         for (const zone of zones) {
           if (token !== warmToken) return
-          while (token === warmToken && (orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
+          while (token === warmToken && (instrumentDownloadActive() || orchestraVCloud.decodeBacklog() > 0 || noteFetches() > 0)) {
             await new Promise((resolve) => setTimeout(resolve, 40))
           }
           if (token !== warmToken) return

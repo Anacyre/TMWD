@@ -11,7 +11,7 @@
 
 import { trackInputNode } from '../mixer-graph.js'
 import { SAMPLE_DEADLINE_MS } from './prepare-window.js'
-import { AsyncLimiter, AudioBufferLru, encodedCacheKey, forgetEncodedSample, noteFetchBegin, noteFetchEnd, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
+import { AsyncLimiter, AudioBufferLru, encodedCacheKey, forgetEncodedSample, instrumentDownloadActive, noteFetchBegin, noteFetchEnd, readEncodedSample, writeEncodedSample } from '../m-orchestra/sample-cache.js'
 import { bakeLoopSeam, splitSustainRelease } from '../m-orchestra/pick.js'
 import { targetDynamics } from '../m-orchestra/playback.js'
 import { findDefinition, libraryOf } from './catalog.js'
@@ -381,8 +381,10 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     profile.networkFetches += 1
     // The next reader must see this write. Returning first made every note
     // download the same file again while IndexedDB was still committing.
-    const copy = bytes.slice(0)
-    await writeEncodedSample(stored, copy).catch(() => {})
+    if (!instrumentDownloadActive()) {
+      const copy = bytes.slice(0)
+      await writeEncodedSample(stored, copy).catch(() => {})
+    }
     return bytes
   } finally {
     noteFetchEnd()

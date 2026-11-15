@@ -77,6 +77,21 @@ export function encodedCacheKey (library, objectPath) {
 }
 
 let liveNoteFetches = 0
+let instrumentDownloadsActive = 0
+
+/** Playback's cache writes share this database. While a user is downloading an
+ * instrument they have to yield, or the download's first read never starts. */
+export function beginInstrumentDownload () {
+  instrumentDownloadsActive += 1
+}
+
+export function endInstrumentDownload () {
+  instrumentDownloadsActive = Math.max(0, instrumentDownloadsActive - 1)
+}
+
+export function instrumentDownloadActive () {
+  return instrumentDownloadsActive > 0
+}
 
 export function noteFetchBegin () {
   liveNoteFetches += 1

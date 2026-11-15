@@ -9,8 +9,10 @@ import { isAudioPayload, isHtmlPayload } from '../audio/orchestra-v/decode-forma
 import { ensureManifest, fetchLibraryBytes, librarySamples } from '../audio/orchestra-v/library.js'
 import { instrumentSamplePaths } from '../audio/orchestra-v/sfz.js'
 import {
+  beginInstrumentDownload,
   deleteInstrumentStatus,
   encodedCacheKey,
+  endInstrumentDownload,
   forgetEncodedSample,
   listInstrumentStatus,
   readEncodedSample,
@@ -87,7 +89,7 @@ async function fetchFile (item, path) {
   const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
   const timer = controller ? setTimeout(() => controller.abort(), 20000) : 0
   try {
-    const bytes = await fetchLibraryBytes(item.library, path, controller && controller.signal)
+    const bytes = await fetchLibraryBytes(item.library, path, controller && controller.signal, true)
     const stored = await writeEncodedSample(key, bytes)
     if (!stored) throw new Error('This browser does not have enough space for the rest of this instrument')
   } catch (err) {
@@ -103,6 +105,7 @@ async function runDownload (item) {
   item.token = token
   item.state = 'downloading'
   item.error = ''
+  beginInstrumentDownload()
   try {
     item.done = 0
     for (const path of item.paths) {
@@ -132,6 +135,8 @@ async function runDownload (item) {
     item.state = 'error'
     item.error = (err && err.message) || 'Download failed'
     await remember(item, false, item.error)
+  } finally {
+    endInstrumentDownload()
   }
 }
 
