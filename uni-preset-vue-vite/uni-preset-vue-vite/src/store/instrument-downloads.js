@@ -28,6 +28,7 @@ export const downloads = reactive({
 })
 
 let loading = null
+let nextToken = 1
 
 function cachedAudio (bytes) {
   return !!(bytes && isAudioPayload(bytes) && !isHtmlPayload(bytes))
@@ -79,7 +80,9 @@ async function fetchFile (item, path) {
 }
 
 async function runDownload (item) {
-  const token = {}
+  // A reactive item wraps an object token in a proxy, so the worker's
+  // identity check never matched and the download stopped at 0%.
+  const token = nextToken++
   item.token = token
   item.state = 'downloading'
   item.error = ''
@@ -144,7 +147,7 @@ export function startInstrumentDownload (id) {
 export async function removeInstrumentDownload (id) {
   const item = findItem(id)
   if (!item) return
-  item.token = null
+  item.token = 0
   const keep = new Set()
   for (const other of allItems()) {
     if (other.id === item.id) continue
