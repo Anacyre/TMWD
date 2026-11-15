@@ -4,10 +4,10 @@ name = "tech-media-sound-station"
 compatibility_date = "2026-08-28"
 workers_dev = true
 
-# Local deploy rebuilds the H5 app without `npm ci`. A clean install deletes
-# esbuild while the dev server is running, and this machine then runs out of memory.
+# Cloudflare's builder is Linux and only installs this repo's root packages.
+# build:web installs the H5 app (so `uni` exists) and then builds it.
 [build]
-command = "set NODE_OPTIONS=--max-old-space-size=2048&& npm run build:h5 --prefix uni-preset-vue-vite/uni-preset-vue-vite"
+command = "npm run build:web"
 
 [assets]
 directory = "./uni-preset-vue-vite/uni-preset-vue-vite/dist/build/h5"
