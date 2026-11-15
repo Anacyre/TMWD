@@ -13,7 +13,6 @@ import {
   encodedCacheKey,
   forgetEncodedSample,
   listInstrumentStatus,
-  noteFetches,
   readEncodedSample,
   writeEncodedSample,
   writeInstrumentStatus
@@ -36,11 +35,10 @@ function cachedAudio (bytes) {
 function takeSlot () {
   return new Promise((resolve) => {
     const attempt = () => {
-      const busy = noteFetches()
-      // Notes and the page preload share the network. Wait only when they are
-      // already using most of it; waiting for complete silence keeps the
-      // instrument percent at 0 for the whole piece.
-      if (running >= MAX_FILES || busy >= 6) {
+      // A cold playback keeps its own fetch slots full for the whole piece.
+      // Waiting on those slots left the instrument percent at 0. Download uses
+      // its own two connections and does not take a note slot.
+      if (running >= MAX_FILES) {
         setTimeout(attempt, 40)
         return
       }

@@ -220,11 +220,16 @@ async function takeVorbisDecoder () {
   if (vorbisIdle.length) return vorbisIdle.pop()
   if (vorbisCreated < VORBIS_POOL) {
     vorbisCreated += 1
-    const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
-    const decoder = new OggVorbisDecoder()
-    await decoder.ready
-    decoder._used = false
-    return decoder
+    try {
+      const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
+      const decoder = new OggVorbisDecoder()
+      await decoder.ready
+      decoder._used = false
+      return decoder
+    } catch (err) {
+      vorbisCreated -= 1
+      throw err
+    }
   }
   return new Promise((resolve) => { vorbisWaiters.push(resolve) })
 }
@@ -1134,7 +1139,7 @@ export async function armArticulation (graph, definitionId, techniqueId) {
   const near = ordered.filter((item) => Math.abs(item.key - middle) <= 6).slice(0, 4)
   for (const item of near) {
     try {
-      const decoded = await decodeZone(graph.context, library, item.zone, rules, true, false)
+      const decoded = await decodeZone(graph.context, library, item.zone, rules, false, false)
       if (decoded && decoded.key) pinLive(decoded.key)
     } catch (err) { /* note-on retries */ }
   }

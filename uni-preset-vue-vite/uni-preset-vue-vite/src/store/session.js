@@ -1136,7 +1136,7 @@ function maybeOrchestraLookahead () {
   if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat) lastLookaheadBeat = -100
   if (lastLookaheadBeat >= 0 && clockBeats < lastLookaheadBeat + 0.5) return
   lastLookaheadBeat = clockBeats
-  prefetchOrchestraWindow(audioGraph, clockBeats, PREPARE_WINDOW_BEATS, false).catch(() => {})
+  prefetchOrchestraWindow(audioGraph, clockBeats, PREPARE_WINDOW_BEATS, true).catch(() => {})
 }
 
 function startEncodedWarm (fromBeat, skipNear = false) {

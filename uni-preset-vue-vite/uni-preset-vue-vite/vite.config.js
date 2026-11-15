@@ -4,11 +4,33 @@ import { dawFxWorkletPlugin } from './scripts/daw-fx-worklet-vite-plugin.mjs'
 import { dawOrchestraSamplesPlugin } from './scripts/daw-orchestra-samples-vite-plugin.mjs'
 import { dawPwaPlugin } from './scripts/daw-pwa-vite-plugin.mjs'
 
+function dawSafeChunkNames () {
+  return {
+    name: 'daw-safe-chunk-names',
+    enforce: 'post',
+    options (opts) {
+      const output = opts && opts.output
+      if (!output) return null
+      const list = Array.isArray(output) ? output : [output]
+      for (const item of list) {
+        if (!item || typeof item !== 'object') continue
+        const prev = item.sanitizeFileName
+        item.sanitizeFileName = (name) => {
+          const base = typeof prev === 'function' ? prev(name) : String(name)
+          return String(base).replace(/\0/g, '_').replace(/@/g, '_')
+        }
+      }
+      return null
+    }
+  }
+}
+
 export default defineConfig({
   plugins: [
     dawOrchestraSamplesPlugin(),
     dawFxWorkletPlugin(),
     dawPwaPlugin(),
+    dawSafeChunkNames(),
     uni(),
   ],
   build: {
@@ -30,6 +52,9 @@ export default defineConfig({
             expensive, and a library the session never touches should not be
             part of the engine download.
         */
+        sanitizeFileName (name) {
+          return String(name).replace(/\0/g, '_').replace(/@/g, '_')
+        },
         manualChunks (id) {
           const path = id.split('\\').join('/')
           if (path.includes('/audio/m-orchestra/manifest.json')) return 'm-orchestra-manifest'

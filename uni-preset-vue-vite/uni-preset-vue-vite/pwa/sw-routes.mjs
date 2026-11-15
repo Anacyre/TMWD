@@ -19,6 +19,10 @@ export function swRoute (url, scope, request) {
   if (!target.pathname.startsWith(base.pathname)) return ''
   const path = target.pathname.slice(base.pathname.length)
   if (req.mode === 'navigate') return 'shell'
+  // A "@" in the path is 307'd to the percent-encoded URL. Intercepting that
+  // redirect used to fail the Ogg decoder import, so every Vorbis instrument
+  // stayed silent while MP3 solo still played. Let the browser follow it.
+  if (path.includes('@') || path.includes('%40')) return ''
   if (/\.(ogg|wav|mp3|flac|m4a|aac|aif|aiff|sf2|sfz|mid|midi)$/i.test(path)) return ''
   if (/^(vms-|samples?\/|sample-libraries\/)/i.test(path)) return ''
   if (/^assets\/.+\.(js|css|woff2?|ttf|png|svg|jpg|webp)$/i.test(path)) return 'static'

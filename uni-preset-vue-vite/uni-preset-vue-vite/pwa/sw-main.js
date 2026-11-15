@@ -21,11 +21,25 @@ self.addEventListener('activate', (event) => {
   )
 })
 
+function remember (cache, request, response) {
+  // cache.put throws on a redirected response (Chrome: "The response was redirected").
+  // Awaiting that throw rejects respondWith, so the script never loads. Copy the
+  // body into a fresh response and ignore a cache that cannot store it.
+  response.arrayBuffer().then((body) => {
+    const copy = new Response(body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: new Headers(response.headers)
+    })
+    return cache.put(request, copy)
+  }).catch(() => {})
+}
+
 async function networkFirst (request, navigate) {
   const cache = await caches.open(SHELL_CACHE)
   try {
     const response = await fetch(request)
-    if (response && response.ok) cache.put(navigate ? './' : request, response.clone())
+    if (response && response.ok) remember(cache, navigate ? './' : request, response.clone())
     return response
   } catch (err) {
     const hit = await cache.match(navigate ? './' : request)
@@ -39,7 +53,7 @@ async function cacheFirst (request) {
   const hit = await cache.match(request)
   if (hit) return hit
   const response = await fetch(request)
-  if (response && response.ok) cache.put(request, response.clone())
+  if (response && response.ok) remember(cache, request, response.clone())
   return response
 }
 
