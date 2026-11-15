@@ -4,8 +4,10 @@
  * refuses to pass a note whose body is still undecoded. */
 
 export const PREPARE_WINDOW_BEATS = 32
-/** Network / decode abort for a single object. Not the Play gate. */
-export const SAMPLE_DEADLINE_MS = 8000
+/** Decode budget for one object after its bytes are in memory. The first Ogg
+ * file also compiles the wasm decoder, which on a cold Cloudflare load does not
+ * finish in 8s. A timeout used to mark that file failed for the rest of the session. */
+export const SAMPLE_DEADLINE_MS = 20000
 /** Give up holding the playhead if one sample never arrives. */
 export const STALL_GIVE_UP_MS = 12000
 

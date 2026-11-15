@@ -1079,12 +1079,21 @@ function upcomingUnready (fromBeat, toBeat) {
   return { starts, ready }
 }
 
+const CLOCK_HOLD_MS = 800
+
 function gateOrchestraClock (fromBeat, toBeat) {
-  // One desk waiting on a new instrument used to freeze every other desk. Notes
-  // that are not decoded yet start late on their own; the clock keeps moving.
-  upcomingUnready(fromBeat, toBeat)
-  stallSince = 0
+  // A note whose sample is a few hundred milliseconds late still gets its attack.
+  // One missing file only holds the clock once; it does not freeze the piece.
+  const gate = upcomingUnready(fromBeat, toBeat)
+  const due = gate.starts.some((start) => start <= toBeat + 0.02)
   if (session.playing && session.sampleLoad.active && !preparingSamples) session.sampleLoad.active = false
+  if (!due) {
+    stallSince = 0
+    return toBeat
+  }
+  const now = typeof performance !== 'undefined' ? performance.now() : Date.now()
+  if (!stallSince) stallSince = now
+  if (now - stallSince < CLOCK_HOLD_MS) return fromBeat
   return toBeat
 }
 

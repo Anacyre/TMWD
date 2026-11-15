@@ -215,13 +215,17 @@ const VORBIS_POOL = 2
 const vorbisIdle = []
 const vorbisWaiters = []
 let vorbisCreated = 0
+// Start the download with the engine, not inside the first note's deadline.
+// Cloudflare redirects this chunk, and waiting until play made the deadline
+// fail the file before the decoder existed.
+const vorbisModulePromise = import('@wasm-audio-decoders/ogg-vorbis')
 
 async function takeVorbisDecoder () {
   if (vorbisIdle.length) return vorbisIdle.pop()
   if (vorbisCreated < VORBIS_POOL) {
     vorbisCreated += 1
     try {
-      const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
+      const { OggVorbisDecoder } = await vorbisModulePromise
       const decoder = new OggVorbisDecoder()
       await decoder.ready
       decoder._used = false
@@ -299,6 +303,10 @@ async function decodeSampleBytes (context, bytes) {
 
 const fetchPromises = new Map()
 
+function decodeTimedOut (err) {
+  return !!(err && /timeout/i.test(String(err.message || err)))
+}
+
 function withDeadline (promise, ms, message) {
   let timer = 0
   const timeout = new Promise((_, reject) => {
@@ -371,7 +379,10 @@ async function fetchSampleBytesNow (library, objectPath, stored, signal) {
     const bytes = await fetchLibraryBytes(library, objectPath, controller && controller.signal)
     profile.fetchMs += nowMs() - started
     profile.networkFetches += 1
-    writeEncodedSample(stored, bytes.slice(0)).catch(() => {})
+    // The next reader must see this write. Returning first made every note
+    // download the same file again while IndexedDB was still committing.
+    const copy = bytes.slice(0)
+    await writeEncodedSample(stored, copy).catch(() => {})
     return bytes
   } finally {
     noteFetchEnd()
@@ -446,8 +457,12 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
     if (pin) bufferCache.pin(key)
     return decoded
     } catch (err) {
-      failedDecodes.add(key)
-      forgetEncodedSample(cachePath(library, zone.sample)).catch(() => {})
+      // A slow decode is not a bad file. Forgetting the bytes and remembering
+      // the failure left every Ogg instrument silent for the rest of the session.
+      if (!decodeTimedOut(err)) {
+        failedDecodes.add(key)
+        forgetEncodedSample(cachePath(library, zone.sample)).catch(() => {})
+      }
       throw err
     }
   }, priority)
@@ -489,7 +504,7 @@ async function decodeRelease (context, library, zone, priority = false) {
       bufferCache.set(key, decoded)
       return decoded
     } catch (err) {
-      forgetEncodedSample(cachePath(library, zone.releaseSample)).catch(() => {})
+      if (!decodeTimedOut(err)) forgetEncodedSample(cachePath(library, zone.releaseSample)).catch(() => {})
       throw err
     }
   }, priority)
