@@ -49,20 +49,27 @@ export function clampVolumeDb (db) {
   return Math.min(VOLUME_DB_MAX, Math.max(VOLUME_DB_MIN, n))
 }
 
-/** Fader 0–1, 0.8 = 0 dB, 1 = +6 dB. Matches DawUnits. */
+/** Fader 0–1, 0.8 = 0 dB, 1 = +6 dB. The curve flattens toward the top, so the
+ * same travel changes less level as the fader approaches maximum. */
 export function dbFromFader (position) {
   const p = Math.min(1, Math.max(0, Number(position) || 0))
   if (p <= 0) return VOLUME_DB_MIN
-  if (p >= 0.8) return ((p - 0.8) / 0.2) * VOLUME_DB_MAX
+  if (p >= 0.8) {
+    const u = (p - 0.8) / 0.2
+    return (1 - (1 - u) * (1 - u)) * VOLUME_DB_MAX
+  }
   const t = p / 0.8
-  return (t * t) * 60 - 60
+  return -60 * (1 - t) * (1 - t)
 }
 
 export function faderFromDb (db) {
   const v = clampVolumeDb(db)
   if (v <= VOLUME_DB_MIN + 0.5) return 0
-  if (v >= 0) return 0.8 + (Math.min(VOLUME_DB_MAX, v) / VOLUME_DB_MAX) * 0.2
-  const t = Math.sqrt(Math.min(1, Math.max(0, (v - VOLUME_DB_MIN) / 60)))
+  if (v >= 0) {
+    const u = 1 - Math.sqrt(1 - Math.min(VOLUME_DB_MAX, v) / VOLUME_DB_MAX)
+    return 0.8 + u * 0.2
+  }
+  const t = 1 - Math.sqrt(Math.min(1, Math.max(0, -v / 60)))
   return t * 0.8
 }
 

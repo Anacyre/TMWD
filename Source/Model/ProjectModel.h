@@ -224,18 +224,25 @@ namespace DawUnits
             return -100.0f;
 
         if (position >= 0.8f)
-            return juce::jmap (position, 0.8f, 1.0f, 0.0f, 6.0f);
+        {
+            const auto u = (position - 0.8f) / 0.2f;
+            return (1.0f - (1.0f - u) * (1.0f - u)) * 6.0f;
+        }
 
         const auto t = position / 0.8f;
-        return juce::jmap (t * t, 0.0f, 1.0f, -60.0f, 0.0f);
+        return -60.0f * (1.0f - t) * (1.0f - t);
     }
 
     inline float dbToFader (float db)
     {
         if (db >= 0.0f)
-            return juce::jmap (juce::jmin (db, 6.0f), 0.0f, 6.0f, 0.8f, 1.0f);
+        {
+            const auto clamped = juce::jmin (db, 6.0f);
+            const auto u = 1.0f - std::sqrt (1.0f - clamped / 6.0f);
+            return 0.8f + u * 0.2f;
+        }
 
-        const auto t = std::sqrt (juce::jlimit (0.0f, 1.0f, juce::jmap (db, -60.0f, 0.0f, 0.0f, 1.0f)));
+        const auto t = 1.0f - std::sqrt (juce::jlimit (0.0f, 1.0f, -db / 60.0f));
         return t * 0.8f;
     }
 

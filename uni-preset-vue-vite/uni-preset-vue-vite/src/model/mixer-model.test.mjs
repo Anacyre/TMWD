@@ -31,7 +31,12 @@ function assert (ok, message) {
 
 assert(Math.abs(dbToGain(0) - 1) < 1e-9, '0 dB is unity')
 assert(dbFromFader(0.8) === 0, 'fader 0.8 is 0 dB')
+assert(Math.abs(dbFromFader(1) - 6) < 1e-9, 'fader 1 is +6 dB')
 assert(Math.abs(faderFromDb(0) - 0.8) < 1e-9, '0 dB is fader 0.8')
+assert(Math.abs(faderFromDb(6) - 1) < 1e-9, '+6 dB is the top of the fader')
+const nearTop = dbFromFader(1) - dbFromFader(0.95)
+const leavingUnity = dbFromFader(0.85) - dbFromFader(0.8)
+assert(nearTop < leavingUnity, 'travel near maximum changes less level than travel just above unity')
 assert(Math.abs(dbToGain(6) - 2) < 0.01, '+6 dB ≈ ×2')
 
 const center = panGains(0)
