@@ -23,6 +23,7 @@ export function mixerHasInserts (webMixer) {
 export function isWebOwnedTrack (track, options = {}) {
   if (!track || track.type === 'master' || track.type === 'group') return false
   if (track.source === 'web-sampler') return true
+  if (track.source === 'audio' || track.type === 'audio') return true
   if (track.source === 'm-orchestra' || track.source === 'orchestra-v') return true
   const def = String(track.definitionId || '')
   if (def.startsWith('m_orch_') || def.startsWith('ov_')) return true

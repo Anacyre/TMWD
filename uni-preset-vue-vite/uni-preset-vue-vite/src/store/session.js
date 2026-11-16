@@ -1278,6 +1278,7 @@ export async function play () {
   if (graph) {
     preparingSamples = true
     try {
+      await restoreSamplerAssets(session)
       const ready = await prepareOrchestraSamples(graph, session.positionBeats || 0)
       if (!ready) return
     } finally {
