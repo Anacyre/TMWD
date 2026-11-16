@@ -18,7 +18,8 @@ import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemot
 import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains, setLaneMix, setMasterMix, setFxMeterDetail } from '../audio/mixer-graph.js'
 import { invalidateFxWorklet, hasNativeAudioWorklet } from '../dsp/runtime.js'
 import { serializeSession, migrateProject, mergeNativeExport, normalizeProjectMeta } from '../lib/project-io.js'
-import { setOwnerHandler, watchCloudAuth } from './cloud-auth.js'
+import { cloudAuth, setOwnerHandler, watchCloudAuth } from './cloud-auth.js'
+import { uploadProject } from '../lib/cloud-projects.js'
 import { packProjectAssets, unpackProjectAssets, stripPackedAssets } from '../lib/project-assets.js'
 import {
   putProject,
@@ -45,7 +46,7 @@ import {
   FALLBACK_KEYS
 } from '../lib/project-db.js'
 import { createWebSamplerInstrument, WebSamplerVoice, decodeIntoContext, decodeSampleFile } from '../audio/web-sampler.js'
-import { bounceSessionToWav } from '../audio/bounce.js'
+import { bounceSessionToWav, encodeWav } from '../audio/bounce.js'
 import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, isAudioClip, clipMatchesTrack } from '../audio/audio-clips.js'
 import * as sf2Engine from '../audio/sf2/engine.js'
 import { SF2_PLUGIN_ID } from '../audio/sf2/index.js'
@@ -208,7 +209,13 @@ export function noteEdited () {
 }
 
 let autosaveTimer = 0
+let snapshotTimer = 0
 function scheduleAutosave () {
+  if (snapshotTimer) clearTimeout(snapshotTimer)
+  snapshotTimer = setTimeout(() => {
+    snapshotTimer = 0
+    writeLocalSnapshot()
+  }, 400)
   if (autosaveTimer) return
   autosaveTimer = setTimeout(() => {
     autosaveTimer = 0
@@ -4018,6 +4025,21 @@ async function restoreSamplerAssets () {
   }))
 }
 
+async function repairStoredAudio () {
+  for (const clip of session.clips || []) {
+    if (!clip || !clip.sourceId || !audioBuffers.has(clip.sourceId)) continue
+    const asset = await getAsset(clip.sourceId)
+    if (asset && asset.blob && asset.blob.size) continue
+    try {
+      const wav = encodeWav(audioBuffers.get(clip.sourceId))
+      const blob = new Blob([wav], { type: 'audio/wav' })
+      await putAsset(clip.sourceId, blob, { name: clip.name || 'audio', bytes: blob.size })
+    } catch (err) {
+      console.warn('[project] audio asset repair failed', err)
+    }
+  }
+}
+
 async function buildSavePayload () {
   let data = serializeProject()
   if (isEngineConnected()) {
@@ -4025,6 +4047,7 @@ async function buildSavePayload () {
     if (reply && reply.json) data = mergeNativeExport(data, reply.json)
   }
   await persistSamplerAssets(data)
+  await repairStoredAudio()
   return serializeSession({ ...session, projectId: data.id, webMixer: data.webMixer, tracks: data.tracks })
 }
 
@@ -4047,12 +4070,31 @@ export async function saveCurrentProject (options = {}) {
     session.projectId = saved.id
     markSaved()
     if (!options.quiet) showToast('Project saved')
+    if (!options.skipCloud && !options.quiet && cloudAuth.user) pushCloudCopy()
     return saved
   } catch (err) {
     session.saveStatus = ''
     showToast(err.message || 'Save failed')
     return null
   }
+}
+
+/** Signed-in saves also upload the audio bytes, so another device can play the clips. */
+function pushCloudCopy () {
+  buildPortableProject().then(async ({ project, missing }) => {
+    const result = await uploadProject(project, {
+      name: session.projectName,
+      localId: session.projectId,
+      cloudId: session.cloudId
+    })
+    if (result && result.cloudId && result.cloudId !== session.cloudId) {
+      session.cloudId = result.cloudId
+      await saveCurrentProject({ quiet: true, skipCloud: true })
+    }
+    if (missing.length) showToast('Saved. Some audio could not be uploaded')
+  }).catch((err) => {
+    console.warn('[project] cloud copy failed', err)
+  })
 }
 
 export async function saveProjectAs (name) {
@@ -4165,6 +4207,10 @@ export async function switchLibraryOwner (owner) {
   if (autosaveTimer) {
     clearTimeout(autosaveTimer)
     autosaveTimer = 0
+  }
+  if (snapshotTimer) {
+    clearTimeout(snapshotTimer)
+    snapshotTimer = 0
   }
   setLibraryOwner(next)
   session.libraryOwner = next
@@ -4285,25 +4331,39 @@ export async function restoreLastSession () {
   return false
 }
 
-/** Synchronous snapshot for pagehide: IndexedDB may not finish before the tab dies, but
- * localStorage does. The full save still runs in the background when the page survives. */
-export function flushSessionSnapshot () {
-  if (!session.unsaved) return
+function slimForLocal (data) {
+  const copy = JSON.parse(JSON.stringify(data))
+  for (const clip of copy.clips || []) {
+    if (clip && clip.peaks && clip.peaks.length > 32) clip.peaks = null
+  }
+  return copy
+}
+
+/** Synchronous snapshot for refresh: IndexedDB often dies with the tab. Peaks are dropped
+ * if the full project does not fit in localStorage; audio bytes stay in the asset store. */
+export function writeLocalSnapshot () {
+  if (session.restoring) return
   try {
-    const data = serializeProject()
-    if (typeof localStorage !== 'undefined') {
-      const snap = JSON.stringify({
-        ...data,
-        id: 'as_local',
-        kind: 'autosave',
-        sourceId: data.id,
-        sourceName: data.name,
-        updatedAt: Date.now()
-      })
-      localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, snap)
-    }
-  } catch (err) { /* quota or serialisation failure: the next autosave retries */ }
-  autosaveProject()
+    const data = slimForLocal(serializeProject())
+    if (!data.id) return
+    if (typeof localStorage === 'undefined') return
+    const snap = JSON.stringify({
+      ...data,
+      id: 'as_local',
+      kind: 'autosave',
+      sourceId: data.id,
+      sourceName: data.name,
+      updatedAt: Date.now()
+    })
+    localStorage.setItem(FALLBACK_KEYS.LS_AUTOSAVE, snap)
+    if (data.id) setActiveProject(data.id).catch(() => {})
+  } catch (err) { /* quota: the IndexedDB autosave is the other copy */ }
+}
+
+/** pagehide: localStorage finishes even when IndexedDB does not. */
+export function flushSessionSnapshot () {
+  writeLocalSnapshot()
+  if (session.unsaved) autosaveProject()
 }
 
 if (typeof window !== 'undefined') {

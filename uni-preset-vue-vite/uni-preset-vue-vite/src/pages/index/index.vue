@@ -83,6 +83,7 @@ const PluginHost = defineAsyncComponent(() => import('../../components/dsp/plugi
 const LiteSettings = defineAsyncComponent(() => import('../../components/lite/lite-settings.vue'))
 const ProjectHub = defineAsyncComponent(() => import('../../components/projects/project-hub.vue'))
 const MediaLibrary = defineAsyncComponent(() => import('../../components/library/media-library.vue'))
+import { cloudAuth } from '../../store/cloud-auth.js'
 import {
   session,
   engineModeClass,
@@ -224,8 +225,19 @@ onMounted(() => {
     window.addEventListener('resize', measure)
   }
   startEngineBridge()
-  // A refresh must land back in the project that was open, not the starter demo.
-  restoreLastSession().then(async (restored) => {
+  // Auth decides which library the open project belongs to. Restoring before that
+  // reads the guest library and then refuses to replace it once the account arrives.
+  const authReady = cloudAuth.ready
+    ? Promise.resolve()
+    : new Promise((resolve) => {
+      const stop = watch(() => cloudAuth.ready, (ready) => {
+        if (!ready) return
+        stop()
+        resolve()
+      })
+      setTimeout(() => { stop(); resolve() }, 4000)
+    })
+  authReady.then(() => restoreLastSession()).then(async (restored) => {
     if (restored) return
     if (session.tracks.filter((track) => track.type !== 'master').length) return
     await addTrack('midi')
