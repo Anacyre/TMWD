@@ -158,6 +158,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import DawIcon from '../daw-icon.vue'
+import { bindLiveScroll } from '../../lib/touch-scroll.js'
 import { setTyping, isTouchInput } from '../../store/session.js'
 import {
   media,
@@ -252,6 +253,7 @@ async function onRemoveSource (source) {
 let press = null
 const listEl = ref(null)
 let listNode = null
+let unbindScroll = () => {}
 
 function onListDown (e) {
   const target = e && e.target
@@ -314,9 +316,11 @@ onMounted(() => {
   const el = listEl.value
   listNode = el && (el.$el || el)
   if (listNode && listNode.addEventListener) listNode.addEventListener('pointerdown', onListDown)
+  unbindScroll = bindLiveScroll('.mlib-scroll', 'y')
 })
 
 onUnmounted(() => {
+  unbindScroll()
   if (listNode) listNode.removeEventListener('pointerdown', onListDown)
   release()
   stopFilePreview()
@@ -406,13 +410,15 @@ onUnmounted(() => {
 .mlib-crumb { cursor: pointer; color: var(--ml-ink-2); }
 .mlib-crumb:hover { color: var(--ml-ink); }
 .mlib-list {
-  flex: 1;
+  flex: 1 1 0;
   min-height: 0;
+  height: 0;
   padding: 0 6px 8px;
   overflow-x: hidden;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 .mlib-row {
   min-height: 40px;
@@ -528,9 +534,13 @@ onUnmounted(() => {
 
 <style>
 uni-view.mlib-scroll {
+  flex: 1 1 0 !important;
+  height: 0 !important;
+  min-height: 0 !important;
   overflow-y: auto !important;
   overflow-x: hidden !important;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
+  touch-action: pan-y;
 }
 </style>
