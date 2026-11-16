@@ -51,6 +51,23 @@ export async function decodeSampleFile (context, fileOrUrl) {
   }
 }
 
+/** Decode into `context` even when it is still suspended. A suspended context
+ * rejects decodeAudioData until the first tap, so the bytes are decoded offline
+ * and copied across. */
+export async function decodeIntoContext (context, fileOrUrl) {
+  try {
+    return await decodeSampleFile(context, fileOrUrl)
+  } catch (err) {
+    const Offline = typeof OfflineAudioContext !== 'undefined' ? OfflineAudioContext : null
+    if (!Offline || !context || typeof context.createBuffer !== 'function') throw err
+    const offline = new Offline(1, 1, context.sampleRate || 44100)
+    const decoded = await decodeSampleFile(offline, fileOrUrl)
+    const buffer = context.createBuffer(decoded.numberOfChannels, decoded.length, decoded.sampleRate)
+    for (let c = 0; c < decoded.numberOfChannels; c++) buffer.copyToChannel(decoded.getChannelData(c), c)
+    return buffer
+  }
+}
+
 export class WebSamplerVoice {
   constructor (context, destination) {
     this.context = context

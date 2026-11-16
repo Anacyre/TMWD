@@ -44,7 +44,7 @@ import {
   GUEST_OWNER,
   FALLBACK_KEYS
 } from '../lib/project-db.js'
-import { createWebSamplerInstrument, WebSamplerVoice, decodeSampleFile } from '../audio/web-sampler.js'
+import { createWebSamplerInstrument, WebSamplerVoice, decodeIntoContext, decodeSampleFile } from '../audio/web-sampler.js'
 import { bounceSessionToWav } from '../audio/bounce.js'
 import { tickAudioClips, allAudioClipsOff, createAudioClip, buildAudioPreview, isAudioClip, clipMatchesTrack } from '../audio/audio-clips.js'
 import * as sf2Engine from '../audio/sf2/engine.js'
@@ -3954,7 +3954,12 @@ async function persistSamplerAssets (project) {
   }
 }
 
-async function restoreSamplerAssets (project) {
+async function decodeAssetBuffer (graph, blob) {
+  if (!graph || !blob) return null
+  return decodeIntoContext(graph.context, blob)
+}
+
+async function restoreSamplerAssets () {
   const graph = ensureGraph()
   for (const track of session.tracks || []) {
     const hash = track.webSampler && track.webSampler.assetHash
@@ -3965,7 +3970,7 @@ async function restoreSamplerAssets (project) {
           const url = URL.createObjectURL(asset.blob)
           track.webSampler.sampleUrl = url
           if (graph) {
-            const buffer = await decodeSampleFile(graph.context, asset.blob)
+            const buffer = await decodeAssetBuffer(graph, asset.blob)
             samplerBuffers.set(track.id, buffer)
           }
         } catch (err) {
@@ -3981,7 +3986,7 @@ async function restoreSamplerAssets (project) {
           track.sf2Id = id
           if (/\.sf2$/i.test(asset.name || '')) await sf2Engine.loadSf2Buffer(id, await asset.blob.arrayBuffer())
           else {
-            const buffer = await decodeSampleFile(graph.context, asset.blob)
+            const buffer = await decodeAssetBuffer(graph, asset.blob)
             sf2Engine.loadPcmZone(id, buffer.getChannelData(0), { name: asset.name, sampleRate: buffer.sampleRate })
           }
         } catch (err) {
@@ -3990,13 +3995,18 @@ async function restoreSamplerAssets (project) {
       }
     }
   }
+  const pending = []
+  const seen = new Set()
   for (const clip of session.clips || []) {
-    if (!clip.sourceId) continue
-    if (audioBuffers.has(clip.sourceId)) continue
+    if (!clip || !clip.sourceId || audioBuffers.has(clip.sourceId) || seen.has(clip.sourceId)) continue
+    seen.add(clip.sourceId)
+    pending.push(clip)
+  }
+  await Promise.all(pending.map(async (clip) => {
     const asset = await getAsset(clip.sourceId)
-    if (!asset || !asset.blob || !graph) continue
+    if (!asset || !asset.blob || !graph) return
     try {
-      const buffer = await decodeSampleFile(graph.context, asset.blob)
+      const buffer = await decodeAssetBuffer(graph, asset.blob)
       buffer._previewKey = clip.sourceId
       audioBuffers.set(clip.sourceId, buffer)
       if (!clip.peaks || !clip.peaks.length) {
@@ -4005,7 +4015,7 @@ async function restoreSamplerAssets (project) {
     } catch (err) {
       console.warn('[project] audio clip restore failed', err)
     }
-  }
+  }))
 }
 
 async function buildSavePayload () {
