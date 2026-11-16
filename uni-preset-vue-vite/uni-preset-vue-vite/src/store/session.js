@@ -12,9 +12,8 @@ import {
   setStoredEngineHost,
   mixedContentHint
 } from '../bridge/engine.js'
-import { canAddInsert, dbFromFader, dbToGain, CONTROL_HZ, defaultSends, normalizeSends, defaultTrackMix, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
+import { canAddInsert, dbFromFader, dbToGain, CONTROL_HZ, defaultSends, emptyInserts, normalizeSends, defaultTrackMix, BUS_REVERB, BUS_DELAY } from '../model/mixer-model.js'
 import { defaultWebMixer, normalizeWebMixer, demoWebMixer, setLaneInserts, laneInserts, allTrackInserts, syncNativeInsertsToWebMixer, nameToPluginId, MIXER_INSERT_SLOTS, fxMeterLaneKey, reorderLaneInserts, trackLaneInserts, isBrowserOwnedTrack } from '../model/web-mixer.js'
-import { createDemoProject } from '../model/demo-project.js'
 import { parseRemoteAudioPacket, createAudioGraph, attachRemotePlayer, pushRemotePacket } from '../audio/graph.js'
 import { attachMixerGraph, syncMixerGraph, getLaneAnalyser, ensureOutputRouting, trackInputNode, routingSnapshot, detachMixerGraph, mixerHasInserts, syncDirectLaneGains, setLaneMix, setMasterMix, setFxMeterDetail } from '../audio/mixer-graph.js'
 import { invalidateFxWorklet, hasNativeAudioWorklet } from '../dsp/runtime.js'
@@ -149,7 +148,38 @@ export const TRACK_HEIGHTS = [
 ]
 
 const PALETTE = ['#4a90d9', '#d98b4a', '#6dbf8a', '#c46bb3', '#d4c05a', '#5bb8c4', '#d96a6a']
-const starterDemo = createDemoProject()
+const blankProject = {
+  projectName: 'New Project',
+  bpm: 120,
+  loopStart: 0,
+  loopEnd: 16,
+  masterGain: 0.8,
+  timeSigNum: 4,
+  timeSigDen: 4,
+  markers: [],
+  tracks: [{
+    id: 1,
+    name: 'Master',
+    type: 'master',
+    colour: '#8a8a8a',
+    volume: 0.8,
+    pan: 0,
+    mute: false,
+    solo: false,
+    recordArm: false,
+    instrument: 'Stereo Output',
+    definitionId: '',
+    techniqueId: '',
+    section: 'Output',
+    controllerValues: {},
+    inserts: emptyInserts(),
+    sends: defaultSends(),
+    source: 'empty',
+    meterLevel: 0
+  }],
+  clips: [],
+  webMixer: null
+}
 
 const SUPPORT_EXTS = ['.mp3', '.mp4', '.wav', '.aac', '.ogg', '.flac', '.mid', '.midi', '.aif', '.aiff', '.m4a', '.sf2']
 
@@ -201,8 +231,8 @@ export function sendCommandSafe (type, payload) {
 export const session = reactive({
   projectId: '',
   cloudId: '',
-  projectName: starterDemo.projectName,
-  projectMeta: normalizeProjectMeta(starterDemo.meta, starterDemo.projectName),
+  projectName: blankProject.projectName,
+  projectMeta: normalizeProjectMeta(null, blankProject.projectName),
   libraryOwner: getLibraryOwner(),
   savedAt: 0,
   libraryOpen: false,
@@ -217,12 +247,12 @@ export const session = reactive({
   metronome: false,
   snap: true,
   snapGridBeats: 0.25,
-  bpm: starterDemo.bpm,
+  bpm: blankProject.bpm,
   positionBeats: 0,
-  loopStart: starterDemo.loopStart,
-  loopEnd: starterDemo.loopEnd,
+  loopStart: blankProject.loopStart,
+  loopEnd: blankProject.loopEnd,
   pixelsPerBeat: 21,
-  masterGain: starterDemo.masterGain,
+  masterGain: blankProject.masterGain,
   timeSigNum: 4,
   timeSigDen: 4,
   colourIndex: 0,
@@ -236,11 +266,11 @@ export const session = reactive({
   activeClipId: 0,
   selectedClipIds: [],
   selectedTrackIds: [],
-  markers: starterDemo.markers || [],
-  timeSignatures: [{ timeTick: 0, numerator: starterDemo.timeSigNum || 4, denominator: starterDemo.timeSigDen || 4 }],
+  markers: [],
+  timeSignatures: [{ timeTick: 0, numerator: 4, denominator: 4 }],
   score: defaultScore({
-    markers: starterDemo.markers || [],
-    timeSignatures: [{ timeTick: 0, numerator: starterDemo.timeSigNum || 4, denominator: starterDemo.timeSigDen || 4 }],
+    markers: [],
+    timeSignatures: [{ timeTick: 0, numerator: 4, denominator: 4 }],
     ...(readInterfaceMode() === INTERFACE_LITE ? { key: 'C', scale: 'chromatic' } : {})
   }),
   pianoRollFocus: false,
@@ -316,12 +346,12 @@ export const session = reactive({
     startupStatus: '',
     maxHostedInstances: 64
   },
-  tracks: starterDemo.tracks,
-  clips: starterDemo.clips.map(normalizeClipNotes),
+  tracks: blankProject.tracks,
+  clips: [],
   clipPreviewRevision: 0,
-  clockStamp: { positionBeats: 0, playing: false, bpm: starterDemo.bpm, receivedAt: 0 },
+  clockStamp: { positionBeats: 0, playing: false, bpm: blankProject.bpm, receivedAt: 0 },
   clipboard: null,
-  webMixer: starterDemo.webMixer || defaultWebMixer(),
+  webMixer: defaultWebMixer(),
   mixerLane: { type: 'remote' },
   mixerMode: 'compact',
   showSends: false,
@@ -2046,31 +2076,6 @@ export function newProject () {
   session.tracks = session.tracks.filter((track) => track.type === 'master')
   returnToStart()
   markDirty()
-}
-
-export async function loadDemoProject (options = {}) {
-  stop()
-  const demo = migrateProject(createDemoProject())
-  if (isEngineConnected()) {
-    await pushSessionProjectToEngine(demo)
-  }
-  // An example is always a fresh, unsaved copy: saving it must not overwrite the project
-  // that was open before.
-  session.projectId = ''
-  session.cloudId = ''
-  applyProject(demo)
-  session.projectId = ''
-  session.cloudId = ''
-  persistWebMixer()
-  session.selectedTrack = 1
-  session.selectedClip = session.clips.length ? 0 : -1
-  session.positionBeats = 0
-  session.unsaved = false
-  setActiveProject('').catch(() => {})
-  maybeStartRemoteAudio()
-  if (!isEngineConnected() && !options.quiet && !isLite()) {
-    showToast('BBCSO / Synchron need the DawWeb engine on the PC')
-  }
 }
 
 export function isSupportedFile (name = '') {
@@ -4805,9 +4810,17 @@ function allLocalNotesOff () {
   soundingNotes.clear()
 }
 
+let audioRestorePromise = null
+function ensureAudioBuffers () {
+  const missing = (session.clips || []).some((clip) => clip && clip.sourceId && !audioBuffers.has(clip.sourceId))
+  if (!missing || audioRestorePromise) return
+  audioRestorePromise = restoreSamplerAssets(session).finally(() => { audioRestorePromise = null })
+}
+
 function tickLocalAudio (nowBeats) {
   const graph = audioGraph
   if (!graph || !graph.context) return
+  ensureAudioBuffers()
   tickAudioClips(session, {
     nowBeats,
     context: graph.context,

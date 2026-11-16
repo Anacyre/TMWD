@@ -379,19 +379,6 @@
           <!-- Examples -->
           <view v-else-if="hub.section === 'examples'" class="stack">
             <view class="grid">
-              <view v-if="!hub.builtinHidden" class="tile" @click="openExample">
-                <view class="cover" :style="coverStyle('Re-Time')">
-                  <svg class="cover-notes" viewBox="0 0 100 60" preserveAspectRatio="none">
-                    <rect v-for="(bar, i) in demoSummary.preview" :key="i" :x="4 + bar[0] * 92" :y="6 + bar[1] * 46" :width="Math.max(1.6, bar[2] * 92)" height="3" rx="1.2" />
-                  </svg>
-                </view>
-                <text class="tile-title">Re-Time</text>
-                <text class="tile-sub">Orchestral demo</text>
-                <text class="tile-facts">Strings, winds and brass with phrasing lanes. Opens as a new, unsaved project.</text>
-                <view v-if="hub.canCurate" class="row-actions-main" @click.stop>
-                  <view class="btn small danger-ghost" :class="{ off: !!hub.busy }" @click="deleteBuiltinDemo">Delete</view>
-                </view>
-              </view>
               <view v-for="row in hub.demos" :key="row.id" class="tile" @click="openPublic(row)">
                 <view class="cover" :style="coverStyle(row.id)">
                   <svg class="cover-notes" viewBox="0 0 100 60" preserveAspectRatio="none">
@@ -473,7 +460,6 @@ import {
   shareProjectFile,
   setTyping
 } from '../../store/session.js'
-import { createDemoProject } from '../../model/demo-project.js'
 import {
   cloudAuth,
   refreshCloudAuth,
@@ -500,7 +486,6 @@ import {
   saveCopy,
   syncCurrentToCloud,
   startNewProject,
-  openExample,
   openProjectFile,
   openRecovery,
   deleteRecovery,
@@ -584,16 +569,6 @@ const currentSummary = computed(() => {
   if (!session.projectManagerOpen) return { preview: [], bpm: 0, durationSec: 0, trackCount: 0 }
   return projectSummary({ tempo: session.bpm, tracks: session.tracks, clips: session.clips })
 })
-let demoCache = null
-const demoSummary = computed(() => {
-  if (hub.section !== 'examples') return { preview: [] }
-  if (!demoCache) {
-    const demo = createDemoProject()
-    demoCache = projectSummary({ tempo: demo.bpm || 120, tracks: demo.tracks, clips: demo.clips })
-  }
-  return demoCache
-})
-
 const factsLine = computed(() => {
   const s = currentSummary.value
   const tracks = s.trackCount === 1 ? '1 track' : s.trackCount + ' tracks'

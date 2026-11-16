@@ -21,7 +21,6 @@ import {
   setProjectName,
   updateProjectMeta,
   buildPortableProject,
-  loadDemoProject,
   listGuestProjects,
   adoptGuestProject,
   keepUnsavedInRecovery,
@@ -379,13 +378,6 @@ export function startNewProject () {
     if (creator) updateProjectMeta({ creator })
     await addTrack('midi')
     session.unsaved = false
-    return true
-  }))
-}
-
-export function openExample () {
-  return run('example', () => replaceOpenProject(async () => {
-    await loadDemoProject()
     return true
   }))
 }

@@ -95,6 +95,7 @@ import {
   getSelectedClip,
   saveCurrentProject,
   restoreLastSession,
+  addTrack,
   showToast,
   startEngineBridge,
   stopEngineBridge,
@@ -224,7 +225,12 @@ onMounted(() => {
   }
   startEngineBridge()
   // A refresh must land back in the project that was open, not the starter demo.
-  restoreLastSession().catch(() => {})
+  restoreLastSession().then(async (restored) => {
+    if (restored) return
+    if (session.tracks.filter((track) => track.type !== 'master').length) return
+    await addTrack('midi')
+    session.unsaved = false
+  }).catch(() => {})
 })
 onUnmounted(() => {
   if (typeof window !== 'undefined') {

@@ -93,7 +93,6 @@ import {
   closeMenus,
   showToast,
   newProject,
-  loadDemoProject,
   toggleEditor,
   toggleMixer,
   toggleInspector,
@@ -168,7 +167,6 @@ const menus = computed(() => [
       { label: 'Export Audio...', action: 'exportAudio' },
       { label: 'Export MIDI...', action: 'exportMidi' },
       { sep: true },
-      { label: 'Load Demo Project', action: 'demo' },
       { label: 'Audio Settings...', action: 'audio' },
       { sep: true },
       { label: 'Exit', action: 'exit' }
@@ -274,7 +272,6 @@ function runMenu (entry) {
   hoverSub.value = ''
   const map = {
     new: handleNew,
-    demo: loadDemoProject,
     open: openProject,
     save: saveCurrentProject,
     saveAs: async () => {

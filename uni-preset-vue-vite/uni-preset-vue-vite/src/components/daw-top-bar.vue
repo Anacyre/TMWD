@@ -132,7 +132,6 @@
         @click="openRecent(item)"
       >{{ item.name }}</view>
       <view class="sep" />
-      <view class="item" @click="run('demo')">Load Demo</view>
       <view class="sep" />
       <view class="item" @click="run('export')">Export</view>
     </view>
@@ -204,7 +203,6 @@ import {
   setBpm,
   setTimeSignature,
   newProject,
-  loadDemoProject,
   addTrack,
   exportProject,
   importProjectJson,
@@ -307,7 +305,6 @@ async function run (action) {
         : session.projectName
       if (name != null) await saveProjectAs(name)
     },
-    demo: loadDemoProject,
     autosave: restoreAutosave,
     export: exportProject,
     undo: undoEdit,

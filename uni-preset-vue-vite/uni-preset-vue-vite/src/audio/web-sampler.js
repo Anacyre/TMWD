@@ -32,7 +32,23 @@ export async function decodeSampleFile (context, fileOrUrl) {
   } else {
     arrayBuffer = await fileOrUrl.arrayBuffer()
   }
-  return context.decodeAudioData(arrayBuffer.slice(0))
+  const copy = arrayBuffer.slice(0)
+  try {
+    return await context.decodeAudioData(copy.slice(0))
+  } catch (err) {
+    const bytes = new Uint8Array(copy)
+    const ogg = bytes.length > 4 && bytes[0] === 79 && bytes[1] === 103 && bytes[2] === 103 && bytes[3] === 83
+    if (!ogg) throw err
+    const { OggVorbisDecoder } = await import('@wasm-audio-decoders/ogg-vorbis')
+    const decoder = new OggVorbisDecoder()
+    await decoder.ready
+    const decoded = await decoder.decodeFile(bytes)
+    const channels = decoded.channelData || []
+    const length = channels[0] ? channels[0].length : 0
+    const buffer = context.createBuffer(Math.max(1, channels.length), length, decoded.sampleRate || context.sampleRate)
+    channels.forEach((channel, index) => buffer.copyToChannel(new Float32Array(channel), index))
+    return buffer
+  }
 }
 
 export class WebSamplerVoice {

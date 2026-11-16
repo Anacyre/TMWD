@@ -291,11 +291,18 @@ export async function renameProject (id, name) {
 
 export async function putAsset (hash, blob, meta = {}) {
   if (!hash || !blob) return null
+  // Copy the bytes out of the picked file. A File left in IndexedDB can read back
+  // empty on another browser, so the clip then has a waveform and no sound.
+  let stored = blob
+  if (typeof blob.arrayBuffer === 'function') {
+    const bytes = await blob.arrayBuffer()
+    stored = new Blob([bytes], { type: blob.type || (meta && meta.type) || '' })
+  }
   const record = {
     hash,
-    blob,
+    blob: stored,
     name: meta.name || '',
-    bytes: blob.size || meta.bytes || 0,
+    bytes: stored.size || meta.bytes || 0,
     updatedAt: Date.now()
   }
   if (hasIndexedDb()) {
