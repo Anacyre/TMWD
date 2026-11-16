@@ -112,6 +112,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import DawIcon from './daw-icon.vue'
 import { instrumentIconUrl } from '../assets/instrument-icons.js'
 import { beginPointerDrag, pointerCoord, trackRatio } from '../lib/pointer-drag.js'
+import { bindLiveScroll, containOverflow } from '../lib/touch-scroll.js'
 
 const props = defineProps({
   title: { type: String, default: '' },
@@ -314,9 +315,13 @@ watch(() => [props.keyLow, props.keyHigh, props.keyboard], () => nextTick(reveal
 function onHidden () {
   if (typeof document !== 'undefined' && document.hidden) silence()
 }
+let unbindScroll = () => {}
+let unbindFit = () => {}
 onMounted(() => {
   nextTick(revealRange)
   setTimeout(revealRange, 80)
+  unbindScroll = bindLiveScroll('.orch .list, .orch .body', 'y', '.slider, .keys')
+  unbindFit = containOverflow('.orch .list, .orch .body, .orch .play')
   if (typeof window !== 'undefined') {
     window.addEventListener('blur', silence)
     document.addEventListener('visibilitychange', onHidden)
@@ -324,6 +329,8 @@ onMounted(() => {
 })
 onUnmounted(() => {
   silence()
+  unbindScroll()
+  unbindFit()
   if (typeof window !== 'undefined') {
     window.removeEventListener('blur', silence)
     document.removeEventListener('visibilitychange', onHidden)

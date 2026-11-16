@@ -174,6 +174,44 @@ export function bindLiveScroll (selector, axis, ignore = '') {
   return () => releaseLiveScroll(key)
 }
 
+/** If a block hangs out of the panel, cap it and let the finger scroll the rest. */
+export function containOverflow (selector) {
+  if (typeof document === 'undefined') return () => {}
+  const fit = () => {
+    document.querySelectorAll(selector).forEach((el) => {
+      const panel = el.closest('.orch') || el.parentElement
+      if (!panel) return
+      el.style.maxHeight = ''
+      const top = el.getBoundingClientRect().top
+      const limit = panel.getBoundingClientRect().bottom - 8
+      if (top + el.scrollHeight > limit + 2) {
+        el.style.maxHeight = Math.max(120, limit - top) + 'px'
+        el.style.overflowY = 'auto'
+        el.style.overflowX = 'hidden'
+      }
+    })
+  }
+  fit()
+  const timer = setTimeout(fit, 60)
+  let observer = null
+  let mutations = null
+  if (typeof ResizeObserver !== 'undefined') {
+    observer = new ResizeObserver(fit)
+    document.querySelectorAll(selector).forEach((el) => observer.observe(el))
+  }
+  if (typeof MutationObserver !== 'undefined') {
+    mutations = new MutationObserver(fit)
+    document.querySelectorAll(selector).forEach((el) => mutations.observe(el, { childList: true }))
+  }
+  window.addEventListener('resize', fit)
+  return () => {
+    clearTimeout(timer)
+    if (observer) observer.disconnect()
+    if (mutations) mutations.disconnect()
+    window.removeEventListener('resize', fit)
+  }
+}
+
 function releaseLiveScroll (key) {
   const rec = liveScrolls.get(key)
   if (!rec) return

@@ -22,14 +22,14 @@ export const LAYOUT = {
 export const LIBRARIES = [
   {
     id: 'vms-solo',
-    displayName: 'VMS Solo Orchestra',
+    displayName: 'Novera Solo',
     detail: 'Solo and small-section instruments, multiple dynamic layers',
     bucket: 'm-orchestra',
     layout: LAYOUT.MULTI_DYNAMIC
   },
   {
     id: 'vms-symphonic',
-    displayName: 'VMS Symphonic Orchestra',
+    displayName: 'Novera Ensemble',
     detail: 'Large ensembles and piano, chromatic sampling',
     bucket: 'vms-symphonic',
     layout: LAYOUT.BODY_PLUS_RELEASE

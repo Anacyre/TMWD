@@ -440,17 +440,32 @@ async function decodeZone (context, library, zone, rules, priority = true, pin =
       loopStart = seam.loopStart
       loopEnd = seam.loopEnd
       if (!releaseStart) releaseStart = seam.loopEnd
-    } else if (!zone.mainSec && isSustaining(zone.articulation)) {
-      // No published loop or body length: fall back to a runtime split so held notes still
-      // get a tail.
-      const split = splitSustainRelease(audio.getChannelData(0), audio.sampleRate)
-      if (split.loop) {
-        const seam = bakeLoopSeam(audio, split.loopStart, split.loopEnd, 0.06, 0.08)
-        loop = true
-        loopStart = seam.loopStart
-        loopEnd = seam.loopEnd
+    } else if (isSustaining(zone.articulation)) {
+      if (!zone.mainSec) {
+        const split = splitSustainRelease(audio.getChannelData(0), audio.sampleRate)
+        if (split.loop) {
+          const seam = bakeLoopSeam(audio, split.loopStart, split.loopEnd, 0.06, 0.08)
+          loop = true
+          loopStart = seam.loopStart
+          loopEnd = seam.loopEnd
+        }
+        releaseStart = split.releaseStart || 0
       }
-      releaseStart = split.releaseStart || 0
+      // A held note with no published loop used to play the file once, about a
+      // second, and then the voice was thrown away. Loop the body instead.
+      if (!loop) {
+        const bodyEnd = releaseStart > 0.3 ? releaseStart : audio.duration * 0.72
+        const end = Math.min(audio.duration - 0.02, bodyEnd - 0.02)
+        const start = Math.max(0.08, end * 0.5)
+        if (end - start >= 0.22) {
+          try {
+            const seam = bakeLoopSeam(audio, start, end, 0.05, 0.12)
+            loop = true
+            loopStart = seam.loopStart
+            loopEnd = seam.loopEnd
+          } catch (err) { /* the take still plays through once */ }
+        }
+      }
     }
 
     const decoded = { audio, loop, loopStart, loopEnd, releaseStart, key }
@@ -1078,7 +1093,9 @@ export async function noteOn (graph, track, pitch, velocity = 0.8, id, when, pre
 
   // The quieter half of a velocity crossfade only joins once it is decoded, so the
   // first play of a note is never held up waiting for a second download.
-  const secondary = selection[1]
+  // Solo libraries record one player per dynamic. Crossing into the next layer
+  // stacks a second recording on the same key, which is heard as extra notes.
+  const secondary = library === 'vms-solo' ? null : selection[1]
   if (secondary && !releasedEarly) {
     const ready = cachedDecode(library, secondary.zone, context)
     if (ready) {
