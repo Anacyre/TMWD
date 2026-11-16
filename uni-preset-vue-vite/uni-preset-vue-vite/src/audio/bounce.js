@@ -7,6 +7,7 @@ import { isMOrchestraTrack } from '../model/m-orchestra-ui.js'
 import { isOrchestraVTrack } from '../model/orchestra-v-ui.js'
 import { createWebSamplerInstrument } from './web-sampler.js'
 import { collectAudioEvents, scheduleAudioClip, isAudioClip, AUDIO_CLIP_KIND } from './audio-clips.js'
+import { attachMixerGraph, mixerHasInserts, trackInputNode } from './mixer-graph.js'
 
 function beatsToSec (beats, bpm) {
   return (beats || 0) * 60 / Math.max(1, bpm || 120)
@@ -106,6 +107,51 @@ function downloadBlob (filename, blob) {
   URL.revokeObjectURL(url)
 }
 
+function bounceTailSec (session) {
+  const mixer = session && session.webMixer
+  if (!mixer) return 0.8
+  if (mixerHasInserts(mixer)) return 3.2
+  const tracks = mixer.tracks || {}
+  for (const id of Object.keys(tracks)) {
+    const sends = tracks[id] && tracks[id].sends
+    if ((sends || []).some((send) => send && send.enabled && Number(send.level) > 0)) return 3.2
+  }
+  return 0.8
+}
+
+/** Same strip the live preview uses: track inserts, sends, buses, then the master chain. */
+async function prepareBounceGraph (context, session) {
+  const graph = {
+    context,
+    master: context.createGain(),
+    remoteGain: context.createGain(),
+    samplerGain: context.createGain(),
+    trackLanes: new Map()
+  }
+  const mixer = session && session.webMixer
+  if (!mixer) {
+    graph.master.gain.value = session && session.masterGain != null ? session.masterGain : 0.8
+    graph.master.connect(context.destination)
+    return graph
+  }
+  try {
+    await attachMixerGraph(graph, mixer, null, session.tracks || [], { localPlayback: true })
+  } catch (err) {
+    if (!graph.master) graph.master = context.createGain()
+    try { graph.master.disconnect() } catch (ignore) { /* not connected yet */ }
+    graph.master.connect(context.destination)
+  }
+  return graph
+}
+
+function bounceDest (graph, track) {
+  if (track && track.id != null) {
+    const input = trackInputNode(graph, track.id)
+    if (input) return input
+  }
+  return graph.master
+}
+
 function scheduleSampler (context, dest, event, startSec, buffer) {
   const patch = createWebSamplerInstrument({ ...(event.track && event.track.webSampler), gain: 0.7 })
   const src = context.createBufferSource()
@@ -143,13 +189,11 @@ export async function bounceSessionToWav (session, options = {}) {
   const Offline = options.OfflineAudioContext || (typeof OfflineAudioContext !== 'undefined' ? OfflineAudioContext : null)
   if (!Offline) throw new Error('WAV bounce needs OfflineAudioContext')
   const sr = options.sampleRate || 44100
-  const tail = 0.8
+  const tail = bounceTailSec(session)
   const durationSec = Math.max(1, beatsToSec(endBeat, bpm) + tail)
   const frames = Math.ceil(durationSec * sr)
   const context = new Offline(2, frames, sr)
-  const master = context.createGain()
-  master.gain.value = session.masterGain != null ? session.masterGain : 0.8
-  master.connect(context.destination)
+  const graph = await prepareBounceGraph(context, session)
   const samplerBuffers = options.samplerBuffers || new Map()
   const audioBuffers = options.audioBuffers || new Map()
 
@@ -176,17 +220,18 @@ export async function bounceSessionToWav (session, options = {}) {
   for (const event of events) {
     const startSec = beatsToSec(event.startBeat, bpm)
     const durationSecNote = beatsToSec(event.durationBeats, bpm)
+    const dest = bounceDest(graph, event.track)
     if (event.kind === AUDIO_CLIP_KIND || isAudioClip(event.clip)) {
       const buffer = audioBuffers.get(event.sourceId)
-      if (buffer) scheduleAudioClip(context, master, buffer, event.clip, startSec, bpm)
+      if (buffer) scheduleAudioClip(context, dest, buffer, event.clip, startSec, bpm)
       continue
     }
     const render = renderers[event.kind]
     if (render) {
-      await render(context, master, event.track, event.pitch, event.velocity, startSec, durationSecNote)
+      await render(context, dest, event.track, event.pitch, event.velocity, startSec, durationSecNote)
     } else {
       const buffer = samplerBuffers.get(event.track.id)
-      scheduleSampler(context, master, { ...event, durationSec: durationSecNote }, startSec, buffer)
+      scheduleSampler(context, dest, { ...event, durationSec: durationSecNote }, startSec, buffer)
     }
   }
 
